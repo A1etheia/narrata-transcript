@@ -7,6 +7,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 IGNORED = (
     ".env",
     ".env.local",
+    "config/config.yaml",
+    "config/local.yaml",
     "input/beispielgruppe/042/aufnahme.mp4",
     "work/beispielgruppe/042/asr/segment-001.json",
     "work/beispielgruppe/042/snapshot/wissen.json",
@@ -33,6 +35,7 @@ IGNORED = (
 
 NOT_IGNORED = (
     ".env.example",
+    "config/example.yaml",
     "tests/fixtures/contract-v1.json",
 )
 
