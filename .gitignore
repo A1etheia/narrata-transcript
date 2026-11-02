@@ -31,3 +31,13 @@ output/
 *.wav
 *.flac
 *.ogg
+*.aac
+*.opus
+*.wma
+*.aiff
+*.webm
+*.mkv
+*.mov
+*.srt
+*.vtt
+*.docx
