@@ -1,6 +1,6 @@
 ---
 name: plan-story
-description: Start a TOOL ticket - create the branch, audit dependencies, read the code, write and commit the plan doc under docs/plans/. Invoke at the start of any ticket before the first edit, e.g. "/plan-story TOOL-4", "plan TOOL-4", "start TOOL-4".
+description: Start a TOOL ticket - create the branch, give a short German overview of the ticket and its contribution to the larger goal, audit dependencies, read the code, write and commit the plan doc under docs/plans/. Invoke at the start of any ticket before the first edit, e.g. "/plan-story TOOL-4", "plan TOOL-4", "start TOOL-4".
 ---
 
 # Plan-Story
@@ -30,13 +30,22 @@ The slug mirrors the plan filename.
 
 ### 2. Ticket and dependencies
 
-Fetch the ticket with `getJiraIssue` (`cloudId: alethe1a.atlassian.net`), then run `/check-ticket-deps TOOL-<n>`. Resolve any needs-attention finding with the user before chunking.
+Fetch the ticket with `getJiraIssue` (`cloudId: alethe1a.atlassian.net`) and read `docs/transcript-roadmap.md` for its position and any hint.
+
+Before going further, give the user a short overview in German, in the chat, 3-5 sentences:
+
+- **Worum es geht:** what the ticket delivers, in plain words.
+- **Beitrag zum Ziel:** which milestone it belongs to, what the larger goal is, and what it unlocks or which tickets wait on it.
+
+Take this from the ticket and the roadmap. If they don't show how the ticket serves the goal, say so instead of inventing a reason.
+
+Then run `/check-ticket-deps TOOL-<n>`. Resolve any needs-attention finding with the user before chunking.
 
 Move the ticket to In Progress with `getTransitionsForJiraIssue` and `transitionJiraIssue`.
 
 ### 3. Recon
 
-Read the code the ticket touches, plus `docs/transcript-roadmap.md` for its position and any hint. Base the plan on what exists, with `path:line` references.
+Read the code the ticket touches. Base the plan on what exists, with `path:line` references.
 
 ### 4. Checks
 
