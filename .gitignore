@@ -16,9 +16,10 @@ venv/
 .env.*
 !.env.example
 
-# IDEs
+# IDEs and local tool settings
 .idea/
 .vscode/
+.claude/settings.local.json
 
 # Session data: real recordings and transcripts never enter this repository
 input/

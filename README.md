@@ -26,7 +26,7 @@ Der JSON-Contract ist die einzige Kopplung zu Narrata. Sein Schema liegt in `ios
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -e '.[dev]'
 ```
 
 ## Smoke-Test
@@ -34,13 +34,17 @@ pip install -e .
 ```bash
 transcript --help
 python -m transcript --help
-python -m unittest discover -s tests
 ```
+
+## Prüfen
+
+`scripts/check` führt Lint, Formatprüfung und Tests aus; `scripts/check --fix` wendet vorher die automatischen Korrekturen an.
 
 ## Verzeichnisstruktur
 
 ```
-docs/            Roadmap
+docs/            Roadmap und Ticket-Pläne
+scripts/         Prüfskripte
 src/transcript/  Python-Paket
 tests/           Tests
 ```

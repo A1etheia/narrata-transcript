@@ -10,6 +10,9 @@ requires-python = ">=3.10"
 dynamic = ["version"]
 dependencies = []
 
+[project.optional-dependencies]
+dev = ["ruff>=0.6"]
+
 [project.scripts]
 transcript = "transcript.__main__:main"
 
@@ -18,3 +21,9 @@ version = { attr = "transcript.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+extend-exclude = ["docs"]
+
+[tool.ruff.lint]
+extend-select = ["I", "UP", "B"]

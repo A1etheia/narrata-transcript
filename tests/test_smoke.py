@@ -12,7 +12,10 @@ class SmokeTest(unittest.TestCase):
 
     def test_help_exits_successfully(self) -> None:
         stdout = io.StringIO()
-        with contextlib.redirect_stdout(stdout), self.assertRaises(SystemExit) as caught:
+        with (
+            contextlib.redirect_stdout(stdout),
+            self.assertRaises(SystemExit) as caught,
+        ):
             main(["--help"])
 
         self.assertEqual(caught.exception.code, 0)

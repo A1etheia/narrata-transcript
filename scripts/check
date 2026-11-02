@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Quality gate: lint, format check and tests. `--fix` applies ruff's auto-fixes first.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+bin=.venv/bin
+if [[ ! -x "$bin/ruff" ]]; then
+  echo "Missing $bin/ruff. Run: pip install -e '.[dev]' inside .venv (see README)." >&2
+  exit 1
+fi
+
+if [[ "${1:-}" == "--fix" ]]; then
+  "$bin/ruff" check --fix .
+  "$bin/ruff" format .
+fi
+
+"$bin/ruff" check .
+"$bin/ruff" format --check .
+"$bin/python" -m unittest discover -s tests
