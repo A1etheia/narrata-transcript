@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from transcript.config import Config, ConfigError, load_config
+from transcript.config import Config, ConfigError, format_config, load_config
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MINIMAL = "language: de\npaths:\n  root: /data\n"
@@ -46,6 +46,17 @@ class LoadConfigTest(unittest.TestCase):
         self.assertTrue(config.debug)
         self.assertEqual(config.segment_length_seconds, 600)
         self.assertEqual(config.segment_overlap_seconds, 2.5)
+
+    def test_formatted_config_loads_back_unchanged(self) -> None:
+        config = Config(
+            language="de",
+            root=Path("/data"),
+            debug=True,
+            segment_length_seconds=600,
+            segment_overlap_seconds=2.5,
+        )
+
+        self.assertEqual(self.load(format_config(config)), config)
 
     def test_missing_file_is_reported(self) -> None:
         with self.assertRaises(ConfigError) as caught:

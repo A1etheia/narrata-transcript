@@ -67,6 +67,22 @@ def load_config(path: Path) -> Config:
     )
 
 
+def format_config(config: Config) -> str:
+    """Render the configuration in the same layout `load_config` reads."""
+    return yaml.safe_dump(
+        {
+            "language": config.language,
+            "paths": {"root": str(config.root)},
+            "segmentation": {
+                "length_seconds": config.segment_length_seconds,
+                "overlap_seconds": config.segment_overlap_seconds,
+            },
+            "debug": config.debug,
+        },
+        sort_keys=False,
+    )
+
+
 def _read_mapping(path: Path) -> dict[str, Any]:
     try:
         text = path.read_text(encoding="utf-8")
