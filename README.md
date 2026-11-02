@@ -47,6 +47,7 @@ docs/            Roadmap und Ticket-Pläne
 scripts/         Prüfskripte
 src/transcript/  Python-Paket
 tests/           Tests
+tests/fixtures/  kleine synthetische oder anonymisierte Beispieldaten
 input/           Originalaufnahmen pro Session (lokal, nicht im Repo)
 work/            Zwischenstände pro Session (lokal, nicht im Repo)
 output/          Ergebnisse pro Session (lokal, nicht im Repo)
@@ -75,13 +76,19 @@ output/beispielgruppe/042/     JSON-Export, TXT, DOCX
 
 Die Verzeichnisse von `input/` werden von Hand befüllt. Die Pipeline liest dort nur und schreibt ausschließlich nach `work/` und `output/`. ASR-Ergebnisse werden nie überschrieben.
 
-## Echte Audio- und Transkriptdateien
+## Dateiregeln
 
-Die Verzeichnisse `input/`, `work/` und `output/` sowie gängige Audioformate sind per `.gitignore` ausgeschlossen. Echte Aufnahmen und Transkripte gehören nicht in dieses Repository. Einwilligung, Aufbewahrung und Sichtbarkeit regelt [`docs/datenschutz.md`](docs/datenschutz.md).
+Einwilligung, Aufbewahrung und Sichtbarkeit regelt [`docs/datenschutz.md`](docs/datenschutz.md). Rohaudio bleibt bis zum Kampagnenende lokal, der Wissens-Snapshot dauerhaft.
 
-## Secrets
+**Nie committen:** Audio und Segmente, Transkripte, Klarnamen, Wissens-Snapshots, Secrets. Die `.gitignore` schließt `input/`, `work/`, `output/` in jeder Tiefe aus, dazu `.env`, gängige Audio- und Videoformate sowie `*.srt`, `*.vtt` und `*.docx`. `tests/test_gitignore.py` prüft diese Regeln. `*.json`, `*.txt` und `*.csv` sind nicht global ausgeschlossen; echte Dateien dieser Art gehören deshalb nur in die drei Verzeichnisse.
 
-Lokale Secrets liegen in `.env`, die ebenfalls ignoriert wird. Noch benötigt das Projekt keine Secrets.
+**Nie hochladen:** Rohaudio, Segmente, Arbeitsdateien aus `work/` und den Wissens-Snapshot. Nach Narrata geht ausschließlich der strukturierte Transkript-Export aus `output/`.
+
+**Echte Sessions** liegen nur lokal: Die Originalaufnahme kommt von Hand nach `input/<gruppe>/<ordinal>/`, alles Weitere erzeugt die Pipeline (siehe [Sessions](#sessions)).
+
+**Secrets** liegen in `.env`, später auch das Narrata-Token. Noch benötigt das Projekt keine Secrets.
+
+**Test-Fixtures** liegen in `tests/fixtures/`. Sie sind klein und synthetisch oder vollständig anonymisiert und enthalten kein Audio; die Regeln stehen in [`tests/fixtures/README.md`](tests/fixtures/README.md).
 
 ## Nächste Schritte
 
