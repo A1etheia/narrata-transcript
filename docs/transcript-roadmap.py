@@ -25,12 +25,12 @@ GENERATED = "2026-11-02"
 P = [
     ("Phase 0 — Fundament und Entscheidungen",
      "M0 — Repo steht, Datenschutz entschieden, Contract v1 eingefroren. Nichts auf beiden Seiten schreibt JSON, bevor IOA-1214 steht.", [
-        ("TOOL-66", "Datenschutz-/Einwilligungs-/Sichtbarkeitsentscheidungen", 0.5, "zuerst — bestimmt Fixtures, Logs, Snapshot-Inhalt"),
-        ("TOOL-2", "Repo, Python-Projekt, README", 0.5, ""),
+        ("TOOL-66", "Datenschutz-/Einwilligungs-/Sichtbarkeitsentscheidungen", 0.5, "erledigt: `docs/datenschutz.md`"),
+        ("TOOL-2", "Repo, Python-Projekt, README", 0.5, "erledigt"),
         ("TOOL-4", "Verzeichnis-/Sessionstruktur (Narrata-Schlüssel)", 0.5, ""),
-        ("TOOL-5", "Dateiregeln, Rohaudio bleibt lokal", 0.5, ""),
-        ("TOOL-6", "Basiskonfiguration", 0.5, ""),
-        ("IOA-1216", "Privacy-/Sichtbarkeitsmodell, Opt-in-Flag", 1.5, "Narrata-Seite von TOOL-66"),
+        ("TOOL-5", "Dateiregeln, Rohaudio bleibt lokal", 0.5, "aus TOOL-66: README nennt Aufbewahrung (Rohaudio bis Kampagnenende, Snapshot dauerhaft lokal)"),
+        ("TOOL-6", "Basiskonfiguration", 0.5, "aus TOOL-66: Debug-Modus schreibt Transkripttext nur in eine Logdatei unter `work/`"),
+        ("IOA-1216", "Privacy-/Sichtbarkeitsmodell, Opt-in-Flag", 1.5, "Narrata-Seite von TOOL-66; Anforderungen in `docs/datenschutz.md`"),
         ("IOA-1214", "Contract v1: Schema, Fixture, Validator", 1.0, "Fixture dient IOA-1218, bis TOOL-58 liefert"),
     ]),
     ("Phase 1 — ASR-Spike und Backend-Entscheidung",
@@ -44,7 +44,7 @@ P = [
      "M2 — Eine Session läuft vom MP4 bis zur Referenztranskription mit Sprecher-Labels und Wissens-Snapshot.", [
         ("TOOL-9", "ffmpeg/ffprobe-Preflight", 0.5, ""),
         ("TOOL-10", "Formate erkennen, Audiospur extrahieren", 1.0, ""),
-        ("TOOL-12", "Session-Manifest, absolute Zeiten", 0.5, ""),
+        ("TOOL-12", "Session-Manifest, absolute Zeiten", 0.5, "aus TOOL-66: Manifest vermerkt die mündliche Zustimmung pro Sitzung"),
         ("TOOL-11", "Bedingt: Segmentierung", 1.0, "entfällt, wenn TOOL-62 Nein sagt"),
         ("TOOL-63", "Backend-Schnittstelle, Capabilities, Fake-Backend", 1.0, ""),
         ("TOOL-16", "Internes Referenztranskript-Format", 1.0, "vor TOOL-64: der Adapter schreibt in dieses Format"),

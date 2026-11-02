@@ -51,7 +51,7 @@ tests/           Tests
 
 ## Echte Audio- und Transkriptdateien
 
-Die Verzeichnisse `input/`, `work/` und `output/` sowie gängige Audioformate sind per `.gitignore` ausgeschlossen. Echte Aufnahmen und Transkripte gehören nicht in dieses Repository.
+Die Verzeichnisse `input/`, `work/` und `output/` sowie gängige Audioformate sind per `.gitignore` ausgeschlossen. Echte Aufnahmen und Transkripte gehören nicht in dieses Repository. Einwilligung, Aufbewahrung und Sichtbarkeit regelt [`docs/datenschutz.md`](docs/datenschutz.md).
 
 ## Secrets
 
