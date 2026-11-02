@@ -2,7 +2,7 @@
 
 Lokale Pipeline, die Aufnahmen von Rollenspielsitzungen in strukturierte Transkripte für [Narrata](https://github.com/A1etheia/ios-archiv) überführen soll.
 
-**Aktueller Stand: nur das Projektgerüst.** Das Paket lässt sich installieren und `transcript --help` läuft. Audioverarbeitung, Transkription und Export existieren noch nicht.
+**Aktueller Stand: nur das Projektgerüst.** Das Paket lässt sich installieren und `transcript --help` läuft. Session-Schlüssel und Verzeichnislayout sind festgelegt. Audioverarbeitung, Transkription und Export existieren noch nicht.
 
 ## Zielarchitektur
 
@@ -47,7 +47,33 @@ docs/            Roadmap und Ticket-Pläne
 scripts/         Prüfskripte
 src/transcript/  Python-Paket
 tests/           Tests
+input/           Originalaufnahmen pro Session (lokal, nicht im Repo)
+work/            Zwischenstände pro Session (lokal, nicht im Repo)
+output/          Ergebnisse pro Session (lokal, nicht im Repo)
 ```
+
+### Sessions
+
+Eine Session ist eine Narrata-Spielsitzung. Ihr Schlüssel lautet `<gruppe>/<ordinal>`: `<gruppe>` ist der `slug` der Narrata-Gruppe, `<ordinal>` das Ordinal der Spielsitzung, mindestens dreistellig. `42` und `042` bezeichnen dieselbe Session. Alle Pfade entstehen aus diesem geprüften Schlüssel (`src/transcript/session.py`), sodass jede Session eigene Verzeichnisse hat und sich Arbeits- und Ausgabedaten nicht vermischen.
+
+Der Schlüssel ist die lesbare Adresse, die Identität ist die `play_session_id` im Manifest: Narrata kann ein Ordinal neu vergeben, wenn die letzte Sitzung gelöscht wird, und auch der Slug kann sich ändern. Weichen Schlüssel und `play_session_id` voneinander ab, zählt die `play_session_id`.
+
+Beispiel-Session `beispielgruppe/042`:
+
+```
+input/beispielgruppe/042/      Originalaufnahme, unveränderlich
+work/beispielgruppe/042/
+  manifest.json                Gruppe, Ordinal, play_session_id, Sitzungsdatum, Audio-Hash
+  audio/                       extrahierte Spur, Segmente
+  snapshot/                    Wissens-Snapshot
+  asr/                         ASR-Zwischenergebnisse
+  review/                      Review-Kandidaten, CSV
+  speakers/                    Sprecherzuordnung
+  debug.log                    nur im Debug-Modus
+output/beispielgruppe/042/     JSON-Export, TXT, DOCX
+```
+
+Die Verzeichnisse von `input/` werden von Hand befüllt. Die Pipeline liest dort nur und schreibt ausschließlich nach `work/` und `output/`. ASR-Ergebnisse werden nie überschrieben.
 
 ## Echte Audio- und Transkriptdateien
 
