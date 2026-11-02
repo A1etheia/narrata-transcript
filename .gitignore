@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+
+# Local environments and secrets
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# IDEs
+.idea/
+.vscode/
+
+# Session data: real recordings and transcripts never enter this repository
+input/
+work/
+output/
+*.mp4
+*.m4a
+*.mp3
+*.wav
+*.flac
+*.ogg

@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "narrata-transcript"
+description = "Local pipeline that turns roleplay session recordings into structured transcripts for Narrata."
+readme = "README.md"
+requires-python = ">=3.10"
+dynamic = ["version"]
+dependencies = []
+
+[project.scripts]
+transcript = "transcript.__main__:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "transcript.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
