@@ -59,7 +59,7 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 | TOOL-2 | Repo, Python-Projekt, README | 0.5 | 02.11.2026 | 02.11.2026 | erledigt |
 | TOOL-4 | Verzeichnis-/Sessionstruktur (Narrata-Schlüssel) | 0.5 | 03.11.2026 | 03.11.2026 | erledigt: `src/transcript/session.py`, Layout im README |
 | TOOL-5 | Dateiregeln, Rohaudio bleibt lokal | 0.5 | 03.11.2026 | 03.11.2026 | erledigt: `.gitignore`, `tests/fixtures/`, Dateiregeln im README |
-| TOOL-6 | Basiskonfiguration | 0.5 | 05.11.2026 | 05.11.2026 | aus TOOL-66: Debug-Modus schreibt Transkripttext nur in eine Logdatei unter `work/`; aus TOOL-4: Session-Pfade aus der Konfiguration setzen das `root` von `SessionPaths`; aus TOOL-5: `.env.example` anlegen, sobald es die erste Variable gibt |
+| TOOL-6 | Basiskonfiguration | 0.5 | 05.11.2026 | 05.11.2026 | erledigt: `src/transcript/config.py`, `config/example.yaml` |
 | IOA-1216 | Privacy-/Sichtbarkeitsmodell, Opt-in-Flag | 1.5 | 05.11.2026 | 09.11.2026 | Narrata-Seite von TOOL-66; Anforderungen in `docs/datenschutz.md` |
 | IOA-1214 | Contract v1: Schema, Fixture, Validator | 1 | 10.11.2026 | 10.11.2026 | Fixture dient IOA-1218, bis TOOL-58 liefert; aus TOOL-5: die Kopie der Contract-Fixture liegt im Pipeline-Repo unter `tests/fixtures/` |
 
@@ -83,16 +83,16 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 | TOOL-9 | ffmpeg/ffprobe-Preflight | 0.5 | 01.12.2026 | 01.12.2026 |  |
 | TOOL-10 | Formate erkennen, Audiospur extrahieren | 1 | 03.12.2026 | 03.12.2026 | aus TOOL-5: Tests mit Audio erzeugen es zur Laufzeit synthetisch, Audio-Fixtures sind nicht vorgesehen |
 | TOOL-12 | Session-Manifest, absolute Zeiten | 0.5 | 07.12.2026 | 07.12.2026 | aus TOOL-66: Manifest vermerkt die mündliche Zustimmung pro Sitzung; aus TOOL-4: Manifest liegt unter `work/<gruppe>/<ordinal>/manifest.json`, beim Lesen `play_session_id` prüfen, weil Ordinale neu vergeben werden können |
-| TOOL-11 | Bedingt: Segmentierung | 1 | 07.12.2026 | 08.12.2026 | entfällt, wenn TOOL-62 Nein sagt |
+| TOOL-11 | Bedingt: Segmentierung | 1 | 07.12.2026 | 08.12.2026 | entfällt, wenn TOOL-62 Nein sagt; aus TOOL-6: Die Segmentwerte in der Konfiguration sind `null`; das Ticket setzt die Defaults nach der Entscheidung aus TOOL-62 |
 | TOOL-63 | Backend-Schnittstelle, Capabilities, Fake-Backend | 1 | 08.12.2026 | 10.12.2026 |  |
 | TOOL-16 | Internes Referenztranskript-Format | 1 | 10.12.2026 | 14.12.2026 | vor TOOL-64: der Adapter schreibt in dieses Format |
-| TOOL-64 | Lokales V0.1-Backend | 2 | 14.12.2026 | 17.12.2026 |  |
+| TOOL-64 | Lokales V0.1-Backend | 2 | 14.12.2026 | 17.12.2026 | aus TOOL-6: Transkripttext im Debug-Modus nur über `transcript_logger` schreiben |
 | TOOL-15 | Einzelsegment transkribieren | 0.5 | 17.12.2026 | 17.12.2026 |  |
 | TOOL-17 | Ganze Session, Resume | 1 | 04.01.2027 | 04.01.2027 |  |
 | TOOL-18 | Fehlerkategorien, Retry, Force | 1 | 05.01.2027 | 05.01.2027 |  |
 | TOOL-19 | Absolute Zeitstempel im Format | 0.5 | 07.01.2027 | 07.01.2027 |  |
 | TOOL-33 | Bedingt: Überlappungs-Dedup | 1 | 07.01.2027 | 11.01.2027 | entfällt mit TOOL-11; braucht Segment-Ergebnisse aus TOOL-17 |
-| TOOL-67 | Narrata-Kanal + Datei-Fallback | 1 | 11.01.2027 | 12.01.2027 | braucht IOA-1215 |
+| TOOL-67 | Narrata-Kanal + Datei-Fallback | 1 | 11.01.2027 | 12.01.2027 | braucht IOA-1215; aus TOOL-6: `.env.example` anlegen, sobald das Narrata-Token die erste Variable ist |
 | TOOL-38 | Teilnehmerwissen | 0.5 | 12.01.2027 | 12.01.2027 |  |
 | TOOL-39 | Glossarbegriffe | 0.5 | 14.01.2027 | 14.01.2027 |  |
 | TOOL-41 | Relevanzregel + Snapshot | 1 | 14.01.2027 | 18.01.2027 |  |

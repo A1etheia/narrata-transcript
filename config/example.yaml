@@ -1,0 +1,18 @@
+# Beispielkonfiguration. Kopieren nach config/config.yaml und dort anpassen.
+# Keine Secrets in diese Datei: Die gehören in .env.
+
+# Pflicht: Sprache der Aufnahmen als zweistelliger Code.
+language: de
+
+paths:
+  # Pflicht: Wurzel für input/, work/ und output/.
+  # Ein relativer Pfad gilt ab dem aktuellen Arbeitsverzeichnis.
+  root: .
+
+# Platzhalter: Die Werte entscheidet TOOL-62, null heißt „nicht festgelegt“.
+segmentation:
+  length_seconds: null
+  overlap_seconds: null
+
+# Schreibt Transkripttext nach work/<gruppe>/<ordinal>/debug.log, nie auf die Konsole.
+debug: false

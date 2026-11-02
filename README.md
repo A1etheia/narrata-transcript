@@ -2,7 +2,7 @@
 
 Lokale Pipeline, die Aufnahmen von Rollenspielsitzungen in strukturierte Transkripte für [Narrata](https://github.com/A1etheia/ios-archiv) überführen soll.
 
-**Aktueller Stand: nur das Projektgerüst.** Das Paket lässt sich installieren und `transcript --help` läuft. Session-Schlüssel und Verzeichnislayout sind festgelegt. Audioverarbeitung, Transkription und Export existieren noch nicht.
+**Aktueller Stand: nur das Projektgerüst.** Das Paket lässt sich installieren, `transcript --help` läuft und `transcript config` zeigt die Konfiguration. Session-Schlüssel und Verzeichnislayout sind festgelegt. Audioverarbeitung, Transkription und Export existieren noch nicht.
 
 ## Zielarchitektur
 
@@ -27,7 +27,22 @@ Der JSON-Contract ist die einzige Kopplung zu Narrata. Sein Schema liegt in `ios
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
+cp config/example.yaml config/config.yaml
 ```
+
+## Konfiguration
+
+Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht im Repo, ebenso alles andere unter `config/` außer `config/example.yaml`. `transcript config` zeigt die wirksamen Werte, `transcript config --config <pfad>` liest eine andere Datei. Fehlende Pflichtwerte, ungültige Werte und unbekannte Schlüssel enden mit einer Meldung, die Datei und Schlüssel nennt.
+
+| Schlüssel | Pflicht | Default | Bedeutung |
+| --- | --- | --- | --- |
+| `language` | ja | | Sprache der Aufnahmen als zweistelliger Code, z. B. `de` |
+| `paths.root` | ja | | Wurzel für `input/`, `work/`, `output/`; ein relativer Pfad gilt ab dem aktuellen Arbeitsverzeichnis |
+| `segmentation.length_seconds` | nein | `null` | Platzhalter, `null` heißt nicht festgelegt; die Entscheidung fällt in TOOL-62 |
+| `segmentation.overlap_seconds` | nein | `null` | Platzhalter wie oben; muss kleiner als die Segmentlänge sein |
+| `debug` | nein | `false` | schreibt Transkripttext nach `work/<gruppe>/<ordinal>/debug.log`, nie auf die Konsole |
+
+Einen eigenen Ausgabepfad gibt es nicht: `output/` liegt immer unter `paths.root`, damit echte Daten im Layout unter [Sessions](#sessions) bleiben. Secrets gehören nicht in diese Datei, sondern in `.env`.
 
 ## Smoke-Test
 
@@ -43,6 +58,7 @@ python -m transcript --help
 ## Verzeichnisstruktur
 
 ```
+config/          Beispielkonfiguration, lokale Konfiguration (nicht im Repo)
 docs/            Roadmap und Ticket-Pläne
 scripts/         Prüfskripte
 src/transcript/  Python-Paket
