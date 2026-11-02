@@ -53,6 +53,9 @@ class SessionPathsTest(unittest.TestCase):
         self.assertEqual(paths.input_dir, Path("/data/input/beispielgruppe/042"))
         self.assertEqual(paths.work_dir, Path("/data/work/beispielgruppe/042"))
         self.assertEqual(paths.output_dir, Path("/data/output/beispielgruppe/042"))
+        self.assertEqual(
+            paths.debug_log, Path("/data/work/beispielgruppe/042/debug.log")
+        )
 
     def test_equal_sessions_resolve_to_the_same_directory(self) -> None:
         first = SessionPaths(SessionKey.parse("beispielgruppe/42"), Path("/data"))

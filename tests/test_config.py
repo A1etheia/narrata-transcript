@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from transcript.config import Config, ConfigError, format_config, load_config
+from transcript.session import SessionKey
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MINIMAL = "language: de\npaths:\n  root: /data\n"
@@ -57,6 +58,11 @@ class LoadConfigTest(unittest.TestCase):
         )
 
         self.assertEqual(self.load(format_config(config)), config)
+
+    def test_session_paths_use_the_configured_root(self) -> None:
+        paths = self.load(MINIMAL).session_paths(SessionKey("beispielgruppe", 42))
+
+        self.assertEqual(paths.work_dir, Path("/data/work/beispielgruppe/042"))
 
     def test_missing_file_is_reported(self) -> None:
         with self.assertRaises(ConfigError) as caught:

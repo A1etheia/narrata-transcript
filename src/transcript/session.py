@@ -58,3 +58,7 @@ class SessionPaths:
     @property
     def output_dir(self) -> Path:
         return self.root / "output" / str(self.key)
+
+    @property
+    def debug_log(self) -> Path:
+        return self.work_dir / "debug.log"

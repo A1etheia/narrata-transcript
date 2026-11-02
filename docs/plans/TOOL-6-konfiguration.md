@@ -19,7 +19,7 @@ Danach stehen Sprache, Datenwurzel, Segmentierung und Debug-Modus in einer Datei
 
 ## Entscheidungen
 - **YAML mit PyYAML.** Das Ticket schlägt es vor, die Datei braucht Kommentare, und `tomllib` gäbe es erst ab Python 3.11. Gelesen wird nur mit `yaml.safe_load`.
-- **Zwei Dateien.** `config/example.yaml` liegt im Repo, die lokale `config/config.yaml` wird aus ihr kopiert und ist ignoriert, weil sie lokale Pfade enthalten kann. `transcript config --config <pfad>` überschreibt den Standardpfad.
+- **Zwei Dateien.** `config/example.yaml` liegt im Repo, die lokale `config/config.yaml` wird aus ihr kopiert. Alles andere unter `config/` ist ignoriert, weil lokale Varianten eigene Pfade enthalten können. `transcript config --config <pfad>` überschreibt den Standardpfad.
 - **Pflicht sind `language` und `paths.root`.** Beide sind bewusste Entscheidungen pro Installation; `debug` (`false`) und die Segmentwerte haben Defaults.
 - **`paths.root` deckt Session- und Ausgabepfade ab, abweichend vom Wortlaut des Tickets.** TOOL-4 legt `input/`, `work/`, `output/` unter einem `root` fest. Ein eigener Ausgabepfad könnte echte Daten aus diesem Layout und damit aus den Ignorierregeln herausführen. Ein relatives `root` gilt ab dem aktuellen Arbeitsverzeichnis.
 - **Segmentwerte sind `null`, bis TOOL-62 entscheidet.** `segmentation.length_seconds` und `segmentation.overlap_seconds` sind Platzhalter; ein erfundener Zahlenwert sähe wie eine Entscheidung aus. Gesetzte Werte müssen positiv sein, und die Überlappung muss kleiner als die Länge sein.
@@ -50,7 +50,7 @@ N/A — die Konfiguration hat kein Versionsfeld, und es gibt keine Bestandsartef
 ## Chunks
 ### Chunk 1 — Konfiguration laden und prüfen
 - Dateien: `pyproject.toml`, `src/transcript/config.py`, `config/example.yaml`, `.gitignore`, `tests/test_config.py`, `tests/test_gitignore.py`
-- Änderung: `Config` als frozen Dataclass (`language`, `root`, `debug`, `segment_length_seconds`, `segment_overlap_seconds`), `load_config(path) -> Config`, `ConfigError(Exception)`. `config/config.yaml` in `.gitignore`. `language` muss `[a-z]{2}` entsprechen; `bool` gilt nicht als Zahl.
+- Änderung: `Config` als frozen Dataclass (`language`, `root`, `debug`, `segment_length_seconds`, `segment_overlap_seconds`), `load_config(path) -> Config`, `ConfigError(Exception)`. `config/*` und `!config/example.yaml` in `.gitignore`. `language` muss `[a-z]{2}` entsprechen; `bool` gilt nicht als Zahl.
 - Verify: `.venv/bin/pip install -e '.[dev]' && scripts/check`
 - AC: `config/example.yaml` lädt. Fehlende Datei, kaputtes YAML, fehlender Pflichtwert, falscher Typ, unbekannter Schlüssel und Überlappung ≥ Länge führen je zu einem `ConfigError`, der Datei und Schlüssel nennt. Defaults greifen. `config/config.yaml` ist ignoriert, `config/example.yaml` nicht.
 
@@ -62,7 +62,7 @@ N/A — die Konfiguration hat kein Versionsfeld, und es gibt keine Bestandsartef
 
 ### Chunk 3 — Debug-Log und `SessionPaths`-Anbindung
 - Dateien: `src/transcript/config.py`, `src/transcript/session.py`, `src/transcript/debug_log.py`, `tests/test_debug_log.py`, `tests/test_config.py`
-- Änderung: `Config.session_paths(key) -> SessionPaths` setzt `root` aus der Konfiguration. `SessionPaths.debug_log` zeigt auf `work_dir / "debug.log"`. `transcript_logger(config, paths)` liefert den Logger für Transkripttext wie in den Entscheidungen beschrieben und legt `work_dir` nur im Debug-Modus an.
+- Änderung: `Config.session_paths(key) -> SessionPaths` setzt `root` aus der Konfiguration. `SessionPaths.debug_log` zeigt auf `work_dir / "debug.log"`. `transcript_logger(config, key)` liefert den Logger für Transkripttext wie in den Entscheidungen beschrieben und legt `work_dir` nur im Debug-Modus an.
 - Verify: `scripts/check`
 - AC: Mit `debug: true` steht der Text in `debug.log` und nicht auf stderr. Mit `debug: false` entsteht keine Datei und kein Verzeichnis. Auch ein konfigurierter Root-Logger empfängt den Text nicht. Die Pfade aus `session_paths` liegen unter dem konfigurierten `root`.
 

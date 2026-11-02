@@ -8,6 +8,8 @@ from typing import Any
 
 import yaml
 
+from transcript.session import SessionKey, SessionPaths
+
 _LANGUAGE_PATTERN = re.compile(r"[a-z]{2}")
 _TOP_LEVEL_KEYS = {"language", "paths", "segmentation", "debug"}
 _PATHS_KEYS = {"root"}
@@ -25,6 +27,9 @@ class Config:
     debug: bool = False
     segment_length_seconds: float | None = None
     segment_overlap_seconds: float | None = None
+
+    def session_paths(self, key: SessionKey) -> SessionPaths:
+        return SessionPaths(key, self.root)
 
 
 def load_config(path: Path) -> Config:
