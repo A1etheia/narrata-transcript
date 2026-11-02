@@ -28,10 +28,10 @@ P = [
         ("TOOL-66", "Datenschutz-/Einwilligungs-/Sichtbarkeitsentscheidungen", 0.5, "erledigt: `docs/datenschutz.md`"),
         ("TOOL-2", "Repo, Python-Projekt, README", 0.5, "erledigt"),
         ("TOOL-4", "Verzeichnis-/Sessionstruktur (Narrata-Schlüssel)", 0.5, "erledigt: `src/transcript/session.py`, Layout im README"),
-        ("TOOL-5", "Dateiregeln, Rohaudio bleibt lokal", 0.5, "aus TOOL-66: README nennt Aufbewahrung (Rohaudio bis Kampagnenende, Snapshot dauerhaft lokal); aus TOOL-4: `.gitignore`-Muster `input/` und `work/` greifen in jeder Tiefe, beim Fixture-Ort beachten"),
-        ("TOOL-6", "Basiskonfiguration", 0.5, "aus TOOL-66: Debug-Modus schreibt Transkripttext nur in eine Logdatei unter `work/`; aus TOOL-4: Session-Pfade aus der Konfiguration setzen das `root` von `SessionPaths`"),
+        ("TOOL-5", "Dateiregeln, Rohaudio bleibt lokal", 0.5, "erledigt: `.gitignore`, `tests/fixtures/`, Dateiregeln im README"),
+        ("TOOL-6", "Basiskonfiguration", 0.5, "aus TOOL-66: Debug-Modus schreibt Transkripttext nur in eine Logdatei unter `work/`; aus TOOL-4: Session-Pfade aus der Konfiguration setzen das `root` von `SessionPaths`; aus TOOL-5: `.env.example` anlegen, sobald es die erste Variable gibt"),
         ("IOA-1216", "Privacy-/Sichtbarkeitsmodell, Opt-in-Flag", 1.5, "Narrata-Seite von TOOL-66; Anforderungen in `docs/datenschutz.md`"),
-        ("IOA-1214", "Contract v1: Schema, Fixture, Validator", 1.0, "Fixture dient IOA-1218, bis TOOL-58 liefert"),
+        ("IOA-1214", "Contract v1: Schema, Fixture, Validator", 1.0, "Fixture dient IOA-1218, bis TOOL-58 liefert; aus TOOL-5: die Kopie der Contract-Fixture liegt im Pipeline-Repo unter `tests/fixtures/`"),
     ]),
     ("Phase 1 — ASR-Spike und Backend-Entscheidung",
      "M1 — Backend gewählt, Diarisierung entschieden, TOOL-11/33 entschieden, Export-Endpoint live. Reflexionspunkt: Epic TOOL-8 wird hier dimensioniert.", [
@@ -43,7 +43,7 @@ P = [
     ("Phase 2 — Pipeline-Kern bis Referenztranskription",
      "M2 — Eine Session läuft vom MP4 bis zur Referenztranskription mit Sprecher-Labels und Wissens-Snapshot.", [
         ("TOOL-9", "ffmpeg/ffprobe-Preflight", 0.5, ""),
-        ("TOOL-10", "Formate erkennen, Audiospur extrahieren", 1.0, ""),
+        ("TOOL-10", "Formate erkennen, Audiospur extrahieren", 1.0, "aus TOOL-5: Tests mit Audio erzeugen es zur Laufzeit synthetisch, Audio-Fixtures sind nicht vorgesehen"),
         ("TOOL-12", "Session-Manifest, absolute Zeiten", 0.5, "aus TOOL-66: Manifest vermerkt die mündliche Zustimmung pro Sitzung; aus TOOL-4: Manifest liegt unter `work/<gruppe>/<ordinal>/manifest.json`, beim Lesen `play_session_id` prüfen, weil Ordinale neu vergeben werden können"),
         ("TOOL-11", "Bedingt: Segmentierung", 1.0, "entfällt, wenn TOOL-62 Nein sagt"),
         ("TOOL-63", "Backend-Schnittstelle, Capabilities, Fake-Backend", 1.0, ""),

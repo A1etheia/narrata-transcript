@@ -58,10 +58,10 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 | TOOL-66 | Datenschutz-/Einwilligungs-/Sichtbarkeitsentscheidungen | 0.5 | 02.11.2026 | 02.11.2026 | erledigt: `docs/datenschutz.md` |
 | TOOL-2 | Repo, Python-Projekt, README | 0.5 | 02.11.2026 | 02.11.2026 | erledigt |
 | TOOL-4 | Verzeichnis-/Sessionstruktur (Narrata-Schlüssel) | 0.5 | 03.11.2026 | 03.11.2026 | erledigt: `src/transcript/session.py`, Layout im README |
-| TOOL-5 | Dateiregeln, Rohaudio bleibt lokal | 0.5 | 03.11.2026 | 03.11.2026 | aus TOOL-66: README nennt Aufbewahrung (Rohaudio bis Kampagnenende, Snapshot dauerhaft lokal); aus TOOL-4: `.gitignore`-Muster `input/` und `work/` greifen in jeder Tiefe, beim Fixture-Ort beachten |
-| TOOL-6 | Basiskonfiguration | 0.5 | 05.11.2026 | 05.11.2026 | aus TOOL-66: Debug-Modus schreibt Transkripttext nur in eine Logdatei unter `work/`; aus TOOL-4: Session-Pfade aus der Konfiguration setzen das `root` von `SessionPaths` |
+| TOOL-5 | Dateiregeln, Rohaudio bleibt lokal | 0.5 | 03.11.2026 | 03.11.2026 | erledigt: `.gitignore`, `tests/fixtures/`, Dateiregeln im README |
+| TOOL-6 | Basiskonfiguration | 0.5 | 05.11.2026 | 05.11.2026 | aus TOOL-66: Debug-Modus schreibt Transkripttext nur in eine Logdatei unter `work/`; aus TOOL-4: Session-Pfade aus der Konfiguration setzen das `root` von `SessionPaths`; aus TOOL-5: `.env.example` anlegen, sobald es die erste Variable gibt |
 | IOA-1216 | Privacy-/Sichtbarkeitsmodell, Opt-in-Flag | 1.5 | 05.11.2026 | 09.11.2026 | Narrata-Seite von TOOL-66; Anforderungen in `docs/datenschutz.md` |
-| IOA-1214 | Contract v1: Schema, Fixture, Validator | 1 | 10.11.2026 | 10.11.2026 | Fixture dient IOA-1218, bis TOOL-58 liefert |
+| IOA-1214 | Contract v1: Schema, Fixture, Validator | 1 | 10.11.2026 | 10.11.2026 | Fixture dient IOA-1218, bis TOOL-58 liefert; aus TOOL-5: die Kopie der Contract-Fixture liegt im Pipeline-Repo unter `tests/fixtures/` |
 
 ### Phase 1 — ASR-Spike und Backend-Entscheidung
 
@@ -81,7 +81,7 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
 | TOOL-9 | ffmpeg/ffprobe-Preflight | 0.5 | 01.12.2026 | 01.12.2026 |  |
-| TOOL-10 | Formate erkennen, Audiospur extrahieren | 1 | 03.12.2026 | 03.12.2026 |  |
+| TOOL-10 | Formate erkennen, Audiospur extrahieren | 1 | 03.12.2026 | 03.12.2026 | aus TOOL-5: Tests mit Audio erzeugen es zur Laufzeit synthetisch, Audio-Fixtures sind nicht vorgesehen |
 | TOOL-12 | Session-Manifest, absolute Zeiten | 0.5 | 07.12.2026 | 07.12.2026 | aus TOOL-66: Manifest vermerkt die mündliche Zustimmung pro Sitzung; aus TOOL-4: Manifest liegt unter `work/<gruppe>/<ordinal>/manifest.json`, beim Lesen `play_session_id` prüfen, weil Ordinale neu vergeben werden können |
 | TOOL-11 | Bedingt: Segmentierung | 1 | 07.12.2026 | 08.12.2026 | entfällt, wenn TOOL-62 Nein sagt |
 | TOOL-63 | Backend-Schnittstelle, Capabilities, Fake-Backend | 1 | 08.12.2026 | 10.12.2026 |  |
