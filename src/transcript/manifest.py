@@ -95,6 +95,11 @@ def build_manifest(
     Narrata reassigned the ordinal, and this work directory belongs to another one.
     """
     session = narrata.read_session(paths)
+    if not paths.audio_metadata.is_file():
+        raise ManifestError(
+            f"{paths.audio_metadata}: audio metadata not found; "
+            "run transcript extract first"
+        )
     metadata = _read_json(paths.audio_metadata, "audio metadata")
     if metadata.get("format_version") != audio.METADATA_FORMAT_VERSION:
         raise ManifestError(

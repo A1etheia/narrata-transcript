@@ -1,5 +1,6 @@
 import contextlib
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -190,6 +191,87 @@ class ExtractCommandTest(unittest.TestCase):
 
         self.assertEqual(code, 2)
         self.assertIn("no audio stream 1", stderr)
+
+
+class ManifestCommandTest(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.config = self.root / "config.yaml"
+        self.config.write_text(
+            f"language: de\npaths:\n  root: {self.root}\n", encoding="utf-8"
+        )
+        self.paths = SessionPaths(SessionKey("beispielgruppe", 1), self.root)
+        self.paths.input_dir.mkdir(parents=True)
+
+    def manifest(self, *extra: str) -> tuple[int, str, str]:
+        return run("manifest", "beispielgruppe/1", "--config", str(self.config), *extra)
+
+    def write_context(self) -> None:
+        self.paths.narrata_context.parent.mkdir(parents=True)
+        self.paths.narrata_context.write_text(
+            json.dumps(
+                {
+                    "contract_version": "1.0",
+                    "session": {
+                        "play_session_id": 4711,
+                        "ordinal": 1,
+                        "session_date": "2026-10-30",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    @needs_media
+    def test_two_recordings_get_a_gapless_timeline(self) -> None:
+        synth(self.paths.input_dir / "teil 1.mp3", *sine(seconds=1))
+        synth(self.paths.input_dir / "teil 2.wav", *sine(seconds=2))
+        code, _, stderr = run(
+            "extract", "beispielgruppe/1", "--config", str(self.config)
+        )
+        self.assertEqual(code, 0, stderr)
+        self.write_context()
+
+        code, stdout, stderr = self.manifest("--consent")
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("play session 4711, 2026-10-30, 2 segment(s)", stdout)
+        lines = [line for line in stdout.splitlines() if line.startswith("  ")]
+        first_end = lines[0].split()[3]
+        second_start = lines[1].split()[1]
+        self.assertEqual(lines[0].split()[1], "00:00:00.000")
+        self.assertEqual(first_end, second_start)
+        self.assertIn("consent noted at", stdout)
+        self.assertNotIn("warning", stderr)
+        self.assertTrue(self.paths.manifest.is_file())
+
+    def test_missing_context_is_reported(self) -> None:
+        code, stdout, stderr = self.manifest()
+
+        self.assertEqual((code, stdout), (2, ""))
+        self.assertIn("Narrata transcription context not found", stderr)
+        self.assertNotIn("Traceback", stderr)
+
+    def test_missing_extraction_points_to_extract(self) -> None:
+        self.write_context()
+
+        code, _, stderr = self.manifest()
+
+        self.assertEqual(code, 2)
+        self.assertIn("run transcript extract first", stderr)
+
+    @needs_media
+    def test_missing_consent_warns(self) -> None:
+        synth(self.paths.input_dir / "teil 1.mp3", *sine(seconds=1))
+        run("extract", "beispielgruppe/1", "--config", str(self.config))
+        self.write_context()
+
+        code, _, stderr = self.manifest()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("warning: no consent note", stderr)
 
 
 if __name__ == "__main__":
