@@ -4,7 +4,11 @@ Stand 2026-11-04. Spike-Bericht zu [TOOL-20](../plans/TOOL-20-diarisierung.md), 
 
 ## Kurzfassung
 
-*Folgt mit Chunk 4.*
+- **Entscheidung V0.1: separate Diarisierung mit pyannote `speaker-diarization-community-1`.** Whisper turbo liefert keine Sprecher, eine integrierte Attribution gibt es also nicht.
+- **Labels sind stabil:** über fünf Stunden genau 4 Labels für 4 Personen, alle in jeder halben Stunde aktiv. In einer blinden Stichprobe gehört jedes Label mehrheitlich genau einer Person, 8 % der Segmente liegen falsch.
+- **NSC-Stimmen** der Spielleitung bekommen kein eigenes Label; 3 von 4 bleiben bei ihr.
+- **NeMo** ist auf dem Ausschnitt genauer (WDER 4,7 % gegen 16,5 %), braucht auf einer ganzen Sitzung aber über 25 GB RAM und fällt damit aus. Einen Fallback für ganze Sitzungen gibt es nicht.
+- **Kosten:** pyannote braucht auf fünf Stunden 4 Minuten, 3,8 GB VRAM und 13,8 GB RAM. Es darf nicht parallel zu Whisper laufen.
 
 ## Material und Methode
 
@@ -88,7 +92,30 @@ Die beiden Fehler sind spiegelbildlich: ein NSC-Segment der Spielleitung landet 
 
 ## Entscheidung
 
-*Folgt mit Chunk 4.*
+**V0.1: separate Diarisierung mit pyannote `speaker-diarization-community-1`**, als eigener Schritt nach der Transkription, ohne Vorgabe der Personenzahl.
+
+- Einziger Kandidat, der eine ganze Sitzung verarbeitet.
+- Stabile Labels über fünf Stunden; TOOL-68 bleibt eine 1:1-Zuordnung von wenigen Labels zu Personen.
+- Liefert exklusive Turns für die Zuordnung zu Wörtern und Overlap als eigene Information.
+- `num_speakers` ändert auf diesem Material nichts. Der Snapshot kann die Zahl liefern, Pflicht ist sie nicht.
+
+**Kein Fallback für ganze Sitzungen.** NeMo ginge nur in Blöcken und verlöre dabei die Stabilität der Labels. Falls pyannote auf anderem Material versagt, ist das ein neuer Spike, kein Konfigurationswechsel.
+
+**Wortlaut und Zeitstempel:** Die Diarisierung läuft getrennt von der Transkription und lässt die Whisper-Wörter und ihre Zeiten unverändert. Sie fügt nur ein Label pro Wort hinzu. Bei schnellen Wechseln liegt die Turngrenze im Test oft mehr als 0,5 s neben dem Wechsel in der Referenz. Ein Wort an einer Grenze kann deshalb beim falschen Sprecher landen.
+
+**Integration in das Referenzformat (TOOL-16), Aufwand 1,5 Tage als TOOL-76:**
+
+- optionales Sprecher-Label pro Wort; „kein Label“ ist ein gültiger Wert (6–14 % der Wörter im Test),
+- Segment-Label aus der Mehrheit der Wörter, Wechsel innerhalb eines Segments bleiben sichtbar,
+- Label-Menge und Diarisierungs-Metadaten (Modell-Revision, Einstellungen) getrennt von den ASR-Metadaten,
+- Overlap-Bereiche optional als eigene Information.
+
+## Folgearbeiten
+
+- `TOOL-76`: pyannote in die Pipeline integrieren (neu, 1,5 Tage, nach TOOL-64).
+- `TOOL-16`: Sprecherfeld pro Wort, Diarisierungs-Metadaten.
+- `TOOL-64`: nicht parallel zu pyannote laufen lassen, Wortzeiten bleiben an.
+- `TOOL-68`: Labels 1:1 zuordnen; Wörter ohne Label durchreichen.
 
 ## Offen
 

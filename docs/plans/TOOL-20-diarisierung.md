@@ -73,8 +73,11 @@ N/A, weil `diar.json` und die Stichproben-CSV Wegwerf-Formate des Spikes ohne Ve
 - AC: Alle verbleibenden Akzeptanzkriterien sind abgehakt; die Folgearbeiten tragen Ticket-Keys.
 
 ## Folge-Tickets
-- [kein Ticket: Das Integrationsticket für die gewählte Diarisierung entsteht in Chunk 4 mit der Entscheidung, siehe Reflexionspunkt M1 in der Roadmap]
-- `TOOL-68`, `TOOL-16`, `TOOL-64`: Übergaben aus den Ergebnissen, in Chunk 4 als Kommentar.
+- `TOOL-76`: pyannote community-1 als eigenen Schritt nach der Transkription integrieren; Label der exklusiven Turns an der Wortmitte, Wörter ohne Turn bleiben ohne Label; Modell gated, einmal mit Token laden, danach offline.
+- `TOOL-16`: optionales Sprecher-Label pro Wort (fehlt bei 6–14 % der Wörter), Segment-Label aus der Mehrheit, Diarisierungs-Metadaten getrennt von ASR-Metadaten.
+- `TOOL-64`: nicht parallel zu pyannote (bis 13,8 GB RAM auf 5 h), Wortzeiten bleiben an; beim Ablösen von `scripts/spike/` auch Diarisierungs-Runner und `speakers.py`.
+- `TOOL-68`: 1:1-Zuordnung von 4 Labels zu Personen; NSC-Stimmen ohne eigenes Label, vereinzelt bei einer mitspielenden Person; Wörter ohne Label durchreichen.
+- [kein Ticket: NeMo-Clustering-Diarizer verworfen, weil er auf 5 h über 25 GB RAM braucht; kein Fallback für ganze Sitzungen]
 
 ## Chunk-Tabelle
 | Chunk | Scope | Clear context after? |
