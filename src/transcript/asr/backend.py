@@ -11,10 +11,15 @@ Error messages name the backend and the audio path, never transcript text or
 keywords: both may contain names of real people.
 """
 
-from collections.abc import Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeVar
+
+from transcript.timecode import seconds_to_ms
+
+_T = TypeVar("_T")
 
 DEVICES = ("cpu", "cuda")
 FEATURES = (
@@ -160,3 +165,75 @@ class Backend(Protocol):
 
     def close(self) -> None:
         """Release the model; safe to call when `load` failed or never ran."""
+
+
+@contextmanager
+def opened(backend: Backend) -> Iterator[Backend]:
+    """Load the backend for a block of `transcribe` calls and always close it."""
+    try:
+        _guarded(backend, backend.load)
+        yield backend
+    finally:
+        _guarded(backend, backend.close)
+
+
+def transcribe(backend: Backend, request: TranscriptionRequest) -> BackendResult:
+    """Transcribe one segment; every failure arrives as a `BackendError`."""
+    if not request.audio.is_file():
+        raise AudioInputError(f"{request.audio}: audio not found")
+    result = _guarded(backend, lambda: backend.transcribe(request))
+    problem = _result_problem(result, request, backend.capabilities.keyword_biasing)
+    if problem:
+        raise BackendRuntimeError(
+            f"{backend.info.backend_id}: invalid result, {problem}"
+        )
+    return result
+
+
+def _guarded(backend: Backend, call: Callable[[], _T]) -> _T:
+    """Run a backend call; foreign exceptions lose their message, it may hold text."""
+    try:
+        return call()
+    except BackendError:
+        raise
+    except Exception as error:
+        category = _category(error)
+        raise category(f"{backend.info.backend_id}: {type(error).__name__}") from error
+
+
+def _category(error: Exception) -> type[BackendError]:
+    if isinstance(error, ImportError):
+        return BackendUnavailableError
+    if isinstance(error, MemoryError):
+        return ResourceError
+    return BackendRuntimeError
+
+
+def _result_problem(
+    result: BackendResult, request: TranscriptionRequest, biasing: bool
+) -> str:
+    """Describe the first inconsistency in `result`, or return an empty string."""
+    if result.keywords_used and not biasing:
+        return "keywords_used without keyword_biasing"
+    if not set(request.keywords).issuperset(result.keywords_used):
+        return "keywords_used holds terms that were not requested"
+    for number, segment in enumerate(result.segments, start=1):
+        if not _valid_span(segment.start, segment.end):
+            return f"segment time out of range in segment {number}"
+        for word in segment.words:
+            if not _valid_span(word.start, word.end):
+                return f"word time out of range in segment {number}"
+            if word.confidence is not None and not 0 <= word.confidence <= 1:
+                return f"word confidence outside 0..1 in segment {number}"
+    return ""
+
+
+def _valid_span(start: float | None, end: float | None) -> bool:
+    """Both times absent or valid for `seconds_to_ms`, and in order."""
+    try:
+        for value in (start, end):
+            if value is not None:
+                seconds_to_ms(value)
+    except ValueError:
+        return False
+    return start is None or end is None or start <= end

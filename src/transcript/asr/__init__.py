@@ -16,6 +16,8 @@ from transcript.asr.backend import (
     ResultWord,
     TranscriptionRequest,
     UnsupportedCapabilityError,
+    opened,
+    transcribe,
 )
 
 __all__ = [
@@ -34,4 +36,6 @@ __all__ = [
     "ResultWord",
     "TranscriptionRequest",
     "UnsupportedCapabilityError",
+    "opened",
+    "transcribe",
 ]
