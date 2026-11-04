@@ -2,7 +2,7 @@
 
 Lokale Pipeline, die Aufnahmen von Rollenspielsitzungen in strukturierte Transkripte für [Narrata](https://github.com/A1etheia/ios-archiv) überführen soll.
 
-**Aktueller Stand: Audio-Vorbereitung.** Das Paket lässt sich installieren, `transcript config` zeigt die Konfiguration, `transcript doctor` prüft ffmpeg und ffprobe, und `transcript extract` prüft die Aufnahmen einer Session und extrahiert ihre Audiospur, eine Datei pro Aufnahme, und `transcript manifest` schreibt das Session-Manifest mit absoluter Zeitachse. Session-Schlüssel und Verzeichnislayout sind festgelegt. Transkription und Export existieren noch nicht.
+**Aktueller Stand: Audio-Vorbereitung.** Das Paket lässt sich installieren, `transcript config` zeigt die Konfiguration, `transcript doctor` prüft ffmpeg und ffprobe, und `transcript extract` prüft die Aufnahmen einer Session und extrahiert ihre Audiospur, eine Datei pro Aufnahme, und `transcript manifest` schreibt das Session-Manifest mit absoluter Zeitachse. Session-Schlüssel und Verzeichnislayout sind festgelegt. Die Schnittstelle für ASR-Backends steht, mit einem Fake-Backend für Tests; ein echtes Backend, Transkription und Export existieren noch nicht.
 
 ## Zielarchitektur
 
@@ -62,6 +62,10 @@ Das Manifest `work/<gruppe>/<ordinal>/manifest.json` (`format_version: 1`) ist d
 **Zustimmung.** `--consent` vermerkt, dass alle hörbaren Personen mündlich zugestimmt haben (siehe [`docs/datenschutz.md`](docs/datenschutz.md)), mit Zeitpunkt. Ohne das Flag steht `consent: null` im Manifest, und der Befehl warnt; ein früherer Vermerk derselben Spielsitzung bleibt bei einem Neuaufbau erhalten.
 
 **Identität.** Hat ein vorhandenes Manifest eine andere `play_session_id` als die Narrata-Datei, wurde das Ordinal in Narrata neu vergeben. Der Befehl bricht dann ab, und das Arbeitsverzeichnis muss beiseitegelegt werden. Dieselbe Prüfung läuft beim Lesen des Manifests. Weichen die WAV-Dateien von `audio.json` ab, verlangt der Befehl ein erneutes `transcript extract`.
+
+## ASR-Backends
+
+Die Pipeline spricht lokale Spracherkennung nur über `transcript.asr` an: Backend laden, Fähigkeiten abfragen, ein Segment transkribieren, ein einheitliches Ergebnis und einheitliche Fehler erhalten. Modellbibliotheken bleiben in den Adaptern. Schnittstelle, Fähigkeiten, Fehlerkategorien und die Regeln für Adapter stehen in [`docs/asr-backends.md`](docs/asr-backends.md). Für Tests ohne Modell gibt es `transcript.asr.fake.FakeBackend`.
 
 ## Konfiguration
 
