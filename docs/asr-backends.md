@@ -75,7 +75,7 @@ Jedes Backend deklariert `Capabilities`. `capabilities.to_dict()` liefert sie al
 
 ## Abbildung der Kandidaten
 
-Grundlage sind die Spike-Runner `scripts/spike/run_whisper.py` und `run_parakeet.py`. Den Whisper-Adapter gibt es als `transcript.asr.whisper` (TOOL-64, siehe unten). Parakeet ist der Fallback und zeigt, dass ein zweites Backend ohne Änderung der Schnittstelle passt.
+Grundlage sind die Spike-Runner `run_whisper.py` und `run_parakeet.py`, mit TOOL-64 aus dem Repo entfernt und [im Stand von `2f5b875`](https://github.com/A1etheia/narrata-transcript/tree/2f5b875f32237a8e0c565f09642f24f7195ee6ab/scripts/spike) erhalten. Den Whisper-Adapter gibt es als `transcript.asr.whisper` (TOOL-64, siehe unten). Parakeet ist der Fallback und zeigt, dass ein zweites Backend ohne Änderung der Schnittstelle passt.
 
 | | faster-whisper (V0.1) | Parakeet TDT 0.6B v3 (NeMo) |
 | --- | --- | --- |

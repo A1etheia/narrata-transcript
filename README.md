@@ -139,7 +139,7 @@ python -m transcript --help
 ```
 config/          Beispielkonfiguration, lokale Konfiguration (nicht im Repo)
 docs/            Roadmap, Ticket-Pläne, Spike-Berichte
-scripts/         Prüfskripte; `scripts/spike/` Wegwerf-Werkzeug des ASR-Spikes
+scripts/         Prüfskripte
 src/transcript/  Python-Paket
 tests/           Tests
 tests/fixtures/  kleine synthetische oder anonymisierte Beispieldaten
