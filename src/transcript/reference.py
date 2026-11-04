@@ -51,7 +51,7 @@ class Word:
     speaker: str | None = None  # None is a valid value: no turn covers the word
 
     def __post_init__(self) -> None:
-        _check_span(self.start_ms, self.end_ms, "word time")
+        check_span(self.start_ms, self.end_ms, "word time")
         if self.confidence is not None and not 0 <= self.confidence <= 1:
             raise ValueError("word confidence outside 0..1")
 
@@ -71,7 +71,7 @@ class Passage:
     def __post_init__(self) -> None:
         if self.index < 1:
             raise ValueError("passage index must be positive")
-        _check_span(self.start_ms, self.end_ms, "passage time")
+        check_span(self.start_ms, self.end_ms, "passage time")
 
 
 @dataclass(frozen=True)
@@ -113,7 +113,7 @@ class Overlap:
     end_ms: int
 
     def __post_init__(self) -> None:
-        _check_span(self.start_ms, self.end_ms, "overlap time")
+        check_span(self.start_ms, self.end_ms, "overlap time")
 
 
 @dataclass(frozen=True)
@@ -524,7 +524,7 @@ def _passage(data: Any, number: int, path: Path) -> Passage:
         raise ValueError(f"passage {number}: {error}") from None
 
 
-def _check_span(start: int | None, end: int | None, what: str) -> None:
+def check_span(start: int | None, end: int | None, what: str) -> None:
     """Both times absent or non-negative, and in order when both are given."""
     if any(value is not None and value < 0 for value in (start, end)):
         raise ValueError(f"{what} is negative")
