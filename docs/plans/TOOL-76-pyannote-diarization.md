@@ -35,6 +35,7 @@ Nach der Transkription trägt jedes Wort im Referenztranskript (TOOL-16) ein Spr
 - Konsole und Logs: handled. Nur Zähler und Laufzeiten; ein Test prüft, dass weder Wort-Text noch Labels in der CLI-Ausgabe stehen.
 - Fehlermeldungen: handled. Nennen Modell, Gerät, Segmentdatei und Exception-Typ, nie die Runtime-Meldung (wie `whisper.py:178-193`).
 - Fixtures: handled. Tests nutzen synthetische Turns und erfundene Wörter; der Smoke-Test spricht mit ffmpeg `flite` einen erfundenen Satz.
+- Telemetrie: handled. pyannote 4 schickt per Default Laufmetadaten (Audiodauer, Sprecherzahl, Version, Session-ID) an `otel.pyannote.ai`. Der Adapter setzt vor dem Import `PYANNOTE_METRICS_ENABLED=false` und `HF_HUB_OFFLINE=1` hart, nicht als Default; ein Test prüft das.
 - HF-Token: handled. Wird nie gelesen oder gespeichert, nur der einmalige Download im README beschreibt `hf auth login`.
 
 ## Contract-Check

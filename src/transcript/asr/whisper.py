@@ -9,9 +9,7 @@ Messages never repeat a runtime message, which may quote hotwords.
 
 import dataclasses
 import gc
-import os
 from collections.abc import Callable, Sequence
-from pathlib import Path
 from typing import Any
 
 from transcript.asr.backend import (
@@ -22,10 +20,13 @@ from transcript.asr.backend import (
     BackendRuntimeError,
     BackendUnavailableError,
     Capabilities,
-    ResourceError,
     ResultSegment,
     ResultWord,
     TranscriptionRequest,
+    cached_model_dir,
+    hub_revision,
+    resolve_device,
+    runtime_error,
 )
 from transcript.config import Config
 
@@ -49,7 +50,6 @@ FIXED_SETTINGS = {
 _MODEL_FILES = ("model.bin", "tokenizer.json")
 _DEFAULT_COMPUTE_TYPES = {"cuda": "float16", "cpu": "int8"}
 _INSTALL_HINT = "install it with pip install -e '.[whisper]'"
-_DOWNLOAD_HINT = "download it once, see README"
 _LIBRARY_HINT = "CUDA libraries not found, set LD_LIBRARY_PATH as in the README"
 
 
@@ -92,8 +92,15 @@ class WhisperBackend:
                 f"{BACKEND_ID}: runtime missing, {_INSTALL_HINT}"
             ) from error
 
-        device = self._resolve_device(ctranslate2.get_cuda_device_count())
-        model_path = self._model_path(faster_whisper.download_model)
+        device = resolve_device(
+            self._requested_device, ctranslate2.get_cuda_device_count() > 0, BACKEND_ID
+        )
+        model_path = cached_model_dir(
+            self._model_name,
+            lambda name: faster_whisper.download_model(name, local_files_only=True),
+            _MODEL_FILES,
+            BACKEND_ID,
+        )
         compute_type = self._requested_compute_type or _DEFAULT_COMPUTE_TYPES[device]
         try:
             model = faster_whisper.WhisperModel(
@@ -105,7 +112,7 @@ class WhisperBackend:
         self._model = model
         self.info = dataclasses.replace(
             self.info,
-            model_version=_revision(model_path),
+            model_version=hub_revision(model_path),
             runtime_version=faster_whisper.__version__,
         )
         self._settings = {
@@ -150,31 +157,6 @@ class WhisperBackend:
         self._model = None
         gc.collect()  # frees the model before diarization needs the memory
 
-    def _resolve_device(self, cuda_devices: int) -> str:
-        if self._requested_device == "auto":
-            return "cuda" if cuda_devices > 0 else "cpu"
-        if self._requested_device == "cuda" and cuda_devices == 0:
-            raise BackendUnavailableError(f"{BACKEND_ID}: no CUDA device found")
-        return self._requested_device
-
-    def _model_path(self, download_model: Callable[..., str]) -> Path:
-        """The model directory; a name resolves only from the local cache."""
-        if os.path.isdir(self._model_name):
-            path = Path(self._model_name)
-        else:
-            try:
-                path = Path(download_model(self._model_name, local_files_only=True))
-            except Exception as error:
-                raise BackendUnavailableError(
-                    f"{BACKEND_ID}: model {self._model_name} not in the local cache, "
-                    f"{_DOWNLOAD_HINT} ({type(error).__name__})"
-                ) from error
-        if not all((path / name).is_file() for name in _MODEL_FILES):
-            raise BackendUnavailableError(
-                f"{BACKEND_ID}: {path} lacks model.bin or tokenizer.json"
-            )
-        return path
-
     def _error(self, error: Exception, action: str) -> BackendError:
         """Map a runtime failure to a category; the original message stays out.
 
@@ -182,15 +164,13 @@ class WhisperBackend:
         """
         cause = f"{BACKEND_ID}: {action} ({type(error).__name__})"
         message = str(error).lower() if isinstance(error, RuntimeError) else ""
-        if isinstance(error, MemoryError) or "out of memory" in message:
-            return ResourceError(f"{cause}, out of memory")
         if "library" in message and (
             "not found" in message or "cannot be loaded" in message
         ):
             return BackendUnavailableError(f"{cause}, {_LIBRARY_HINT}")
         if type(error).__module__.split(".")[0] == "av":
             return AudioInputError(f"{cause}, audio cannot be decoded")
-        return BackendRuntimeError(cause)
+        return runtime_error(error, cause)
 
 
 def fit_hotwords(
@@ -245,8 +225,3 @@ def _raw(segments: Sequence[Any], info: Any) -> dict[str, Any]:
         },
         "segments": [dataclasses.asdict(segment) for segment in segments],
     }
-
-
-def _revision(model_path: Path) -> str | None:
-    """The Hub revision of a cached model (`…/snapshots/<sha>`), else None."""
-    return model_path.name if model_path.parent.name == "snapshots" else None
