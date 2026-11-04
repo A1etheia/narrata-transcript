@@ -7,7 +7,7 @@ Stand 2026-11-04, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 - **Eine Person, ein Zeitbudget.** TOOL- und IOA-Tickets konkurrieren um dieselben Tage; der Plan ist deshalb eine *lineare* Folge. Echte Parallelität gibt es nur dort, wo ASR-Läufe oder Modell-Downloads im Hintergrund laufen — dann wird am Narrata-Ticket derselben Phase gearbeitet.
 - **Kapazität: 3 Entwicklungstage pro Woche**, Start 02.11.2026, Pause 21.12.2026–03.01.2027. Das ist der Umrechnungsfaktor für die Kalenderspalte, nicht Teil des Plans — ändert sich die Kapazität, verschieben sich nur die Daten, nicht die Reihenfolge.
 - **Aufwände sind Entwicklungstage in 0,5er-Schritten**, grob geschätzt aus den Ticket-Beschreibungen. Sie dienen der Reihenfolge und den Meilenstein-Abständen; keine Zusage.
-- **Gesamtumfang: 68.5 Entwicklungstage** ≈ 25 Wochen inkl. Pause → letzter Meilenstein 22.04.2027. Davon 1.5 Tage bedingt (TOOL-73).
+- **Gesamtumfang: 72 Entwicklungstage** ≈ 26 Wochen inkl. Pause → letzter Meilenstein 29.04.2027. Davon 1.5 Tage bedingt (TOOL-73).
 - **Neu terminiert am 02.11.2026:** Vom Plan des 03.10. war noch kein Ticket begonnen (alle TOOL- und IOA-Tickets To Do, kein Python-Repo, keine Transkript-Commits). Die 3 Tage pro Woche sind damit unbelegt; Reihenfolge belastbar, Daten nur bei dieser Kapazität.
 - Nicht eingeplant: TOOL-14 (Remote-Backend, geparkt), die Epics selbst, verworfene Tickets (TOOL-21–32, 34; TOOL-3, 7; TOOL-11, 33 nach TOOL-62).
 
@@ -26,12 +26,12 @@ Stand 2026-11-04, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 |---|---|---|---|---|
 | M0 | Repo steht, Datenschutz entschieden, Contract v1 eingefroren | Phase 0 | 02.11.2026 – 10.11.2026 | 5 |
 | M1 | Backend gewählt, Diarisierung entschieden, TOOL-11/33 entschieden, Export-Endpoint live | Phase 1 | 12.11.2026 – 01.12.2026 | 8.5 |
-| M2 | Eine Session läuft vom MP4 bis zur Referenztranskription mit Sprecher-Labels und Wissens-Snapshot | Phase 2 | 01.12.2026 – 25.01.2027 | 17 |
-| M3 | JSON-Export (Contract v1) einer Session importiert lokal in Narrata und rendert dort als Rohliste | Phase 3 | 25.01.2027 – 18.02.2027 | 11 |
-| M4 | Pilot-Review (TOOL-60): Kernhypothese geprüft; Entscheidungen Review-Kanal, Remote-Backend, Freigabe IT/OT | Phase 4 | 18.02.2027 – 04.03.2027 | 6.5 |
-| M5 | Transkript per Chat/MCP befragbar, in Narrata durchsuchbar, lesbar, verlinkt | Phase 5 | 08.03.2027 – 23.03.2027 | 8 |
-| M6 | IT/OT-Schicht im Export, Statistik im Bericht | Phase 6 | 25.03.2027 – 12.04.2027 | 7.5 |
-| M7 | Erste Welt-Archiv-Einträge mit Transkript-Provenienz; IT/OT-Statistik und Abendvergleich sichtbar | Phase 7 | 12.04.2027 – 22.04.2027 | 5 |
+| M2 | Eine Session läuft vom MP4 bis zur Referenztranskription mit Sprecher-Labels und Wissens-Snapshot | Phase 2 | 01.12.2026 – 26.01.2027 | 18.5 |
+| M3 | JSON-Export (Contract v1) einer Session importiert lokal in Narrata und rendert dort als Rohliste | Phase 3 | 28.01.2027 – 22.02.2027 | 11 |
+| M4 | Pilot-Review (TOOL-60): Kernhypothese geprüft; Entscheidungen Review-Kanal, Remote-Backend, Freigabe IT/OT | Phase 4 | 23.02.2027 – 15.03.2027 | 8.5 |
+| M5 | Transkript per Chat/MCP befragbar, in Narrata durchsuchbar, lesbar, verlinkt | Phase 5 | 15.03.2027 – 01.04.2027 | 8 |
+| M6 | IT/OT-Schicht im Export, Statistik im Bericht | Phase 6 | 01.04.2027 – 19.04.2027 | 7.5 |
+| M7 | Erste Welt-Archiv-Einträge mit Transkript-Provenienz; IT/OT-Statistik und Abendvergleich sichtbar | Phase 7 | 20.04.2027 – 29.04.2027 | 5 |
 
 ## Reflexionspunkte
 
@@ -60,8 +60,8 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 | TOOL-4 | Verzeichnis-/Sessionstruktur (Narrata-Schlüssel) | 0.5 | 03.11.2026 | 03.11.2026 | erledigt: `src/transcript/session.py`, Layout im README |
 | TOOL-5 | Dateiregeln, Rohaudio bleibt lokal | 0.5 | 03.11.2026 | 03.11.2026 | erledigt: `.gitignore`, `tests/fixtures/`, Dateiregeln im README |
 | TOOL-6 | Basiskonfiguration | 0.5 | 05.11.2026 | 05.11.2026 | erledigt: `src/transcript/config.py`, `config/example.yaml` |
-| IOA-1216 | Privacy-/Sichtbarkeitsmodell, Opt-in-Flag | 1.5 | 05.11.2026 | 09.11.2026 | Narrata-Seite von TOOL-66; Anforderungen in `docs/datenschutz.md` |
-| IOA-1214 | Contract v1: Schema, Fixture, Validator | 1 | 10.11.2026 | 10.11.2026 | Fixture dient IOA-1218, bis TOOL-58 liefert; aus TOOL-5: die Kopie der Contract-Fixture liegt im Pipeline-Repo unter `tests/fixtures/` |
+| IOA-1216 | Privacy-/Sichtbarkeitsmodell, Opt-in-Flag | 1.5 | 05.11.2026 | 09.11.2026 | erledigt (ios-archiv); Narrata-Seite von TOOL-66, Anforderungen in `docs/datenschutz.md`; Self-Service-Opt-in und Widerruf als IOA-1250 ausgelagert (blocked by IOA-1218) |
+| IOA-1214 | Contract v1: Schema, Fixture, Validator | 1 | 10.11.2026 | 10.11.2026 | erledigt (ios-archiv); Fixture dient IOA-1218, bis TOOL-58 liefert; aus TOOL-5: die Kopie der Contract-Fixture gehört nach `tests/fixtures/` (dort noch nicht abgelegt) |
 
 ### Phase 1 — ASR-Spike und Backend-Entscheidung
 
@@ -71,8 +71,8 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 |---|---|---|---|---|---|
 | TOOL-62 | ASR-Kandidaten an realer Session (inkl. Hand-Check, Long-Audio-Frage) | 3 | 12.11.2026 | 17.11.2026 | erledigt: `docs/spikes/TOOL-62-asr-vergleich.md`; Whisper large-v3-turbo, Fallback Parakeet, keine eigene Segmentierung; vor IOA-1216/IOA-1214 vorgezogen (02.–04.11.2026) |
 | TOOL-20 | Diarisierung / Label-Stabilität | 2 | 19.11.2026 | 23.11.2026 | erledigt: `docs/spikes/TOOL-20-diarisierung.md`; separate Diarisierung mit pyannote community-1, 4 stabile Labels für 4 Personen über 5 h, 8 % Fehlzuordnung in der Stichprobe; NeMo braucht auf 5 h über 25 GB RAM; Integration in TOOL-76 |
-| IOA-1215 | Transcription-context Export-Endpoint | 2 | 24.11.2026 | 26.11.2026 | während ASR-Läufe laufen |
-| IOA-1217 | asr_variants-Alias-Kategorie | 1.5 | 30.11.2026 | 01.12.2026 |  |
+| IOA-1215 | Transcription-context Export-Endpoint | 2 | 24.11.2026 | 26.11.2026 | erledigt (ios-archiv PR #1124): `GET /api/groups/{group}/play-sessions/{ordinal}/transcription-context`, Contract 1.0 in `docs/transcripts.md`; Auth vorerst 24-h-Login-Token, langlebiger Pipeline-Token als IOA-1251 |
+| IOA-1217 | asr_variants-Alias-Kategorie | 1.5 | 30.11.2026 | 01.12.2026 | erledigt (ios-archiv): befüllt `asr_variants` je Glossar-Eintrag im Transkriptionskontext, Shape unverändert |
 
 ### Phase 2 — Pipeline-Kern bis Referenztranskription
 
@@ -91,14 +91,15 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 | TOOL-17 | Ganze Session, Resume | 1 | 05.01.2027 | 05.01.2027 | aus TOOL-16: die Normalform `asr/segment-NN.json` ist der Fertig-Marker; `asr`-Block und `keywords_used` für den Modellvergleich; aus TOOL-64: Resume vergleicht `model_version`/`settings`; aus TOOL-76: `diarization.diarize_session` nach `WhisperBackend.close()` aufrufen; ein ASR-Neulauf entfernt die Labels, `diarize` setzt sie aus der gespeicherten Rohform ohne Modell neu; aus TOOL-15: auf `transcription.transcribe_segment` aufbauen: alle Segmente einer Session, `--segment` optional, Wiederverwendung über `model_version`/`settings`, `opened` einmal für alle Segmente, danach `diarize_session` |
 | TOOL-18 | Fehlerkategorien, Retry, Force | 1 | 07.01.2027 | 07.01.2027 | aus TOOL-63: Fehlerklassen mit `retryable` stehen in `transcript.asr`; TOOL-18 ergänzt Retry, Resume, Force, Protokollierung; aus TOOL-16: `status: failed` mit `error.category`/`retryable` nimmt Fehler auf, `reference.failed_reference`; aus TOOL-64: Retry auf `ResourceError`/`BackendRuntimeError`; aus TOOL-76: Retry auch für `ResourceError`/`BackendRuntimeError` der Diarisierung, Nahtstelle ist der Segment-Körper von `diarize_session`; aus TOOL-15: Retry bei `ResourceError`/`BackendRuntimeError`, Protokollierung; `transcribe_segment` speichert `failed` schon und versucht es ohne `--force` erneut |
 | TOOL-19 | Absolute Zeitstempel im Format | 0.5 | 11.01.2027 | 11.01.2027 | aus TOOL-12: für das Format `timecode.format_ms` und `manifest.Segment` nutzen; aus TOOL-16: absolute Zeiten werden nicht gespeichert, sondern über `Segment.to_absolute_ms` berechnet; Zeiten knapp hinter dem WAV-Ende hier behandeln |
-| TOOL-67 | Narrata-Kanal + Datei-Fallback | 1 | 11.01.2027 | 12.01.2027 | braucht IOA-1215; aus TOOL-6: `.env.example` anlegen, sobald das Narrata-Token die erste Variable ist; aus TOOL-12: Rohdatei unter `work/<session>/narrata/transcription-context.json`, `transcript.narrata.read_session` liest daraus den Block `session`; Response-Form gegen die IOA-1215-Doku prüfen |
-| TOOL-38 | Teilnehmerwissen | 0.5 | 12.01.2027 | 12.01.2027 |  |
-| TOOL-39 | Glossarbegriffe | 0.5 | 14.01.2027 | 14.01.2027 |  |
-| TOOL-41 | Relevanzregel + Snapshot | 1 | 14.01.2027 | 18.01.2027 | aus TOOL-16: sobald der Snapshot eine ID hat, gehört sie in den `asr`-Block (Formatversion erhöhen); aus TOOL-76: `num_speakers` aus dem Snapshot statt der CLI-Option `--num-speakers` |
-| TOOL-42 | Validator + Diagnose | 0.5 | 18.01.2027 | 18.01.2027 |  |
-| TOOL-43 | Wissensschnittstelle | 1 | 19.01.2027 | 19.01.2027 | aus TOOL-15: Keywords aus der Wissensschnittstelle statt `()` an `transcribe_segment(keywords=…)`, die CLI übergibt heute `()`; das AK „Keyword-Hinweise übergeben“ aus TOOL-15 liegt hier |
-| TOOL-44 | Keyword-Biasing + Review-Signal | 1 | 21.01.2027 | 21.01.2027 | aus TOOL-62: Hotwords nur mit large-v3-turbo, höchstens 223 Tokens, wichtigste Begriffe nach vorne; Wirkung auf die WER unbelegt; aus TOOL-15: Keywords erreichen das Backend über `transcribe_segment(keywords=…)` |
-| TOOL-40 | Fehlvarianten (leer-lauffähig) + Vorschlagsliste | 0.5 | 25.01.2027 | 25.01.2027 |  |
+| IOA-1251 | Langlebiger, gescopter Pipeline-Token | 1.5 | 11.01.2027 | 12.01.2027 | aus IOA-1215: GM-erzeugter Token nur für `transcription-context`, widerrufbar unter `/auth/sessions`; vor TOOL-67, damit der Kanal und `.env.example` gleich gegen den endgültigen Token gebaut werden |
+| TOOL-67 | Narrata-Kanal + Datei-Fallback | 1 | 14.01.2027 | 14.01.2027 | IOA-1215 erledigt, Endpoint und Contract 1.0 in ios-archiv `docs/transcripts.md`; Token aus IOA-1251 (bis dahin 24-h-Login-Token); aus TOOL-6: `.env.example` anlegen, sobald das Narrata-Token die erste Variable ist; aus TOOL-12: Rohdatei unter `work/<session>/narrata/transcription-context.json`, `transcript.narrata.read_session` liest daraus den Block `session`; Response-Form gegen die IOA-1215-Doku prüfen |
+| TOOL-38 | Teilnehmerwissen | 0.5 | 18.01.2027 | 18.01.2027 |  |
+| TOOL-39 | Glossarbegriffe | 0.5 | 18.01.2027 | 18.01.2027 |  |
+| TOOL-41 | Relevanzregel + Snapshot | 1 | 19.01.2027 | 19.01.2027 | aus TOOL-16: sobald der Snapshot eine ID hat, gehört sie in den `asr`-Block (Formatversion erhöhen); aus TOOL-76: `num_speakers` aus dem Snapshot statt der CLI-Option `--num-speakers` |
+| TOOL-42 | Validator + Diagnose | 0.5 | 21.01.2027 | 21.01.2027 |  |
+| TOOL-43 | Wissensschnittstelle | 1 | 21.01.2027 | 25.01.2027 | aus TOOL-15: Keywords aus der Wissensschnittstelle statt `()` an `transcribe_segment(keywords=…)`, die CLI übergibt heute `()`; das AK „Keyword-Hinweise übergeben“ aus TOOL-15 liegt hier |
+| TOOL-44 | Keyword-Biasing + Review-Signal | 1 | 25.01.2027 | 26.01.2027 | aus TOOL-62: Hotwords nur mit large-v3-turbo, höchstens 223 Tokens, wichtigste Begriffe nach vorne; Wirkung auf die WER unbelegt; aus TOOL-15: Keywords erreichen das Backend über `transcribe_segment(keywords=…)` |
+| TOOL-40 | Fehlvarianten (leer-lauffähig) + Vorschlagsliste | 0.5 | 26.01.2027 | 26.01.2027 |  |
 
 ### Phase 3 — Review, Sprecherzuordnung, Export
 
@@ -106,19 +107,19 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| TOOL-35 | Konfidenz-/Unsicherheitsregeln kalibrieren | 1.5 | 25.01.2027 | 26.01.2027 | Stichprobe aus Phase 1 wiederverwenden; aus TOOL-62: AUC 0,79–0,82, unsicherste 30 % enthalten 62–71 % der falschen Wörter, Auslassungen unsichtbar, Mundart verdreifacht die Fehlerquote |
-| TOOL-36 | Review-Kandidaten | 1 | 28.01.2027 | 28.01.2027 |  |
-| TOOL-46 | Review-Datenmodell | 0.5 | 01.02.2027 | 01.02.2027 |  |
-| TOOL-47 | Review-CSV | 0.5 | 01.02.2027 | 01.02.2027 |  |
-| TOOL-48 | CSV-Reimport | 0.5 | 02.02.2027 | 02.02.2027 |  |
-| TOOL-68 | Sprecherzuordnung manuell | 1 | 02.02.2027 | 04.02.2027 | braucht TOOL-76; aus TOOL-20: 1:1-Zuordnung von 4 Labels zu Personen, NSC-Stimmen ohne eigenes Label; aus TOOL-76: Labels gelten nur pro Segment, über mehrere Aufnahmen einer Session zusammenführen |
-| TOOL-49 | Arbeitsfassung | 1 | 04.02.2027 | 08.02.2027 |  |
-| TOOL-50 | Markierungskonvention | 0.5 | 08.02.2027 | 08.02.2027 |  |
-| TOOL-53 | Abschlussbericht | 0.5 | 09.02.2027 | 09.02.2027 | vor TOOL-69: liefert `stats` für den Export |
-| TOOL-69 | JSON-Export Contract v1 | 1 | 09.02.2027 | 11.02.2027 | gegen IOA-1214-Validator |
-| TOOL-51 | TXT-Rendering | 0.5 | 11.02.2027 | 11.02.2027 |  |
-| TOOL-52 | DOCX-Rendering | 0.5 | 15.02.2027 | 15.02.2027 |  |
-| IOA-1218 | Storage + idempotenter Import | 2 | 15.02.2027 | 18.02.2027 | erst gegen Fixture, dann gegen echten TOOL-69-Export |
+| TOOL-35 | Konfidenz-/Unsicherheitsregeln kalibrieren | 1.5 | 28.01.2027 | 01.02.2027 | Stichprobe aus Phase 1 wiederverwenden; aus TOOL-62: AUC 0,79–0,82, unsicherste 30 % enthalten 62–71 % der falschen Wörter, Auslassungen unsichtbar, Mundart verdreifacht die Fehlerquote |
+| TOOL-36 | Review-Kandidaten | 1 | 01.02.2027 | 02.02.2027 |  |
+| TOOL-46 | Review-Datenmodell | 0.5 | 02.02.2027 | 02.02.2027 |  |
+| TOOL-47 | Review-CSV | 0.5 | 04.02.2027 | 04.02.2027 |  |
+| TOOL-48 | CSV-Reimport | 0.5 | 04.02.2027 | 04.02.2027 |  |
+| TOOL-68 | Sprecherzuordnung manuell | 1 | 08.02.2027 | 08.02.2027 | braucht TOOL-76; aus TOOL-20: 1:1-Zuordnung von 4 Labels zu Personen, NSC-Stimmen ohne eigenes Label; aus TOOL-76: Labels gelten nur pro Segment, über mehrere Aufnahmen einer Session zusammenführen |
+| TOOL-49 | Arbeitsfassung | 1 | 09.02.2027 | 09.02.2027 |  |
+| TOOL-50 | Markierungskonvention | 0.5 | 11.02.2027 | 11.02.2027 |  |
+| TOOL-53 | Abschlussbericht | 0.5 | 11.02.2027 | 11.02.2027 | vor TOOL-69: liefert `stats` für den Export |
+| TOOL-69 | JSON-Export Contract v1 | 1 | 15.02.2027 | 15.02.2027 | gegen IOA-1214-Validator |
+| TOOL-51 | TXT-Rendering | 0.5 | 16.02.2027 | 16.02.2027 |  |
+| TOOL-52 | DOCX-Rendering | 0.5 | 16.02.2027 | 16.02.2027 |  |
+| IOA-1218 | Storage + idempotenter Import | 2 | 18.02.2027 | 22.02.2027 | erst gegen Fixture, dann gegen echten TOOL-69-Export |
 
 ### Phase 4 — End-to-End-Pilot
 
@@ -126,13 +127,14 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| TOOL-56 | Preflight | 0.5 | 18.02.2027 | 18.02.2027 | aus TOOL-9: `transcript doctor` ist der Ausgangspunkt des Gesamt-Preflights |
-| TOOL-55 | E2E-CLI mit Halt an manuellen Schritten | 1 | 22.02.2027 | 22.02.2027 | aus TOOL-10: `transcript extract` ist der erste Schritt des E2E-Befehls |
-| TOOL-57 | Pipeline-Status + Resume | 1 | 23.02.2027 | 23.02.2027 |  |
-| TOOL-58 | Erste reale Session komplett (inkl. Review- und Zuordnungszeit) | 2 | 25.02.2027 | 01.03.2027 | Export → Fixture für IOA-1218 |
-| TOOL-59 | Laufzeit/Ressourcen/Aufwand auswerten | 0.5 | 02.03.2027 | 02.03.2027 |  |
-| TOOL-61 | E2E-Workflow dokumentieren | 0.5 | 02.03.2027 | 02.03.2027 |  |
-| TOOL-60 | V0.1 bewerten, Entscheidungen, V0.2-Backlog | 1 | 04.03.2027 | 04.03.2027 | Go/No-Go für Phase 6 |
+| IOA-1250 | Self-Service-Opt-in und Widerruf | 2 | 23.02.2027 | 25.02.2027 | aus IOA-1216: Opt-in-Schalter in der UI, `DELETE /api/auth/me/transcript-passages` mit Vorschau, Option im Konto-Löschdialog; braucht IOA-1218; vor TOOL-58, damit der Widerrufsweg steht, bevor echte Passagen in Narrata liegen |
+| TOOL-56 | Preflight | 0.5 | 01.03.2027 | 01.03.2027 | aus TOOL-9: `transcript doctor` ist der Ausgangspunkt des Gesamt-Preflights |
+| TOOL-55 | E2E-CLI mit Halt an manuellen Schritten | 1 | 01.03.2027 | 02.03.2027 | aus TOOL-10: `transcript extract` ist der erste Schritt des E2E-Befehls |
+| TOOL-57 | Pipeline-Status + Resume | 1 | 02.03.2027 | 04.03.2027 |  |
+| TOOL-58 | Erste reale Session komplett (inkl. Review- und Zuordnungszeit) | 2 | 04.03.2027 | 09.03.2027 | Export → Fixture für IOA-1218 |
+| TOOL-59 | Laufzeit/Ressourcen/Aufwand auswerten | 0.5 | 09.03.2027 | 09.03.2027 |  |
+| TOOL-61 | E2E-Workflow dokumentieren | 0.5 | 11.03.2027 | 11.03.2027 |  |
+| TOOL-60 | V0.1 bewerten, Entscheidungen, V0.2-Backlog | 1 | 11.03.2027 | 15.03.2027 | Go/No-Go für Phase 6 |
 
 ### Phase 5 — Narrata-Oberflächen
 
@@ -140,10 +142,10 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| IOA-1220 | Volltextsuche | 1.5 | 08.03.2027 | 09.03.2027 | Voraussetzung für IOA-1223 |
-| IOA-1223 | Chat + MCP | 1.5 | 09.03.2027 | 11.03.2027 | Kernziel: der KI-Assistent antwortet der Spielleitung aus dem Transkript |
-| IOA-1219 | Lese-UI am Session-Detail | 3 | 15.03.2027 | 18.03.2027 | Mockup vor Code |
-| IOA-1221 | Passage-Links | 2 | 22.03.2027 | 23.03.2027 |  |
+| IOA-1220 | Volltextsuche | 1.5 | 15.03.2027 | 16.03.2027 | Voraussetzung für IOA-1223 |
+| IOA-1223 | Chat + MCP | 1.5 | 18.03.2027 | 22.03.2027 | Kernziel: der KI-Assistent antwortet der Spielleitung aus dem Transkript |
+| IOA-1219 | Lese-UI am Session-Detail | 3 | 22.03.2027 | 29.03.2027 | Mockup vor Code |
+| IOA-1221 | Passage-Links | 2 | 29.03.2027 | 01.04.2027 |  |
 
 ### Phase 6 — IT/OT-Klassifikation
 
@@ -151,12 +153,12 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| TOOL-70 | Spike: lokales LLM an Goldstandard, Nutzen 2. Durchlauf | 2 | 25.03.2027 | 29.03.2027 | Labeln kostet die halbe Zeit |
-| TOOL-71 | IT/OT-Datenmodell, Contract-Bump | 1 | 30.03.2027 | 30.03.2027 |  |
-| TOOL-72 | Erstdurchlauf | 1.5 | 01.04.2027 | 05.04.2027 |  |
-| TOOL-73 | Zweitdurchlauf + Metrik | 1.5 | 05.04.2027 | 06.04.2027 | entfällt, wenn TOOL-70 keinen Mehrwert misst |
-| TOOL-74 | IT/OT-Review-Kandidaten | 0.5 | 08.04.2027 | 08.04.2027 |  |
-| TOOL-75 | Sessionstatistik | 1 | 08.04.2027 | 12.04.2027 |  |
+| TOOL-70 | Spike: lokales LLM an Goldstandard, Nutzen 2. Durchlauf | 2 | 01.04.2027 | 06.04.2027 | Labeln kostet die halbe Zeit |
+| TOOL-71 | IT/OT-Datenmodell, Contract-Bump | 1 | 06.04.2027 | 08.04.2027 |  |
+| TOOL-72 | Erstdurchlauf | 1.5 | 08.04.2027 | 12.04.2027 |  |
+| TOOL-73 | Zweitdurchlauf + Metrik | 1.5 | 13.04.2027 | 15.04.2027 | entfällt, wenn TOOL-70 keinen Mehrwert misst |
+| TOOL-74 | IT/OT-Review-Kandidaten | 0.5 | 15.04.2027 | 15.04.2027 |  |
+| TOOL-75 | Sessionstatistik | 1 | 19.04.2027 | 19.04.2027 |  |
 
 ### Phase 7 — Extraktion und Analytik in Narrata
 
@@ -164,8 +166,8 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| IOA-1222 | Transkript als Extraktionsquelle, polymorphe Provenienz | 3 | 12.04.2027 | 19.04.2027 | größte Migration des Epics |
-| IOA-1224 | IT/OT-Flächen + Statistik | 2 | 19.04.2027 | 22.04.2027 |  |
+| IOA-1222 | Transkript als Extraktionsquelle, polymorphe Provenienz | 3 | 20.04.2027 | 26.04.2027 | größte Migration des Epics |
+| IOA-1224 | IT/OT-Flächen + Statistik | 2 | 27.04.2027 | 29.04.2027 |  |
 
 ## Pflege
 
