@@ -57,7 +57,34 @@ Beide finden ohne Vorgabe genau vier Labels. Mit `num_speakers 4` sind die Ergeb
 - **Übersprechen:** pyannote markiert 1,5 % des Abschnitts als Overlap, NeMo kann Overlap nicht abbilden. Die Referenz kennzeichnet Übersprechen nicht, daher ist offen, ob die 1,5 % stimmen.
 - **Wechsel:** Bei schnellen Wechseln liegen beide eher daneben. Erst mit ±1 s findet NeMo drei Viertel der Wechsel. Die Wechsel in der Referenz sind dicht (46 in 3 min, also einer alle 4 s).
 
-*Volle Aufnahme und Stichprobe folgen mit Chunk 3.*
+### Volle Aufnahme (5:00:00)
+
+| Kandidat | Ergebnis | Laufzeit | Spitzen-RAM | Spitzen-VRAM |
+| --- | --- | --- | --- | --- |
+| pyannote | 4 Labels, Anteile 36/24/21/19 %, 4.985 Turns, Median 1,2 s, Sprache 68 % der Aufnahme, Overlap 4,2 % der Sprache | 4:13 min (71×) | 13,8 GB | 3,8 GB |
+| NeMo | Abbruch durch das OOM-Kill des Kernels im Clustering, bei 15 GB und bei 25 GB RAM | — | über 25 GB | — |
+
+- **pyannote bleibt über fünf Stunden bei vier Labels.** Kein Label liegt unter 1 % Sprechzeit, und alle vier sind in jedem der zehn Halbstunden-Fenster mit mindestens 30 s aktiv. Die Labels zerfallen also nicht über die Zeit. `num_speakers 4` ändert nichts, das Modell findet die Zahl selbst.
+- **NeMo ist für ganze Sitzungen nicht tragfähig.** VAD und Embeddings auf allen sechs Skalen kommen mit 2,5 GB aus. Erst das Clustering wächst über 25 GB, trotz Long-Form-Clustering, und auch mit halbierter Chunk-Größe (5.000 statt 10.000 Embeddings) bei 15 GB. In Blöcken liefe es zwar, aber jeder Block vergibt eigene Labels, und genau die Stabilität über die Sitzung ginge verloren.
+- **RAM bei pyannote:** 13,8 GB auf fünf Stunden. Mit dem Standard-Limit von WSL (15 GB) ist das knapp. Whisper braucht nach TOOL-62 bis 10,5 GB, deshalb dürfen beide nicht gleichzeitig laufen.
+
+### Stichprobe (30 Segmente, pyannote)
+
+Pro 10-Minuten-Fenster ein zufälliges Whisper-Segment von 2–10 s, also unabhängig vom Diarisierer und über die ganze Sitzung verteilt. Die Projektverantwortliche hat alle 30 blind angehört; die Labels kannte sie dabei nicht.
+
+| | |
+| --- | --- |
+| gewertet | 24 von 30; 6 (20 %) waren Übersprechen oder nicht eindeutig einer Person zuzuordnen |
+| Personen in der Stichprobe | alle 4 |
+| Labels in der Stichprobe | 4, jedes Label gehört mehrheitlich genau einer Person |
+| Fehlzuordnungen | 2 von 24 (8 %) |
+| Labels pro Person | Spielleitung 2, eine mitspielende Person 2, die anderen beiden je 1 |
+| Anteil der Segmente auf dem eigenen Label | 8/9, 5/6, 5/5, 4/4 |
+| NSC-Stimmen der Spielleitung | 4 Segmente; 3 auf ihrem eigenen Label, 1 auf dem Label einer mitspielenden Person |
+
+Die beiden Fehler sind spiegelbildlich: ein NSC-Segment der Spielleitung landet auf dem Label einer mitspielenden Person, und ein Segment dieser Person auf dem Label der Spielleitung. Ein eigenes Label für NSC-Stimmen entsteht nicht. Die Stichprobe ist klein, ±6 Prozentpunkte sind bei 24 Segmenten Rauschen.
+
+**Label-Stabilität als Zahl:** 1 Label pro realer Person, 4 Labels für 4 Personen über fünf Stunden, 8 % Fehlzuordnung in der Stichprobe.
 
 ## Entscheidung
 
@@ -65,4 +92,6 @@ Beide finden ohne Vorgabe genau vier Labels. Mit `num_speakers 4` sind die Ergeb
 
 ## Offen
 
-- Die Handreferenz enthält nur 2 der 4 Personen. Label-Stabilität über die Sitzung und NSC-Stimmen misst erst die Stichprobe über die volle Aufnahme.
+- Die Handreferenz enthält nur 2 der 4 Personen; Label-Stabilität und NSC-Stimmen beruhen allein auf der Stichprobe mit 24 gewerteten Segmenten.
+- Übersprechen: Jedes fünfte Segment der Stichprobe war nicht eindeutig einer Person zuzuordnen. Ob pyannotes Overlap-Turns (4,2 % der Sprache) diese Stellen treffen, ist nicht gemessen.
+- Nur eine Sitzung einer Gruppe ist getestet. Andere Gruppen, Mikrofonaufstellungen oder mehr Personen können anders ausfallen.
