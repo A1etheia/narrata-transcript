@@ -65,6 +65,13 @@ class SessionPathsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             paths.segment_wav(0)
         self.assertEqual(paths.audio_metadata.parent, paths.audio_dir)
+        self.assertEqual(
+            paths.manifest, Path("/data/work/beispielgruppe/042/manifest.json")
+        )
+        self.assertEqual(
+            paths.narrata_context,
+            Path("/data/work/beispielgruppe/042/narrata/transcription-context.json"),
+        )
 
     def test_equal_sessions_resolve_to_the_same_directory(self) -> None:
         first = SessionPaths(SessionKey.parse("beispielgruppe/42"), Path("/data"))

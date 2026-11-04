@@ -78,5 +78,14 @@ class SessionPaths:
         return self.audio_dir / "audio.json"
 
     @property
+    def manifest(self) -> Path:
+        return self.work_dir / "manifest.json"
+
+    @property
+    def narrata_context(self) -> Path:
+        """Raw transcription-context response from Narrata (IOA-1215), see TOOL-67."""
+        return self.work_dir / "narrata" / "transcription-context.json"
+
+    @property
     def debug_log(self) -> Path:
         return self.work_dir / "debug.log"

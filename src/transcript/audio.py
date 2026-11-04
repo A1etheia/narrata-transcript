@@ -240,7 +240,7 @@ def _extract_one(
 
     # Hashed right after ffmpeg read the file, while it is likely still cached.
     sha256 = _sha256(info.path)
-    frames, sample_rate = _wav_frames(tmp_wav)
+    frames, sample_rate = wav_frames(tmp_wav)
     duration = frames / sample_rate
     if abs(duration - expected) > _DURATION_TOLERANCE_SECONDS:
         raise AudioError(
@@ -305,7 +305,7 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _wav_frames(path: Path) -> tuple[int, int]:
+def wav_frames(path: Path) -> tuple[int, int]:
     """Frame count and sample rate from the WAV header; frames are the exact length."""
     try:
         with wave.open(str(path), "rb") as wav:
