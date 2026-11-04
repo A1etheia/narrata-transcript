@@ -36,7 +36,7 @@ P = [
     ("Phase 1 — ASR-Spike und Backend-Entscheidung",
      "M1 — Backend gewählt, Diarisierung entschieden, TOOL-11/33 entschieden, Export-Endpoint live. Reflexionspunkt: Epic TOOL-8 wird hier dimensioniert.", [
         ("TOOL-62", "ASR-Kandidaten an realer Session (inkl. Hand-Check, Long-Audio-Frage)", 3.0, "erledigt: `docs/spikes/TOOL-62-asr-vergleich.md`; Whisper large-v3-turbo, Fallback Parakeet, keine eigene Segmentierung; vor IOA-1216/IOA-1214 vorgezogen (02.–04.11.2026)"),
-        ("TOOL-20", "Diarisierung / Label-Stabilität", 2.0, "gleicher Ausschnitt wie TOOL-62; aus TOOL-62: Handreferenz mit Sprecherkennung pro Zeile als erste Diarisierungs-Referenz, Sprecherzuordnung von Granite Plus ungetestet"),
+        ("TOOL-20", "Diarisierung / Label-Stabilität", 2.0, "erledigt: `docs/spikes/TOOL-20-diarisierung.md`; separate Diarisierung mit pyannote community-1, 4 stabile Labels für 4 Personen über 5 h, 8 % Fehlzuordnung in der Stichprobe; NeMo braucht auf 5 h über 25 GB RAM; Integration in TOOL-76"),
         ("IOA-1215", "Transcription-context Export-Endpoint", 2.0, "während ASR-Läufe laufen"),
         ("IOA-1217", "asr_variants-Alias-Kategorie", 1.5, ""),
     ]),
@@ -46,8 +46,9 @@ P = [
         ("TOOL-10", "Formate erkennen, Audiospur extrahieren", 1.0, "aus TOOL-5: Tests mit Audio erzeugen es zur Laufzeit synthetisch, Audio-Fixtures sind nicht vorgesehen"),
         ("TOOL-12", "Session-Manifest, absolute Zeiten", 0.5, "aus TOOL-66: Manifest vermerkt die mündliche Zustimmung pro Sitzung; aus TOOL-4: Manifest liegt unter `work/<gruppe>/<ordinal>/manifest.json`, beim Lesen `play_session_id` prüfen, weil Ordinale neu vergeben werden können; aus TOOL-62: `input/<gruppe>/ordinal/` enthält viele Sitzungen ohne gültiges Ordinal, vor dem ersten Manifest pro Sitzung einsortieren"),
         ("TOOL-63", "Backend-Schnittstelle, Capabilities, Fake-Backend", 1.0, ""),
-        ("TOOL-16", "Internes Referenztranskript-Format", 1.0, "vor TOOL-64: der Adapter schreibt in dieses Format"),
-        ("TOOL-64", "Lokales V0.1-Backend", 2.0, "aus TOOL-6: Transkripttext im Debug-Modus nur über `transcript_logger` schreiben; aus TOOL-62: Whisper large-v3-turbo über faster-whisper, RAM bis 10,5 GB auf 5 h, Lizenz der CTranslate2-Konvertierung prüfen, `scripts/spike/` ablösen"),
+        ("TOOL-16", "Internes Referenztranskript-Format", 1.0, "vor TOOL-64: der Adapter schreibt in dieses Format; aus TOOL-20: optionales Sprecher-Label pro Wort (fehlt bei 6–14 % der Wörter), Diarisierungs-Metadaten getrennt von ASR-Metadaten"),
+        ("TOOL-64", "Lokales V0.1-Backend", 2.0, "aus TOOL-6: Transkripttext im Debug-Modus nur über `transcript_logger` schreiben; aus TOOL-62: Whisper large-v3-turbo über faster-whisper, RAM bis 10,5 GB auf 5 h, Lizenz der CTranslate2-Konvertierung prüfen, `scripts/spike/` ablösen; aus TOOL-20: nicht parallel zu pyannote (bis 13,8 GB), Wortzeiten bleiben an"),
+        ("TOOL-76", "Diarisierung mit pyannote integrieren", 1.5, "aus TOOL-20: Label der exklusiven Turns an der Wortmitte, Wörter ohne Turn bleiben ohne Label; Modell gated, einmal mit Token laden, danach offline"),
         ("TOOL-15", "Einzelsegment transkribieren", 0.5, ""),
         ("TOOL-17", "Ganze Session, Resume", 1.0, ""),
         ("TOOL-18", "Fehlerkategorien, Retry, Force", 1.0, ""),
@@ -68,7 +69,7 @@ P = [
         ("TOOL-46", "Review-Datenmodell", 0.5, ""),
         ("TOOL-47", "Review-CSV", 0.5, ""),
         ("TOOL-48", "CSV-Reimport", 0.5, ""),
-        ("TOOL-68", "Sprecherzuordnung manuell", 1.0, ""),
+        ("TOOL-68", "Sprecherzuordnung manuell", 1.0, "braucht TOOL-76; aus TOOL-20: 1:1-Zuordnung von 4 Labels zu Personen, NSC-Stimmen ohne eigenes Label"),
         ("TOOL-49", "Arbeitsfassung", 1.0, ""),
         ("TOOL-50", "Markierungskonvention", 0.5, ""),
         ("TOOL-53", "Abschlussbericht", 0.5, "vor TOOL-69: liefert `stats` für den Export"),
@@ -178,8 +179,8 @@ def main() -> None:
     o.append("| Nach | Frage | Ticket, das entscheidet | Was sich ändert |")
     o.append("|---|---|---|---|")
     o.append("| M1 | Braucht das Backend externe Segmentierung? | TOOL-62 | Beantwortet: nein, TOOL-11 und TOOL-33 verworfen; Phase 2 −2 Tage |")
-    o.append("| M1 | Liefert Diarisierung stabile Labels? | TOOL-20 | Falls nein: TOOL-68 wird aufwendiger, TOOL-65 rückt nach hinten |")
-    o.append("| M1 | Liefert das ASR-Backend die Sprecher-Labels selbst? | TOOL-20 | Falls separate Diarisierung gewählt wird: Für ihre Integration gibt es noch kein Ticket und keinen Aufwand; Folgeticket anlegen, M2 verschiebt sich |")
+    o.append("| M1 | Liefert Diarisierung stabile Labels? | TOOL-20 | Beantwortet: ja, pyannote hält 4 Labels für 4 Personen über 5 h, 8 % Fehlzuordnung in der Stichprobe; TOOL-68 bleibt bei 1 Tag |")
+    o.append("| M1 | Liefert das ASR-Backend die Sprecher-Labels selbst? | TOOL-20 | Beantwortet: nein, separate Diarisierung mit pyannote; Integration als TOOL-76 (1,5 Tage) in Phase 2, M2 verschiebt sich entsprechend |")
     o.append("| M3 | Trägt der Contract den Import ohne Rückfragen? | IOA-1218 gegen TOOL-69 | Contract-Minor-Bump vor Phase 4, nicht danach |")
     o.append("| M4 | Trägt die Kernhypothese (Konfidenz grenzt Review ein)? Aufwand pro Abend alltagstauglich? | TOOL-60 | Go/No-Go Phase 6; Review-Kanal CSV vs. Narrata-UI (→ ggf. neues IOA-Ticket); TOOL-14 |")
     o.append("| Phase 6, Tag 2 | Reicht ein lokales LLM für IT/OT? Bringt der zweite Durchlauf messbar etwas? | TOOL-70 | TOOL-73 bleibt oder entfällt; ggf. Remote-Option |")
