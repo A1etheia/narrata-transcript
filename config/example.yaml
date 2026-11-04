@@ -9,7 +9,9 @@ paths:
   # Ein relativer Pfad gilt ab dem aktuellen Arbeitsverzeichnis.
   root: .
 
-# Platzhalter: Die Werte entscheidet TOOL-62, null heißt „nicht festgelegt“.
+# Bleibt null: Das V0.1-Backend (Whisper large-v3-turbo) verarbeitet ganze Aufnahmen
+# ohne eigene Segmentierung, siehe docs/spikes/TOOL-62-asr-vergleich.md.
+# Werte braucht nur ein Backend, das in Blöcken arbeiten muss.
 segmentation:
   length_seconds: null
   overlap_seconds: null
