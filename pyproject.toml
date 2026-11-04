@@ -17,6 +17,7 @@ whisper = [
     "nvidia-cublas-cu12",
     "nvidia-cudnn-cu12<9",
 ]
+diarization = ["pyannote.audio>=4.0.7,<4.1"]
 
 [project.scripts]
 transcript = "transcript.__main__:main"

@@ -61,6 +61,8 @@ class LoadConfigTest(unittest.TestCase):
             asr_device="cuda",
             asr_compute_type="int8_float16",
             asr_beam_size=3,
+            diarization_model="/models/pyannote",
+            diarization_device="cpu",
         )
 
         self.assertEqual(self.load(format_config(config)), config)
@@ -136,6 +138,37 @@ class LoadConfigTest(unittest.TestCase):
                     MINIMAL + f"asr:\n  {text}\n", f"invalid value for {key}"
                 )
 
+    def test_diarization_defaults_to_pyannote_community_on_any_device(self) -> None:
+        config = self.load(MINIMAL)
+
+        self.assertEqual(
+            (config.diarization_model, config.diarization_device),
+            ("pyannote/speaker-diarization-community-1", "auto"),
+        )
+
+    def test_diarization_values_are_read(self) -> None:
+        config = self.load(
+            MINIMAL + "diarization:\n  model: /models/pyannote\n  device: cuda\n"
+        )
+
+        self.assertEqual(
+            (config.diarization_model, config.diarization_device),
+            ("/models/pyannote", "cuda"),
+        )
+
+    def test_diarization_values_are_validated(self) -> None:
+        for text, key in (
+            ("model: ''", "diarization.model"),
+            ("model: 3", "diarization.model"),
+            ("device: gpu", "diarization.device"),
+            ("device: null", "diarization.device"),
+        ):
+            with self.subTest(text=text):
+                self.assert_rejected(
+                    MINIMAL + f"diarization:\n  {text}\n",
+                    f"invalid value for {key}",
+                )
+
     def test_session_paths_use_the_configured_root(self) -> None:
         paths = self.load(MINIMAL).session_paths(SessionKey("beispielgruppe", 42))
 
@@ -204,6 +237,10 @@ class LoadConfigTest(unittest.TestCase):
             (MINIMAL + "segmentation:\n  length: 1\n", "segmentation.length"),
             (MINIMAL + "audio:\n  codec: flac\n", "audio.codec"),
             (MINIMAL + "asr:\n  vad: false\n", "asr.vad"),
+            (
+                MINIMAL + "diarization:\n  num_speakers: 4\n",
+                "diarization.num_speakers",
+            ),
         ):
             with self.subTest(key=key):
                 self.assert_rejected(text, f"unknown key: {key}")

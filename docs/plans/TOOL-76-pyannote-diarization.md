@@ -61,7 +61,7 @@ N/A, weil TOOL-76 nur interne Arbeitsdateien schreibt; der JSON-Export (TOOL-69)
 ### Chunk 1 — Extra und Konfiguration
 - Dateien: `pyproject.toml`, `src/transcript/config.py`, `config/example.yaml`, `tests/test_config.py`
 - Änderung: Extra `diarization`; Abschnitt `diarization` (`model`, `device`) in `load_config`/`format_config`; Beispielkonfiguration auf Deutsch kommentiert.
-- Verify: `scripts/check`; `.venv/bin/pip install -e '.[whisper,diarization]'` ohne Konflikt, danach `TRANSCRIPT_WHISPER_SMOKE=1 … -m unittest tests.test_whisper_smoke` grün und `python -c "import pyannote.audio, torch; print(torch.cuda.is_available())"` → `True`
+- Verify: `scripts/check`; `.venv/bin/pip install -e '.[whisper,diarization]'` ohne Konflikt, danach `TRANSCRIPT_WHISPER_SMOKE=1 LD_LIBRARY_PATH=… .venv/bin/python -m unittest discover -s tests -p test_whisper_smoke.py` grün und `python -c "import pyannote.audio, torch; print(torch.cuda.is_available())"` → `True`
 - AC: Beide Extras laufen in einer venv; sonst Stopp und Umplanung.
 
 ### Chunk 2 — Generischer Kern
@@ -85,7 +85,7 @@ N/A, weil TOOL-76 nur interne Arbeitsdateien schreibt; der JSON-Export (TOOL-69)
 ### Chunk 5 — Opt-in-Smoke-Test Ende zu Ende
 - Dateien: `tests/test_diarization_smoke.py`
 - Änderung: Nur mit `TRANSCRIPT_DIARIZATION_SMOKE=1`, beiden Extras, beiden Modellen im Cache und ffmpeg mit `flite`: zwei erfundene Sätze mit zwei flite-Stimmen → Whisper → `write_reference` → `close()` → `diarize_session` → Wörter mit Label im Referenzformat.
-- Verify: `scripts/check` (übersprungen) und `TRANSCRIPT_DIARIZATION_SMOKE=1 LD_LIBRARY_PATH=… .venv/bin/python -m unittest tests.test_diarization_smoke`
+- Verify: `scripts/check` (übersprungen) und `TRANSCRIPT_DIARIZATION_SMOKE=1 LD_LIBRARY_PATH=… .venv/bin/python -m unittest discover -s tests -p test_diarization_smoke.py`
 - AC: Eine Session läuft von der Transkription bis zu Wörtern mit Sprecher-Label; zweiter Aufruf nutzt die gespeicherte Diarisierung.
 
 ### Chunk 6 — Doku
