@@ -16,5 +16,12 @@ segmentation:
   length_seconds: null
   overlap_seconds: null
 
+# Arbeitsformat der extrahierten Audiospur (immer WAV, 16 bit PCM).
+audio:
+  # Abtastrate in Hz; 16000 ist das, was Whisper und pyannote erwarten.
+  sample_rate: 16000
+  # 1 = mono, 2 = stereo.
+  channels: 1
+
 # Schreibt Transkripttext nach work/<gruppe>/<ordinal>/debug.log, nie auf die Konsole.
 debug: false

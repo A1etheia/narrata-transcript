@@ -11,9 +11,11 @@ import yaml
 from transcript.session import SessionKey, SessionPaths
 
 _LANGUAGE_PATTERN = re.compile(r"[a-z]{2}")
-_TOP_LEVEL_KEYS = {"language", "paths", "segmentation", "debug"}
+_TOP_LEVEL_KEYS = {"language", "paths", "segmentation", "audio", "debug"}
 _PATHS_KEYS = {"root"}
 _SEGMENTATION_KEYS = {"length_seconds", "overlap_seconds"}
+_AUDIO_KEYS = {"sample_rate", "channels"}
+_AUDIO_CHANNELS = (1, 2)
 
 
 class ConfigError(Exception):
@@ -27,6 +29,8 @@ class Config:
     debug: bool = False
     segment_length_seconds: float | None = None
     segment_overlap_seconds: float | None = None
+    audio_sample_rate: int = 16000
+    audio_channels: int = 1
 
     def session_paths(self, key: SessionKey) -> SessionPaths:
         return SessionPaths(key, self.root)
@@ -63,12 +67,22 @@ def load_config(path: Path) -> Config:
             "must be smaller than segmentation.length_seconds",
         )
 
+    audio = _section(path, data, "audio", _AUDIO_KEYS)
+    sample_rate = _positive_number(path, audio, "audio", "sample_rate", integer=True)
+    if sample_rate is None:
+        sample_rate = Config.audio_sample_rate
+    channels = audio.get("channels", Config.audio_channels)
+    if not _is_number(channels, int) or channels not in _AUDIO_CHANNELS:
+        raise _invalid(path, "audio.channels", "must be 1 or 2")
+
     return Config(
         language=language,
         root=Path(root),
         debug=debug,
         segment_length_seconds=length,
         segment_overlap_seconds=overlap,
+        audio_sample_rate=sample_rate,
+        audio_channels=channels,
     )
 
 
@@ -81,6 +95,10 @@ def format_config(config: Config) -> str:
             "segmentation": {
                 "length_seconds": config.segment_length_seconds,
                 "overlap_seconds": config.segment_overlap_seconds,
+            },
+            "audio": {
+                "sample_rate": config.audio_sample_rate,
+                "channels": config.audio_channels,
             },
             "debug": config.debug,
         },
@@ -128,15 +146,29 @@ def _reject_unknown_keys(
 
 
 def _positive_number(
-    path: Path, section: dict[str, Any], section_name: str, key: str
-) -> float | None:
+    path: Path,
+    section: dict[str, Any],
+    section_name: str,
+    key: str,
+    integer: bool = False,
+) -> Any:
     value = section.get(key)
     if value is None:
         return None
-    is_number = isinstance(value, (int, float)) and not isinstance(value, bool)
-    if not is_number or not 0 < value < math.inf:
-        raise _invalid(path, f"{section_name}.{key}", "must be a positive number")
+    types = int if integer else (int, float)
+    if not _is_number(value, types) or not 0 < value < math.inf:
+        rule = (
+            "must be a positive whole number"
+            if integer
+            else "must be a positive number"
+        )
+        raise _invalid(path, f"{section_name}.{key}", rule)
     return value
+
+
+def _is_number(value: Any, types: type | tuple[type, ...]) -> bool:
+    """YAML `true` is an int in Python; a number here never means a bool."""
+    return isinstance(value, types) and not isinstance(value, bool)
 
 
 def _missing(path: Path, key: str) -> ConfigError:

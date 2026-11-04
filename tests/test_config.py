@@ -55,9 +55,35 @@ class LoadConfigTest(unittest.TestCase):
             debug=True,
             segment_length_seconds=600,
             segment_overlap_seconds=2.5,
+            audio_sample_rate=22050,
+            audio_channels=2,
         )
 
         self.assertEqual(self.load(format_config(config)), config)
+
+    def test_audio_defaults_to_16_khz_mono(self) -> None:
+        config = self.load(MINIMAL)
+
+        self.assertEqual((config.audio_sample_rate, config.audio_channels), (16000, 1))
+
+    def test_audio_values_are_read(self) -> None:
+        config = self.load(MINIMAL + "audio:\n  sample_rate: 22050\n  channels: 2\n")
+
+        self.assertEqual((config.audio_sample_rate, config.audio_channels), (22050, 2))
+
+    def test_audio_values_are_validated(self) -> None:
+        for text, key in (
+            ("sample_rate: 0", "audio.sample_rate"),
+            ("sample_rate: 16000.5", "audio.sample_rate"),
+            ("sample_rate: true", "audio.sample_rate"),
+            ("channels: 3", "audio.channels"),
+            ("channels: 0", "audio.channels"),
+            ("channels: '1'", "audio.channels"),
+        ):
+            with self.subTest(text=text):
+                self.assert_rejected(
+                    MINIMAL + f"audio:\n  {text}\n", f"invalid value for {key}"
+                )
 
     def test_session_paths_use_the_configured_root(self) -> None:
         paths = self.load(MINIMAL).session_paths(SessionKey("beispielgruppe", 42))
@@ -125,6 +151,7 @@ class LoadConfigTest(unittest.TestCase):
             (MINIMAL + "debgu: true\n", "debgu"),
             ("language: de\npaths:\n  root: /data\n  out: /x\n", "paths.out"),
             (MINIMAL + "segmentation:\n  length: 1\n", "segmentation.length"),
+            (MINIMAL + "audio:\n  codec: flac\n", "audio.codec"),
         ):
             with self.subTest(key=key):
                 self.assert_rejected(text, f"unknown key: {key}")
