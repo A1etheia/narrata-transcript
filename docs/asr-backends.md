@@ -75,7 +75,7 @@ Jedes Backend deklariert `Capabilities`. `capabilities.to_dict()` liefert sie al
 
 ## Abbildung der Kandidaten
 
-Grundlage sind die Spike-Runner `scripts/spike/run_whisper.py` und `run_parakeet.py`. Den Whisper-Adapter baut TOOL-64. Parakeet ist der Fallback und zeigt, dass ein zweites Backend ohne Änderung der Schnittstelle passt.
+Grundlage sind die Spike-Runner `scripts/spike/run_whisper.py` und `run_parakeet.py`. Den Whisper-Adapter gibt es als `transcript.asr.whisper` (TOOL-64, siehe unten). Parakeet ist der Fallback und zeigt, dass ein zweites Backend ohne Änderung der Schnittstelle passt.
 
 | | faster-whisper (V0.1) | Parakeet TDT 0.6B v3 (NeMo) |
 | --- | --- | --- |
@@ -87,3 +87,34 @@ Grundlage sind die Spike-Runner `scripts/spike/run_whisper.py` und `run_parakeet
 | `devices` | `cpu`, `cuda` | `cuda` (im Spike nur so getestet) |
 | `max_audio_seconds` | `None`, 5 h am Stück | 300, braucht dann eigene Segmentierung (TOOL-11) |
 | `raw` | Segmente und Wörter aus `model.transcribe` | Hypothesen mit `timestamp["word"/"segment"]` |
+
+## Whisper-Adapter (V0.1)
+
+`WhisperBackend.from_config(config)` erzeugt das Backend aus dem Abschnitt `asr` der Konfiguration. Installation, Hardware und Lizenzen stehen im [README](../README.md#spracherkennung).
+
+```python
+from transcript.asr import TranscriptionRequest, opened, transcribe
+from transcript.asr.whisper import WhisperBackend
+
+backend = WhisperBackend.from_config(config)
+with opened(backend):
+    result = transcribe(backend, TranscriptionRequest(wav, language=config.language, keywords=hints))
+```
+
+- **Nur lokal.** Ein Modellname wird mit `local_files_only` aus dem Hugging-Face-Cache aufgelöst, ein Verzeichnis direkt genommen. Beides muss `model.bin` und `tokenizer.json` enthalten, sonst würde faster-whisper den Tokenizer nachladen. `info.model_version` ist die Revision des Cache-Snapshots, bei einem eigenen Verzeichnis `None`. `info.runtime_version` ist die Version von faster-whisper.
+- **Einstellungen.** `vad_filter`, `word_timestamps` und `condition_on_previous_text: false` sind fest (TOOL-62, Wortzeiten für TOOL-76). Konfigurierbar sind Modell, Gerät, `compute_type` und `beam_size`. Alles steht in `result.settings`.
+- **Hotwords.** Die Keywords des Requests gehen der Reihe nach in den Hotword-Prompt, solange er in 223 Tokens passt. Der erste Begriff, der nicht mehr passt, beendet die Liste. Die wichtigsten Begriffe gehören also nach vorne. `keywords_used` nennt genau die übergebenen Begriffe; die interne Kürzung von faster-whisper greift so nie.
+- **Normalform und Rohform.** Text von Passagen und Wörtern wird nur an den Rändern von Leerraum befreit. `raw` enthält `info` (Sprache, Dauer vor und nach VAD) und die Segmente von faster-whisper unverändert, mit Tokens und führenden Leerzeichen.
+- **`close()`** gibt das Modell frei, damit die Diarisierung danach den Speicher hat.
+
+| Ursache | Fehler |
+| --- | --- |
+| faster-whisper nicht installiert | `BackendUnavailableError`, Hinweis auf das Extra `whisper` |
+| Modell nicht im Cache, Verzeichnis unvollständig | `BackendUnavailableError`, Hinweis auf den Download |
+| `device: cuda` ohne GPU | `BackendUnavailableError` |
+| cuBLAS/cuDNN nicht ladbar | `BackendUnavailableError`, Hinweis auf `LD_LIBRARY_PATH` |
+| `out of memory` der Runtime, `MemoryError` | `ResourceError` |
+| Audio nicht dekodierbar (PyAV) | `AudioInputError` |
+| alles andere | `BackendRuntimeError` |
+
+Die Meldungen nennen Aktion, Gerät oder Audiodatei und den Exception-Typ. Die Meldung der Runtime wird nur auf diese Muster geprüft und nie übernommen.
