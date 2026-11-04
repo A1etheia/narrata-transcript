@@ -1,11 +1,26 @@
+import datetime
 import json
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 from typing import Any
 
+import transcript
 from transcript import jsonfile
+from transcript.asr import (
+    BackendResult,
+    Capabilities,
+    ResourceError,
+    ResultSegment,
+    ResultWord,
+    TranscriptionRequest,
+    opened,
+    transcribe,
+)
+from transcript.asr.fake import FAKE_INFO, FakeBackend
 from transcript.jsonfile import DataFileError
+from transcript.manifest import Manifest, Segment, SourceRecording
 from transcript.reference import (
     REFERENCE_FORMAT_VERSION,
     AsrInfo,
@@ -18,15 +33,44 @@ from transcript.reference import (
     ReferenceTranscript,
     SegmentRef,
     Word,
+    failed_reference,
+    from_backend_result,
     load_reference,
     majority_speaker,
     to_json,
+    write_reference,
 )
 from transcript.session import SessionKey, SessionPaths
 
 KEY = SessionKey("beispielgruppe", 42)
 PLAY_SESSION_ID = 4711  # made up; real ids never enter the repo
 SECRET = "Drachenhort"  # stands in for text that must not reach a message
+NOW = datetime.datetime(2026, 11, 4, 20, 0, tzinfo=datetime.timezone.utc)
+SEGMENT = Segment(
+    index=2,
+    file="segment-02.wav",
+    source=SourceRecording(
+        file="aufnahme 2.m4a",
+        size_bytes=1000,
+        sha256="ef" * 32,
+        container="mov,mp4,m4a,3gp,3g2,mj2",
+        audio_index=0,
+        stream_index=0,
+    ),
+    frames=160000,
+    start_ms=3_600_000,
+    end_ms=3_610_000,
+    overlap_before_ms=0,
+)
+MANIFEST = Manifest(
+    key=KEY,
+    play_session_id=PLAY_SESSION_ID,
+    session_date=datetime.date(2026, 11, 4),
+    consent=None,
+    sample_rate=16000,
+    channels=1,
+    segments=(SEGMENT,),
+)
 
 
 def minimal(**changes: Any) -> ReferenceTranscript:
@@ -206,6 +250,148 @@ class InvalidFileTest(ReferenceTestCase):
         data["passages"][1]["start_ms"] = -1
 
         self.assertIn("passage 2", self.assert_rejected(data))
+
+
+class AdapterTest(ReferenceTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.audio = self.paths.audio_dir / SEGMENT.file
+        self.audio.parent.mkdir(parents=True)
+        self.audio.touch()
+
+    def run_backend(self, backend: FakeBackend) -> BackendResult:
+        request = TranscriptionRequest(self.audio, language="de", keywords=(SECRET,))
+        with opened(backend):
+            return transcribe(backend, request)
+
+    def store_result(self, backend: FakeBackend) -> BackendResult:
+        result = self.run_backend(backend)
+        reference = from_backend_result(
+            result, backend, MANIFEST, SEGMENT, elapsed_ms=812, now=NOW
+        )
+        write_reference(self.paths, reference, result.raw)
+        return result
+
+    def test_backend_with_times_and_confidence(self) -> None:
+        answer = BackendResult(
+            info=FAKE_INFO,
+            language="de",
+            language_probability=0.97,
+            keywords_used=(SECRET,),
+            settings={"beam_size": 5},
+            raw={"segments": [{"text": f" Zum {SECRET}.", "avg_logprob": -0.2}]},
+            segments=(
+                ResultSegment(
+                    text=f" Zum {SECRET}.",
+                    start=0.25,
+                    end=1.5,
+                    signals={"avg_logprob": -0.2},
+                    words=(
+                        ResultWord("Zum", 0.25, 0.6, 0.91),
+                        ResultWord(f"{SECRET}.", 0.6, 1.5, 0.42),
+                    ),
+                ),
+            ),
+        )
+        backend = FakeBackend(
+            answer,
+            capabilities=Capabilities(
+                word_timestamps=True,
+                segment_timestamps=True,
+                keyword_biasing=True,
+                word_confidence=True,
+                segment_signals=True,
+            ),
+        )
+        self.store_result(backend)
+
+        reference = load_reference(self.paths, 2)
+        passage = reference.passages[0]
+        self.assertEqual(reference.status, "transcribed")
+        self.assertEqual(reference.segment.source_sha256, "ef" * 32)
+        self.assertEqual((passage.start_ms, passage.end_ms), (250, 1500))
+        self.assertEqual(passage.text, f" Zum {SECRET}.")
+        self.assertEqual(passage.words[1], Word(f"{SECRET}.", 600, 1500, 0.42))
+        self.assertEqual(passage.signals, {"avg_logprob": -0.2})
+        self.assertEqual(reference.asr.keywords_used, (SECRET,))
+        self.assertTrue(reference.asr.capabilities["word_confidence"])
+        self.assertEqual(reference.asr.language_probability, 0.97)
+        self.assertEqual(reference.processing.elapsed_ms, 812)
+        self.assertEqual(reference.processing.processed_at, "2026-11-04T20:00:00+00:00")
+        self.assertEqual(reference.processing.pipeline_version, transcript.__version__)
+        self.assertIsNone(reference.diarization)
+
+    def test_backend_without_times_lands_in_the_same_format(self) -> None:
+        answer = BackendResult(
+            info=FAKE_INFO, segments=(ResultSegment(text="Nur Text."),)
+        )
+        self.store_result(FakeBackend(answer))
+
+        passage = load_reference(self.paths, 2).passages[0]
+        self.assertEqual(passage, Passage(index=1, text="Nur Text."))
+
+    def test_backend_speaker_label_is_kept_without_word_labels(self) -> None:
+        segment = ResultSegment(text="Hallo.", speaker="SPEAKER_00")
+        self.store_result(FakeBackend(BackendResult(FAKE_INFO, (segment,))))
+
+        self.assertEqual(
+            load_reference(self.paths, 2).passages[0].speaker, "SPEAKER_00"
+        )
+
+    def test_raw_answer_is_stored_apart_and_unchanged(self) -> None:
+        raw = {"hypotheses": [{"text": SECRET, "timestamp": {"word": []}}]}
+        answer = BackendResult(info=FAKE_INFO, segments=(), raw=raw)
+        self.store_result(FakeBackend(answer))
+
+        stored = jsonfile.read_object(self.paths.reference_raw(2), "raw")
+        normal = self.paths.reference(2).read_text(encoding="utf-8")
+        self.assertEqual(stored, {"backend_id": "fake", "raw": raw})
+        self.assertNotIn("hypotheses", normal)
+        self.assertEqual(
+            load_reference(self.paths, 2).raw_file, self.paths.reference_raw(2).name
+        )
+
+    def test_a_backend_error_becomes_a_failed_segment_without_message(self) -> None:
+        backend = FakeBackend(error=ResourceError(f"fake: {SECRET}"))
+        with self.assertRaises(ResourceError) as caught:
+            self.run_backend(backend)
+        reference = failed_reference(
+            caught.exception, backend, MANIFEST, SEGMENT, now=NOW
+        )
+        write_reference(self.paths, reference, None)
+
+        loaded = load_reference(self.paths, 2)
+        self.assertEqual(loaded.status, "failed")
+        self.assertEqual(loaded.error, Failure("ResourceError", retryable=True))
+        self.assertEqual(loaded.passages, ())
+        self.assertEqual(loaded.asr.backend_id, "fake")
+        self.assertNotIn(SECRET, self.paths.reference(2).read_text(encoding="utf-8"))
+
+    def test_raw_is_written_before_the_transcript(self) -> None:
+        reference = from_backend_result(
+            BackendResult(FAKE_INFO, ()), FakeBackend(), MANIFEST, SEGMENT, now=NOW
+        )
+        written = []
+        original = jsonfile.write_atomic
+
+        def record(path: Path, data: dict[str, Any]) -> None:
+            written.append(path.name)
+            original(path, data)
+
+        with unittest.mock.patch.object(jsonfile, "write_atomic", record):
+            write_reference(self.paths, reference, None)
+
+        self.assertEqual(written, ["segment-02.raw.json", "segment-02.json"])
+
+    def test_writing_into_another_session_is_refused(self) -> None:
+        reference = from_backend_result(
+            BackendResult(FAKE_INFO, ()), FakeBackend(), MANIFEST, SEGMENT, now=NOW
+        )
+        other = SessionPaths(SessionKey("andere-gruppe", 1), self.paths.root)
+
+        with self.assertRaises(ValueError):
+            write_reference(other, reference, None)
+        self.assertFalse(other.asr_dir.exists())
 
 
 class MajoritySpeakerTest(unittest.TestCase):

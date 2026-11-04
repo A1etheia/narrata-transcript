@@ -13,15 +13,26 @@ keywords or labels: they may contain names of real people.
 """
 
 import collections
+import datetime
 import functools
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import transcript
 from transcript import jsonfile, narrata
+from transcript.asr import (
+    Backend,
+    BackendError,
+    BackendInfo,
+    BackendResult,
+    ResultSegment,
+)
 from transcript.jsonfile import DataFileError
+from transcript.manifest import Manifest, Segment
 from transcript.session import SessionKey, SessionPaths, reference_raw_name
+from transcript.timecode import seconds_to_ms
 
 REFERENCE_FORMAT_VERSION = 1
 STATUSES = ("transcribed", "failed")
@@ -181,6 +192,131 @@ def majority_speaker(words: Iterable[Word]) -> str | None:
     if not ranked or (len(ranked) == 2 and ranked[0][1] == ranked[1][1]):
         return None
     return ranked[0][0]
+
+
+def from_backend_result(
+    result: BackendResult,
+    backend: Backend,
+    manifest: Manifest,
+    segment: Segment,
+    elapsed_ms: int | None = None,
+    now: datetime.datetime | None = None,
+) -> ReferenceTranscript:
+    """Normalize a backend's answer for `segment`; `raw` stays out, see write_reference.
+
+    Seconds become whole milliseconds, nothing else changes: text is kept as
+    recognised. `diarization` stays empty until TOOL-76 adds it.
+    """
+    return ReferenceTranscript(
+        key=manifest.key,
+        play_session_id=manifest.play_session_id,
+        segment=_segment_ref(segment),
+        status="transcribed",
+        asr=_asr_info(
+            result.info,
+            backend,
+            settings=dict(result.settings),
+            language=result.language,
+            language_probability=result.language_probability,
+            keywords_used=tuple(result.keywords_used),
+        ),
+        processing=_processing(elapsed_ms, now),
+        passages=tuple(
+            _passage_from(passage, index)
+            for index, passage in enumerate(result.segments, start=1)
+        ),
+    )
+
+
+def failed_reference(
+    error: BackendError,
+    backend: Backend,
+    manifest: Manifest,
+    segment: Segment,
+    elapsed_ms: int | None = None,
+    now: datetime.datetime | None = None,
+) -> ReferenceTranscript:
+    """Record that `segment` failed; only the error class is kept, not its message."""
+    return ReferenceTranscript(
+        key=manifest.key,
+        play_session_id=manifest.play_session_id,
+        segment=_segment_ref(segment),
+        status="failed",
+        error=Failure(category=type(error).__name__, retryable=error.retryable),
+        asr=_asr_info(backend.info, backend),
+        processing=_processing(elapsed_ms, now),
+    )
+
+
+def write_reference(
+    paths: SessionPaths, reference: ReferenceTranscript, raw: Any
+) -> None:
+    """Write the raw answer, then the transcript; only the latter marks it done.
+
+    `raw` is the backend's answer, JSON-ready and stored unchanged; `None` for a
+    failed segment.
+    """
+    if reference.key != paths.key:
+        raise ValueError(f"transcript of {reference.key} given for {paths.key}")
+    index = reference.segment.index
+    jsonfile.write_atomic(
+        paths.reference_raw(index),
+        {"backend_id": reference.asr.backend_id, "raw": raw},
+    )
+    jsonfile.write_atomic(paths.reference(index), to_json(reference))
+
+
+def _asr_info(info: BackendInfo, backend: Backend, **result: Any) -> AsrInfo:
+    """Provenance of a run; `result` adds what only a successful answer knows."""
+    return AsrInfo(
+        backend_id=info.backend_id,
+        model=info.model,
+        model_version=info.model_version,
+        runtime_version=info.runtime_version,
+        capabilities=backend.capabilities.to_dict(),
+        **result,
+    )
+
+
+def _segment_ref(segment: Segment) -> SegmentRef:
+    return SegmentRef(
+        index=segment.index, file=segment.file, source_sha256=segment.source.sha256
+    )
+
+
+def _processing(elapsed_ms: int | None, now: datetime.datetime | None) -> Processing:
+    moment = now or datetime.datetime.now().astimezone()
+    return Processing(
+        pipeline_version=transcript.__version__,
+        processed_at=moment.isoformat(timespec="seconds"),
+        elapsed_ms=elapsed_ms,
+    )
+
+
+def _passage_from(segment: ResultSegment, index: int) -> Passage:
+    """One backend segment as a passage; word labels decide its speaker."""
+    words = tuple(
+        Word(
+            text=word.text,
+            start_ms=_ms(word.start),
+            end_ms=_ms(word.end),
+            confidence=word.confidence,
+        )
+        for word in segment.words
+    )
+    return Passage(
+        index=index,
+        text=segment.text,
+        start_ms=_ms(segment.start),
+        end_ms=_ms(segment.end),
+        words=words,
+        speaker=majority_speaker(words) or segment.speaker,
+        signals=dict(segment.signals),
+    )
+
+
+def _ms(seconds: float | None) -> int | None:
+    return None if seconds is None else seconds_to_ms(seconds)
 
 
 def load_reference(paths: SessionPaths, index: int) -> ReferenceTranscript:
