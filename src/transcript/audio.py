@@ -1,23 +1,32 @@
-"""Recording inspection: container, audio streams and duration via ffprobe.
+"""Recording inspection via ffprobe and extraction of the working audio track.
 
-The file extension is never trusted; ffprobe decides what a recording is.
+The file extension is never trusted; ffprobe decides what a recording is. The
+recording itself is only read: everything this module writes goes to `work/`.
 """
 
 import json
 import logging
 import os
 import subprocess
-from dataclasses import dataclass
+import tempfile
+import wave
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 from transcript.audio_tools import AudioTools, ToolInfo
+from transcript.config import Config
+from transcript.session import SessionPaths
 
 # ffprobe `format_name` values accepted as input. MP4 and M4A share one demuxer.
 MP4_CONTAINER = "mov,mp4,m4a,3gp,3g2,mj2"
 SUPPORTED_CONTAINERS = frozenset({MP4_CONTAINER, "mp3", "wav"})
 
 _PROBE_TIMEOUT_SECONDS = 60
+# A larger gap between ffprobe's duration and the extracted samples means lost audio.
+_DURATION_TOLERANCE_SECONDS = 0.5
+_WAV_CODEC = "pcm_s16le"
+METADATA_FORMAT_VERSION = 1
 
 _logger = logging.getLogger(__name__)
 
@@ -42,6 +51,14 @@ class AudioInfo:
     duration: float
     audio_streams: tuple[AudioStream, ...]
     has_video: bool
+
+
+@dataclass(frozen=True)
+class ExtractedAudio:
+    """Result of `extract`; the files are at `SessionPaths.audio_wav`/`audio_metadata`."""
+
+    stream: AudioStream
+    duration: float
 
 
 def probe(path: Path, tools: AudioTools) -> AudioInfo:
@@ -87,6 +104,123 @@ def probe(path: Path, tools: AudioTools) -> AudioInfo:
         audio_streams=audio_streams,
         has_video=any(stream.get("codec_type") == "video" for stream in streams),
     )
+
+
+def extract(
+    info: AudioInfo,
+    paths: SessionPaths,
+    config: Config,
+    tools: AudioTools,
+    stream: int = 0,
+) -> ExtractedAudio:
+    """Write the chosen audio stream as WAV plus `audio.json` to the session's audio dir.
+
+    `stream` counts audio streams only, so 0 is the first one. Both files are
+    replaced atomically; on any failure neither is touched.
+    """
+    count = len(info.audio_streams)
+    if not 0 <= stream < count:
+        raise AudioError(
+            f"{info.path.name}: no audio stream {stream}; "
+            f"the recording has {count} (0 to {count - 1})"
+        )
+    chosen = info.audio_streams[stream]
+    expected = chosen.duration if chosen.duration is not None else info.duration
+
+    paths.audio_dir.mkdir(parents=True, exist_ok=True)
+    wav_path = paths.audio_wav
+    metadata_path = paths.audio_metadata
+    with tempfile.TemporaryDirectory(dir=paths.audio_dir, prefix=".extract-") as tmp:
+        tmp_wav = Path(tmp) / wav_path.name
+        args = [
+            "-nostdin",
+            "-v",
+            "error",
+            "-i",
+            str(info.path),
+            "-map",
+            f"0:{chosen.index}",
+            "-vn",
+            "-ac",
+            str(config.audio_channels),
+            "-ar",
+            str(config.audio_sample_rate),
+            "-c:a",
+            _WAV_CODEC,
+            "-f",
+            "wav",
+            str(tmp_wav),
+        ]
+        try:
+            _run(tools.ffmpeg, args, info.path, timeout=None)
+        except AudioError as error:
+            raise AudioError(
+                f"{info.path.name}: extraction failed ({error})"
+            ) from error
+
+        duration = _wav_duration(tmp_wav)
+        if abs(duration - expected) > _DURATION_TOLERANCE_SECONDS:
+            raise AudioError(
+                f"{info.path.name}: extracted {duration:.2f} s of audio, "
+                f"but the recording reports {expected:.2f} s; the file may be damaged"
+            )
+
+        tmp_metadata = Path(tmp) / metadata_path.name
+        metadata = _metadata(info, stream, wav_path.name, config, tools, duration)
+        tmp_metadata.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+        os.replace(tmp_wav, wav_path)
+        os.replace(tmp_metadata, metadata_path)
+
+    _logger.info(
+        "%s: extracted audio stream %d, %.1f s at %d Hz, %d channel(s)",
+        paths.key,
+        stream,
+        duration,
+        config.audio_sample_rate,
+        config.audio_channels,
+    )
+    return ExtractedAudio(stream=chosen, duration=duration)
+
+
+def _metadata(
+    info: AudioInfo,
+    stream: int,
+    wav_name: str,
+    config: Config,
+    tools: AudioTools,
+    duration: float,
+) -> dict[str, Any]:
+    return {
+        "format_version": METADATA_FORMAT_VERSION,
+        "source": {
+            "file": info.path.name,
+            "size_bytes": info.path.stat().st_size,
+            "container": info.container,
+            "duration_seconds": info.duration,
+            "has_video": info.has_video,
+            "audio_streams": [asdict(item) for item in info.audio_streams],
+        },
+        "selected_stream": {
+            "audio_index": stream,
+            "stream_index": info.audio_streams[stream].index,
+        },
+        "output": {
+            "file": wav_name,
+            "codec": _WAV_CODEC,
+            "sample_rate": config.audio_sample_rate,
+            "channels": config.audio_channels,
+            "duration_seconds": duration,
+        },
+        "tools": {"ffmpeg": tools.ffmpeg.version, "ffprobe": tools.ffprobe.version},
+    }
+
+
+def _wav_duration(path: Path) -> float:
+    try:
+        with wave.open(str(path), "rb") as wav:
+            return wav.getnframes() / wav.getframerate()
+    except (OSError, wave.Error, EOFError) as error:
+        raise AudioError(f"extracted WAV is unreadable ({error})") from error
 
 
 def _read_probe(path: Path, tools: AudioTools) -> dict[str, Any]:
