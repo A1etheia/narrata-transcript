@@ -19,7 +19,7 @@ import pathlib
 START = dt.date(2026, 11, 2)  # a Monday
 WORKDAYS = [0, 1, 3]  # Mon, Tue, Thu -> 3 dev-days per week
 PAUSES = [(dt.date(2026, 12, 21), dt.date(2027, 1, 3))]  # inclusive ranges, no work
-GENERATED = "2026-11-02"
+GENERATED = "2026-11-04"
 
 # (phase title, milestone sentence, [(key, title, dev-days, note)])
 P = [
@@ -35,8 +35,8 @@ P = [
     ]),
     ("Phase 1 — ASR-Spike und Backend-Entscheidung",
      "M1 — Backend gewählt, Diarisierung entschieden, TOOL-11/33 entschieden, Export-Endpoint live. Reflexionspunkt: Epic TOOL-8 wird hier dimensioniert.", [
-        ("TOOL-62", "ASR-Kandidaten an realer Session (inkl. Hand-Check, Long-Audio-Frage)", 3.0, "ffmpeg-Schnitt reicht; Modell-Downloads laufen nebenher"),
-        ("TOOL-20", "Diarisierung / Label-Stabilität", 2.0, "gleicher Ausschnitt wie TOOL-62"),
+        ("TOOL-62", "ASR-Kandidaten an realer Session (inkl. Hand-Check, Long-Audio-Frage)", 3.0, "erledigt: `docs/spikes/TOOL-62-asr-vergleich.md`; Whisper large-v3-turbo, Fallback Parakeet, keine eigene Segmentierung; vor IOA-1216/IOA-1214 vorgezogen (02.–04.11.2026)"),
+        ("TOOL-20", "Diarisierung / Label-Stabilität", 2.0, "gleicher Ausschnitt wie TOOL-62; aus TOOL-62: Handreferenz mit Sprecherkennung pro Zeile als erste Diarisierungs-Referenz, Sprecherzuordnung von Granite Plus ungetestet"),
         ("IOA-1215", "Transcription-context Export-Endpoint", 2.0, "während ASR-Läufe laufen"),
         ("IOA-1217", "asr_variants-Alias-Kategorie", 1.5, ""),
     ]),
@@ -44,28 +44,26 @@ P = [
      "M2 — Eine Session läuft vom MP4 bis zur Referenztranskription mit Sprecher-Labels und Wissens-Snapshot.", [
         ("TOOL-9", "ffmpeg/ffprobe-Preflight", 0.5, ""),
         ("TOOL-10", "Formate erkennen, Audiospur extrahieren", 1.0, "aus TOOL-5: Tests mit Audio erzeugen es zur Laufzeit synthetisch, Audio-Fixtures sind nicht vorgesehen"),
-        ("TOOL-12", "Session-Manifest, absolute Zeiten", 0.5, "aus TOOL-66: Manifest vermerkt die mündliche Zustimmung pro Sitzung; aus TOOL-4: Manifest liegt unter `work/<gruppe>/<ordinal>/manifest.json`, beim Lesen `play_session_id` prüfen, weil Ordinale neu vergeben werden können"),
-        ("TOOL-11", "Bedingt: Segmentierung", 1.0, "entfällt, wenn TOOL-62 Nein sagt; aus TOOL-6: Die Segmentwerte in der Konfiguration sind `null`; das Ticket setzt die Defaults nach der Entscheidung aus TOOL-62"),
+        ("TOOL-12", "Session-Manifest, absolute Zeiten", 0.5, "aus TOOL-66: Manifest vermerkt die mündliche Zustimmung pro Sitzung; aus TOOL-4: Manifest liegt unter `work/<gruppe>/<ordinal>/manifest.json`, beim Lesen `play_session_id` prüfen, weil Ordinale neu vergeben werden können; aus TOOL-62: `input/<gruppe>/ordinal/` enthält viele Sitzungen ohne gültiges Ordinal, vor dem ersten Manifest pro Sitzung einsortieren"),
         ("TOOL-63", "Backend-Schnittstelle, Capabilities, Fake-Backend", 1.0, ""),
         ("TOOL-16", "Internes Referenztranskript-Format", 1.0, "vor TOOL-64: der Adapter schreibt in dieses Format"),
-        ("TOOL-64", "Lokales V0.1-Backend", 2.0, "aus TOOL-6: Transkripttext im Debug-Modus nur über `transcript_logger` schreiben"),
+        ("TOOL-64", "Lokales V0.1-Backend", 2.0, "aus TOOL-6: Transkripttext im Debug-Modus nur über `transcript_logger` schreiben; aus TOOL-62: Whisper large-v3-turbo über faster-whisper, RAM bis 10,5 GB auf 5 h, Lizenz der CTranslate2-Konvertierung prüfen, `scripts/spike/` ablösen"),
         ("TOOL-15", "Einzelsegment transkribieren", 0.5, ""),
         ("TOOL-17", "Ganze Session, Resume", 1.0, ""),
         ("TOOL-18", "Fehlerkategorien, Retry, Force", 1.0, ""),
         ("TOOL-19", "Absolute Zeitstempel im Format", 0.5, ""),
-        ("TOOL-33", "Bedingt: Überlappungs-Dedup", 1.0, "entfällt mit TOOL-11; braucht Segment-Ergebnisse aus TOOL-17"),
         ("TOOL-67", "Narrata-Kanal + Datei-Fallback", 1.0, "braucht IOA-1215; aus TOOL-6: `.env.example` anlegen, sobald das Narrata-Token die erste Variable ist"),
         ("TOOL-38", "Teilnehmerwissen", 0.5, ""),
         ("TOOL-39", "Glossarbegriffe", 0.5, ""),
         ("TOOL-41", "Relevanzregel + Snapshot", 1.0, ""),
         ("TOOL-42", "Validator + Diagnose", 0.5, ""),
         ("TOOL-43", "Wissensschnittstelle", 1.0, ""),
-        ("TOOL-44", "Keyword-Biasing + Review-Signal", 1.0, ""),
+        ("TOOL-44", "Keyword-Biasing + Review-Signal", 1.0, "aus TOOL-62: Hotwords nur mit large-v3-turbo, höchstens 223 Tokens, wichtigste Begriffe nach vorne; Wirkung auf die WER unbelegt"),
         ("TOOL-40", "Fehlvarianten (leer-lauffähig) + Vorschlagsliste", 0.5, ""),
     ]),
     ("Phase 3 — Review, Sprecherzuordnung, Export",
      "M3 — JSON-Export (Contract v1) einer Session importiert lokal in Narrata und rendert dort als Rohliste.", [
-        ("TOOL-35", "Konfidenz-/Unsicherheitsregeln kalibrieren", 1.5, "Stichprobe aus Phase 1 wiederverwenden"),
+        ("TOOL-35", "Konfidenz-/Unsicherheitsregeln kalibrieren", 1.5, "Stichprobe aus Phase 1 wiederverwenden; aus TOOL-62: AUC 0,79–0,82, unsicherste 30 % enthalten 62–71 % der falschen Wörter, Auslassungen unsichtbar, Mundart verdreifacht die Fehlerquote"),
         ("TOOL-36", "Review-Kandidaten", 1.0, ""),
         ("TOOL-46", "Review-Datenmodell", 0.5, ""),
         ("TOOL-47", "Review-CSV", 0.5, ""),
@@ -112,7 +110,7 @@ P = [
     ]),
 ]
 
-CONDITIONAL = {"TOOL-11", "TOOL-33", "TOOL-73"}
+CONDITIONAL = {"TOOL-73"}
 
 
 def workday_calendar(limit: int) -> list[dt.date]:
@@ -161,10 +159,10 @@ def main() -> None:
     o.append("- **Aufwände sind Entwicklungstage in 0,5er-Schritten**, grob geschätzt aus den Ticket-Beschreibungen. Sie dienen der Reihenfolge und den Meilenstein-Abständen; keine Zusage.")
     o.append(f"- **Gesamtumfang: {total:g} Entwicklungstage** ≈ {weeks} Wochen inkl. Pause → letzter Meilenstein {de(phases[-1]['end'])}. Davon {cond_days:g} Tage bedingt ({', '.join(sorted(CONDITIONAL))}).")
     o.append("- **Neu terminiert am 02.11.2026:** Vom Plan des 03.10. war noch kein Ticket begonnen (alle TOOL- und IOA-Tickets To Do, kein Python-Repo, keine Transkript-Commits). Die 3 Tage pro Woche sind damit unbelegt; Reihenfolge belastbar, Daten nur bei dieser Kapazität.")
-    o.append("- Nicht eingeplant: TOOL-14 (Remote-Backend, geparkt), die Epics selbst, verworfene Tickets (TOOL-21–32, 34; TOOL-3, 7).\n")
+    o.append("- Nicht eingeplant: TOOL-14 (Remote-Backend, geparkt), die Epics selbst, verworfene Tickets (TOOL-21–32, 34; TOOL-3, 7; TOOL-11, 33 nach TOOL-62).\n")
     o.append("## Leitlinien der Reihenfolge\n")
     o.append("1. **Entscheidungen vor Code.** Datenschutz (TOOL-66/IOA-1216) und Contract (IOA-1214) stehen, bevor irgendetwas Daten schreibt — sonst werden Fixtures, Logs und IDs später umgebaut.")
-    o.append("2. **Der ASR-Spike (TOOL-62) läuft vor der Audio-Vorbereitung.** Er entscheidet, ob Epic TOOL-8 drei oder fünf Stories hat.")
+    o.append("2. **Der ASR-Spike (TOOL-62) läuft vor der Audio-Vorbereitung.** Er entscheidet, ob Epic TOOL-8 drei oder fünf Stories hat. Ergebnis: drei, TOOL-11 und TOOL-33 entfallen.")
     o.append("3. **Narrata-Arbeit füllt die Wartezeiten der Pipeline.** Export-Endpoint und Alias-Kategorie entstehen, während Modelle rechnen; Storage/Import entsteht gegen die Fixture, bevor der echte Export existiert.")
     o.append("4. **Der Pilot (Phase 4) ist ein Tor, kein Schritt.** TOOL-60 entscheidet explizit über Review-Kanal, Remote-Backend und die Freigabe von Phase 6. Phasen 5–7 werden nach dem Pilot-Review neu terminiert.")
     o.append("5. **Lesen vor Analysieren.** Die Narrata-Oberflächen (Phase 5) kommen vor IT/OT (Phase 6) — ein importiertes Transkript muss erst nutzbar sein, bevor es klassifiziert wird; das Lesen deckt zudem Contract-Lücken auf, die TOOL-71 sonst zementiert.")
@@ -179,7 +177,7 @@ def main() -> None:
     o.append("## Reflexionspunkte\n")
     o.append("| Nach | Frage | Ticket, das entscheidet | Was sich ändert |")
     o.append("|---|---|---|---|")
-    o.append("| M1 | Braucht das Backend externe Segmentierung? | TOOL-62 | TOOL-11, TOOL-33 bleiben oder werden verworfen; Phase 2 ±2 Tage |")
+    o.append("| M1 | Braucht das Backend externe Segmentierung? | TOOL-62 | Beantwortet: nein, TOOL-11 und TOOL-33 verworfen; Phase 2 −2 Tage |")
     o.append("| M1 | Liefert Diarisierung stabile Labels? | TOOL-20 | Falls nein: TOOL-68 wird aufwendiger, TOOL-65 rückt nach hinten |")
     o.append("| M1 | Liefert das ASR-Backend die Sprecher-Labels selbst? | TOOL-20 | Falls separate Diarisierung gewählt wird: Für ihre Integration gibt es noch kein Ticket und keinen Aufwand; Folgeticket anlegen, M2 verschiebt sich |")
     o.append("| M3 | Trägt der Contract den Import ohne Rückfragen? | IOA-1218 gegen TOOL-69 | Contract-Minor-Bump vor Phase 4, nicht danach |")
