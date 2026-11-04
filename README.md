@@ -96,6 +96,22 @@ Erprobt sind faster-whisper 1.2.1, ctranslate2 4.8, cuBLAS 12.9 und cuDNN 8.9.
 
 **Fehler.** Fehlt die Runtime, das Modell im Cache, eine GPU bei `asr.device: cuda` oder eine CUDA-Bibliothek, meldet das Backend `BackendUnavailableError` mit dem nächsten Schritt; Speichermangel kommt als `ResourceError`. Die Meldungen nennen Modell, Gerät und Audiodatei, nie Transkripttext oder Begriffe.
 
+**Lauf.** Ein Segment transkribieren heißt: Segment aus dem Manifest nehmen, Whisper laden, das WAV transkribieren und das Ergebnis als Referenztranskript speichern. Vorher müssen `transcript extract` und `transcript manifest` gelaufen sein, danach folgt `transcript diarize`.
+
+```bash
+transcript transcribe beispielgruppe/042 --segment 1          # Segment 1 laut Manifest
+transcript transcribe beispielgruppe/042 --segment 1 --force  # vorhandenes Ergebnis neu rechnen
+```
+
+Es entstehen `work/<gruppe>/<ordinal>/asr/segment-NN.json` und `segment-NN.raw.json` (siehe [ASR-Backends](#asr-backends)). Die Sprache kommt aus `language` der Konfiguration. Begriffshinweise (Hotwords) übergibt der Befehl noch nicht; sie kommen mit der Wissensschnittstelle (TOOL-43). Die Konsole zeigt Laufzeit, Modell mit Revision, Zahl der Passagen und Wörter und die erkannte Sprache, nie Text.
+
+- **Vor dem Laden geprüft:** Ein Segment, das nicht im Manifest steht, ein fehlendes WAV oder ein schon transkribiertes Segment brechen ab, bevor das Modell lädt.
+- **`--force`:** Rechnet ein vorhandenes Ergebnis neu. Die Sprecher-Labels fallen dabei weg; `transcript diarize` setzt sie aus der gespeicherten Diarisierung ohne Modell wieder.
+- **Fehlschlag beim Transkribieren:** Steht als `status: failed` mit Fehlerklasse in der Datei und wird beim nächsten Aufruf ohne `--force` erneut versucht. Ein erfolgreiches Ergebnis ersetzt ein Fehlschlag nie.
+- **Fehlschlag beim Laden** (Modell, Runtime, GPU): schreibt nichts.
+
+Eine ganze Session mit Wiederaufnahme kommt mit TOOL-17.
+
 **Smoke-Test** mit dem echten Modell. ffmpeg spricht dafür mit `flite` einen erfundenen englischen Satz, der Test transkribiert ihn und speichert das Ergebnis im Referenzformat:
 
 ```bash
@@ -124,7 +140,7 @@ Danach braucht die Pipeline weder Token noch Netz.
 
 **Offline und ohne Telemetrie.** pyannote.audio 4 schickt per Default Laufmetadaten (Audiodauer, Sprecherzahl, Version, eine Session-ID) an `otel.pyannote.ai`. Das Paket `transcript` setzt deshalb beim Import `PYANNOTE_METRICS_ENABLED=false` und `HF_HUB_OFFLINE=1`, auch wenn die Umgebung etwas anderes vorgibt (`src/transcript/__init__.py`). Ein Lauf lädt also nichts nach und meldet nichts nach außen.
 
-**Lauf.** Voraussetzung sind Manifest und Referenztranskripte unter `work/<gruppe>/<ordinal>/asr/`.
+**Lauf.** Voraussetzung sind Manifest und Referenztranskripte unter `work/<gruppe>/<ordinal>/asr/`, erzeugt mit [`transcript transcribe`](#spracherkennung).
 
 ```bash
 transcript diarize beispielgruppe/042                  # die Zahl der Personen findet das Modell selbst

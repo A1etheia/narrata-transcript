@@ -16,10 +16,10 @@ from pathlib import Path
 from media import flite_missing, speech, synth
 from test_reference import MANIFEST, SEGMENT
 
-from transcript.asr import TranscriptionRequest, opened, transcribe
 from transcript.asr.whisper import WhisperBackend
-from transcript.reference import from_backend_result, load_reference, write_reference
+from transcript.reference import load_reference
 from transcript.session import SessionPaths
+from transcript.transcription import transcribe_segment
 
 SENTENCE = "The dragon sleeps on a hoard of gold in the old tower."
 
@@ -40,32 +40,38 @@ class WhisperSmokeTest(unittest.TestCase):
     def test_short_speech_is_transcribed_locally(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            audio = synth(
-                root / "speech.wav",
+            paths = SessionPaths(MANIFEST.key, root)
+            paths.audio_dir.mkdir(parents=True)
+            synth(
+                paths.segment_wav(SEGMENT.index),
                 *speech(SENTENCE),
                 *("-ar", "16000", "-ac", "1"),
             )
             device = os.environ.get("TRANSCRIPT_WHISPER_DEVICE", "auto")
-            backend = WhisperBackend(device=device)
-            request = TranscriptionRequest(audio, language="en", keywords=("hoard",))
-            with opened(backend):  # a missing model or CUDA library fails here
-                result = transcribe(backend, request)
+            # a missing model or CUDA library fails here
+            summary = transcribe_segment(
+                paths,
+                MANIFEST,
+                SEGMENT.index,
+                WhisperBackend(device=device),
+                "en",
+                keywords=("hoard",),
+            )
 
-            text = " ".join(segment.text for segment in result.segments).lower()
-            self.assertIn("dragon", text)
-            words = [word for segment in result.segments for word in segment.words]
+            reference = load_reference(paths, SEGMENT.index)
+            self.assertEqual(reference.status, "transcribed")
+            self.assertIn("dragon", reference.text.lower())
+            words = [word for passage in reference.passages for word in passage.words]
             self.assertTrue(words)
+            self.assertEqual(summary.words, len(words))
             for word in words:
-                self.assertLessEqual(word.start, word.end)
+                self.assertLessEqual(word.start_ms, word.end_ms)
                 self.assertTrue(0 <= word.confidence <= 1)
-            self.assertEqual(result.keywords_used, ("hoard",))
-            self.assertIsNotNone(result.info.model_version)
-            self.assertIsNotNone(result.info.runtime_version)
-
-            paths = SessionPaths(MANIFEST.key, root)
-            reference = from_backend_result(result, backend, MANIFEST, SEGMENT)
-            write_reference(paths, reference, result.raw)
-            self.assertEqual(load_reference(paths, SEGMENT.index), reference)
+            self.assertEqual(reference.asr.keywords_used, ("hoard",))
+            self.assertIsNotNone(reference.asr.model_version)
+            self.assertIsNotNone(reference.asr.runtime_version)
+            self.assertGreater(reference.processing.elapsed_ms, 0)
+            self.assertTrue(paths.reference_raw(SEGMENT.index).is_file())
 
 
 if __name__ == "__main__":
