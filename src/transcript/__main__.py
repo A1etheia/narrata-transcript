@@ -1,4 +1,5 @@
-"""Command-line entry point: `config`, `doctor`, `extract`, `manifest`, `diarize`."""
+"""Command-line entry point: `config`, `doctor`, `extract`, `manifest`, `transcribe`,
+`diarize`."""
 
 import argparse
 import contextlib
@@ -9,11 +10,13 @@ from pathlib import Path
 
 from transcript import __version__, audio, audio_tools, diarization, manifest
 from transcript.asr import BackendError
+from transcript.asr.whisper import WhisperBackend
 from transcript.config import Config, ConfigError, format_config, load_config
 from transcript.diarization.pyannote import PyannoteDiarizer
 from transcript.jsonfile import DataFileError
 from transcript.session import SessionKey
 from transcript.timecode import format_ms
+from transcript.transcription import TranscriptionError, transcribe_segment
 
 _DEFAULT_CONFIG = Path("config/config.yaml")
 _EXAMPLE_CONFIG = Path("config/example.yaml")
@@ -53,6 +56,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="note that everyone audible agreed to the recording orally",
     )
+    transcribe_command = commands.add_parser(
+        "transcribe", help="Transcribe one segment of a session with the ASR backend."
+    )
+    transcribe_command.add_argument("session", help="session key <group>/<ordinal>")
+    transcribe_command.add_argument(
+        "--segment",
+        type=_positive_int,
+        required=True,
+        help="segment to transcribe, counted from 1 as in the manifest",
+    )
+    transcribe_command.add_argument(
+        "--force",
+        action="store_true",
+        help="transcribe again even if a transcript exists; drops speaker labels",
+    )
     diarize_command = commands.add_parser(
         "diarize", help="Label the words of a session's transcripts with speakers."
     )
@@ -67,7 +85,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="diarize again even if a stored result matches",
     )
-    for command in (config_command, extract_command, manifest_command, diarize_command):
+    for command in (
+        config_command,
+        extract_command,
+        manifest_command,
+        transcribe_command,
+        diarize_command,
+    ):
         command.add_argument(
             "--config",
             type=Path,
@@ -84,6 +108,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _extract(args.session, args.config, args.stream)
     if args.command == "manifest":
         return _manifest(args.session, args.config, args.consent)
+    if args.command == "transcribe":
+        return _transcribe(args.session, args.config, args.segment, args.force)
     if args.command == "diarize":
         return _diarize(args.session, args.config, args.num_speakers, args.force)
     parser.print_help()
@@ -161,6 +187,43 @@ def _manifest(raw_key: str, config_path: Path, consent: bool) -> int:
     else:
         print(f"consent noted at {result.consent.noted_at}")
     print(f"wrote {paths.manifest}")
+    return 0
+
+
+def _transcribe(raw_key: str, config_path: Path, index: int, force: bool) -> int:
+    """Only counts, times and provenance reach the console, never text (TOOL-66)."""
+    try:
+        key = SessionKey.parse(raw_key)
+        config = _load_config(config_path)
+        paths = config.session_paths(key)
+        result = transcribe_segment(
+            paths,
+            manifest.load_manifest(paths),
+            index,
+            WhisperBackend.from_config(config),
+            config.language,
+            keywords=(),  # hints from the knowledge interface come with TOOL-43
+            force=force,
+        )
+    except (
+        ValueError,
+        ConfigError,
+        DataFileError,
+        BackendError,
+        TranscriptionError,
+    ) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+
+    revision = f" ({result.model_version})" if result.model_version else ""
+    print(
+        f"{key}: segment {result.index} transcribed in {result.elapsed_ms / 1000:.1f} s "
+        f"with {result.backend_id} {result.model}{revision}: "
+        f"{result.passages} passage(s), {result.words} word(s), "
+        f"{result.words_with_confidence} with confidence, "
+        f"language {result.language or 'unknown'}"
+    )
+    print(f"wrote {paths.reference(result.index)}")
     return 0
 
 

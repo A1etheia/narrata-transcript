@@ -12,14 +12,16 @@ from unittest import mock
 from media import mp4_with_audio, needs_media, sine, synth, video
 from test_diarization import FakeDiarizer
 from test_reference import KEY, MANIFEST, SECRET, SEGMENT, minimal
+from test_transcription import MANIFEST_1, RESULT
 
 import transcript
 from transcript import __main__ as transcript_main
 from transcript import audio_tools
 from transcript.__main__ import main
-from transcript.asr import BackendUnavailableError
+from transcript.asr import BackendUnavailableError, ResourceError
+from transcript.asr.fake import FakeBackend
 from transcript.audio_tools import AudioToolError, AudioTools, ToolInfo
-from transcript.reference import Passage, Word, update_reference
+from transcript.reference import Passage, Word, load_reference, update_reference
 from transcript.session import SessionKey, SessionPaths
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -279,6 +281,95 @@ class ManifestCommandTest(unittest.TestCase):
 
         self.assertEqual(code, 0, stderr)
         self.assertIn("warning: no consent note", stderr)
+
+
+class TranscribeCommandTest(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.config = self.root / "config.yaml"
+        self.config.write_text(
+            f"language: de\npaths:\n  root: {self.root}\nasr:\n  device: cpu\n",
+            encoding="utf-8",
+        )
+        self.paths = SessionPaths(KEY, self.root)
+        self.paths.audio_dir.mkdir(parents=True)
+        self.paths.segment_wav(1).write_bytes(b"audio")
+        self.backend = FakeBackend(RESULT)
+        for patcher in (
+            mock.patch.object(
+                transcript_main.manifest, "load_manifest", return_value=MANIFEST_1
+            ),
+            mock.patch.object(
+                transcript_main.WhisperBackend, "from_config", side_effect=self.created
+            ),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def created(self, config: Any) -> FakeBackend:
+        self.assertEqual(config.asr_device, "cpu")
+        return self.backend
+
+    def transcribe(self, *extra: str, segment: str = "1") -> tuple[int, str, str]:
+        return run(
+            "transcribe",
+            str(KEY),
+            "--config",
+            str(self.config),
+            "--segment",
+            segment,
+            *extra,
+        )
+
+    def test_prints_counts_and_provenance_but_no_text(self) -> None:
+        code, stdout, stderr = self.transcribe()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertRegex(
+            stdout,
+            r"beispielgruppe/042: segment 1 transcribed in \d+\.\d s with fake fake "
+            r"\(rev1\): 1 passage\(s\), 2 word\(s\), 1 with confidence, language de",
+        )
+        self.assertIn(f"wrote {self.paths.reference(1)}", stdout)
+        self.assertEqual(self.backend.requests[0].language, "de")
+        self.assertEqual(self.backend.requests[0].keywords, ())
+        self.assertNotIn(SECRET, stdout + stderr)
+
+    def test_second_run_needs_force(self) -> None:
+        self.transcribe()
+
+        code, stdout, stderr = self.transcribe()
+        self.assertEqual((code, stdout), (2, ""))
+        self.assertIn("already transcribed; use --force", stderr)
+
+        code, _, stderr = self.transcribe("--force")
+        self.assertEqual(code, 0, stderr)
+
+    def test_unknown_segment_is_reported(self) -> None:
+        code, _, stderr = self.transcribe(segment="2")
+
+        self.assertEqual(code, 2)
+        self.assertIn("error: segment 2 not in the manifest", stderr)
+        self.assertEqual(self.backend.load_calls, 0)
+
+    def test_backend_errors_are_reported_without_traceback(self) -> None:
+        self.backend = FakeBackend(error=ResourceError("fake: out of memory"))
+
+        code, stdout, stderr = self.transcribe()
+
+        self.assertEqual((code, stdout), (2, ""))
+        self.assertEqual(stderr, "error: fake: out of memory\n")
+        self.assertEqual(load_reference(self.paths, 1).status, "failed")
+
+    def test_segment_is_required(self) -> None:
+        with (
+            self.assertRaises(SystemExit) as caught,
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            run("transcribe", str(KEY), "--config", str(self.config))
+        self.assertEqual(caught.exception.code, 2)
 
 
 class DiarizeCommandTest(unittest.TestCase):
