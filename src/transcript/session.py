@@ -60,5 +60,17 @@ class SessionPaths:
         return self.root / "output" / str(self.key)
 
     @property
+    def audio_dir(self) -> Path:
+        return self.work_dir / "audio"
+
+    @property
+    def audio_wav(self) -> Path:
+        return self.audio_dir / "audio.wav"
+
+    @property
+    def audio_metadata(self) -> Path:
+        return self.audio_dir / "audio.json"
+
+    @property
     def debug_log(self) -> Path:
         return self.work_dir / "debug.log"
