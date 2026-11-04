@@ -16,7 +16,7 @@ Danach transkribiert `transcript transcribe <session> --segment N` ein Segment a
 
 ## Entscheidungen
 - **Neues Modul `src/transcript/transcription.py`** mit `transcribe_segment(paths, manifest, index, backend, language, keywords=(), force=False) -> SegmentResult`. Es kennt nur die `Backend`-Schnittstelle; welches Backend läuft, entscheidet der Aufrufer (CLI: `WhisperBackend.from_config`). TOOL-17 ruft es pro Segment auf. Für viele Segmente hebt TOOL-17 `opened` dann aus der Funktion heraus.
-- **Vorprüfung vor dem Laden.** Die Prüfungen laufen in dieser Reihenfolge, alle bevor das Modell lädt: Ist der Index im Manifest (sonst Fehler mit dem gültigen Bereich)? Existiert das WAV (`paths.audio_dir / segment.file`)? Liegt schon ein `transcribed`-Ergebnis vor? Das Laden dauert Minuten und soll nicht für einen Tippfehler anfallen. `transcribe` prüft die Datei zusätzlich.
+- **Vorprüfung vor dem Laden.** Die Prüfungen laufen in dieser Reihenfolge, alle bevor das Modell lädt: Ist der Index im Manifest (sonst Fehler mit dem gültigen Bereich)? Existiert das WAV (`paths.segment_wav(index)`)? Liegt schon ein `transcribed`-Ergebnis vor? Das Laden dauert Minuten und soll nicht für einen Tippfehler anfallen. `transcribe` prüft die Datei zusätzlich.
 - **Vorhandenes Ergebnis:** Ein `transcribed` ohne `force` bricht mit Hinweis auf `--force` ab. `force` transkribiert neu, die Sprecher-Labels fallen dann weg, und `diarize` setzt sie ohne Modell neu. Ein vorhandenes `failed` wird ohne `force` neu versucht. Den Vergleich von Modell und Settings für die Wiederverwendung macht TOOL-17.
 - **Fehler:**
   - Ein `BackendError` aus `load()` (Modell, Runtime, GPU) schreibt nichts und geht an den Aufrufer.
