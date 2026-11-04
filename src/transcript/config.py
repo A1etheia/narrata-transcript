@@ -11,11 +11,13 @@ import yaml
 from transcript.session import SessionKey, SessionPaths
 
 _LANGUAGE_PATTERN = re.compile(r"[a-z]{2}")
-_TOP_LEVEL_KEYS = {"language", "paths", "segmentation", "audio", "debug"}
+_TOP_LEVEL_KEYS = {"language", "paths", "segmentation", "audio", "asr", "debug"}
 _PATHS_KEYS = {"root"}
 _SEGMENTATION_KEYS = {"length_seconds", "overlap_seconds"}
 _AUDIO_KEYS = {"sample_rate", "channels"}
 _AUDIO_CHANNELS = (1, 2)
+_ASR_KEYS = {"model", "device", "compute_type", "beam_size"}
+_ASR_DEVICES = ("auto", "cpu", "cuda")
 
 
 class ConfigError(Exception):
@@ -31,6 +33,10 @@ class Config:
     segment_overlap_seconds: float | None = None
     audio_sample_rate: int = 16000
     audio_channels: int = 1
+    asr_model: str = "large-v3-turbo"  # faster-whisper name or local model directory
+    asr_device: str = "auto"  # one of _ASR_DEVICES; auto prefers cuda
+    asr_compute_type: str | None = None  # None: float16 on cuda, int8 on cpu
+    asr_beam_size: int = 5
 
     def session_paths(self, key: SessionKey) -> SessionPaths:
         return SessionPaths(key, self.root)
@@ -50,7 +56,7 @@ def load_config(path: Path) -> Config:
     root = paths.get("root")
     if root is None:
         raise _missing(path, "paths.root")
-    if not isinstance(root, str) or not root:
+    if not _is_text(root):
         raise _invalid(path, "paths.root", "must be a non-empty path")
 
     debug = data.get("debug", False)
@@ -68,12 +74,26 @@ def load_config(path: Path) -> Config:
         )
 
     audio = _section(path, data, "audio", _AUDIO_KEYS)
-    sample_rate = _positive_number(path, audio, "audio", "sample_rate", integer=True)
-    if sample_rate is None:
-        sample_rate = Config.audio_sample_rate
+    sample_rate = _positive_number(
+        path, audio, "audio", "sample_rate", Config.audio_sample_rate, integer=True
+    )
     channels = audio.get("channels", Config.audio_channels)
     if not _is_number(channels, int) or channels not in _AUDIO_CHANNELS:
         raise _invalid(path, "audio.channels", "must be 1 or 2")
+
+    asr = _section(path, data, "asr", _ASR_KEYS)
+    model = asr.get("model", Config.asr_model)
+    if not _is_text(model):
+        raise _invalid(path, "asr.model", "must be a model name or directory")
+    device = asr.get("device", Config.asr_device)
+    if device not in _ASR_DEVICES:
+        raise _invalid(path, "asr.device", f"must be one of {', '.join(_ASR_DEVICES)}")
+    compute_type = asr.get("compute_type")
+    if compute_type is not None and not _is_text(compute_type):
+        raise _invalid(path, "asr.compute_type", "must be a name such as float16")
+    beam_size = _positive_number(
+        path, asr, "asr", "beam_size", Config.asr_beam_size, integer=True
+    )
 
     return Config(
         language=language,
@@ -83,6 +103,10 @@ def load_config(path: Path) -> Config:
         segment_overlap_seconds=overlap,
         audio_sample_rate=sample_rate,
         audio_channels=channels,
+        asr_model=model,
+        asr_device=device,
+        asr_compute_type=compute_type,
+        asr_beam_size=beam_size,
     )
 
 
@@ -99,6 +123,12 @@ def format_config(config: Config) -> str:
             "audio": {
                 "sample_rate": config.audio_sample_rate,
                 "channels": config.audio_channels,
+            },
+            "asr": {
+                "model": config.asr_model,
+                "device": config.asr_device,
+                "compute_type": config.asr_compute_type,
+                "beam_size": config.asr_beam_size,
             },
             "debug": config.debug,
         },
@@ -150,11 +180,12 @@ def _positive_number(
     section: dict[str, Any],
     section_name: str,
     key: str,
+    default: Any = None,
     integer: bool = False,
 ) -> Any:
     value = section.get(key)
     if value is None:
-        return None
+        return default
     types = int if integer else (int, float)
     if not _is_number(value, types) or not 0 < value < math.inf:
         rule = (
@@ -164,6 +195,10 @@ def _positive_number(
         )
         raise _invalid(path, f"{section_name}.{key}", rule)
     return value
+
+
+def _is_text(value: Any) -> bool:
+    return isinstance(value, str) and bool(value)
 
 
 def _is_number(value: Any, types: type | tuple[type, ...]) -> bool:
