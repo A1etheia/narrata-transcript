@@ -20,8 +20,20 @@ from transcript.asr import (
 from transcript.asr.fake import FAKE_INFO, FakeBackend
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "transcript"
-MODEL_LIBRARIES = {"faster_whisper", "ctranslate2", "nemo", "torch", "transformers"}
-GENERIC_ASR_MODULES = {"__init__.py", "backend.py", "fake.py"}
+MODEL_LIBRARIES = {
+    "faster_whisper",
+    "ctranslate2",
+    "nemo",
+    "numpy",
+    "pyannote",
+    "torch",
+    "transformers",
+}
+# Per package, the modules that are not adapters and so never import a model library.
+GENERIC_MODULES = {
+    "asr": {"__init__.py", "backend.py", "fake.py"},
+    "diarization": {"__init__.py"},
+}
 
 
 def result_with(*words: ResultWord, start: float = 0.0) -> BackendResult:
@@ -151,7 +163,8 @@ class ImportBoundaryTest(unittest.TestCase):
 
     def test_model_libraries_stay_out_of_generic_code(self) -> None:
         for path in sorted(SRC.rglob("*.py")):
-            adapter = path.parent.name == "asr" and path.name not in GENERIC_ASR_MODULES
+            generic = GENERIC_MODULES.get(path.parent.name)
+            adapter = generic is not None and path.name not in generic
             tree = ast.parse(path.read_text(encoding="utf-8"))
             nodes = _module_level(tree) if adapter else ast.walk(tree)
             with self.subTest(module=str(path.relative_to(SRC))):

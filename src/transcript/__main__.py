@@ -1,4 +1,4 @@
-"""Command-line entry point: `config`, `doctor`, `extract` and `manifest`."""
+"""Command-line entry point: `config`, `doctor`, `extract`, `manifest`, `diarize`."""
 
 import argparse
 import contextlib
@@ -7,8 +7,10 @@ import sys
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-from transcript import __version__, audio, audio_tools, manifest
+from transcript import __version__, audio, audio_tools, diarization, manifest
+from transcript.asr import BackendError
 from transcript.config import Config, ConfigError, format_config, load_config
+from transcript.diarization.pyannote import PyannoteDiarizer
 from transcript.jsonfile import DataFileError
 from transcript.session import SessionKey
 from transcript.timecode import format_ms
@@ -51,7 +53,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="note that everyone audible agreed to the recording orally",
     )
-    for command in (config_command, extract_command, manifest_command):
+    diarize_command = commands.add_parser(
+        "diarize", help="Label the words of a session's transcripts with speakers."
+    )
+    diarize_command.add_argument("session", help="session key <group>/<ordinal>")
+    diarize_command.add_argument(
+        "--num-speakers",
+        type=_positive_int,
+        help="number of people audible, if known (default: the model decides)",
+    )
+    diarize_command.add_argument(
+        "--force",
+        action="store_true",
+        help="diarize again even if a stored result matches",
+    )
+    for command in (config_command, extract_command, manifest_command, diarize_command):
         command.add_argument(
             "--config",
             type=Path,
@@ -68,6 +84,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _extract(args.session, args.config, args.stream)
     if args.command == "manifest":
         return _manifest(args.session, args.config, args.consent)
+    if args.command == "diarize":
+        return _diarize(args.session, args.config, args.num_speakers, args.force)
     parser.print_help()
     return 0
 
@@ -144,6 +162,51 @@ def _manifest(raw_key: str, config_path: Path, consent: bool) -> int:
         print(f"consent noted at {result.consent.noted_at}")
     print(f"wrote {paths.manifest}")
     return 0
+
+
+def _diarize(
+    raw_key: str, config_path: Path, num_speakers: int | None, force: bool
+) -> int:
+    """Only counts and times reach the console, never labels or text (TOOL-66)."""
+    try:
+        key = SessionKey.parse(raw_key)
+        config = _load_config(config_path)
+        paths = config.session_paths(key)
+        summaries = diarization.diarize_session(
+            paths,
+            manifest.load_manifest(paths),
+            PyannoteDiarizer.from_config(config),
+            num_speakers=num_speakers,
+            force=force,
+        )
+    except (ValueError, ConfigError, DataFileError, BackendError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+
+    print(f"{key}: {len(summaries)} segment(s)")
+    for summary in summaries:
+        if summary.outcome == "skipped":
+            print(f"  {summary.index}. skipped: {summary.reason}")
+            continue
+        how = (
+            "reused stored diarization"
+            if summary.outcome == "reused"
+            else f"diarized in {summary.elapsed_ms / 1000:.1f} s"
+        )
+        print(
+            f"  {summary.index}. {how}: {summary.labels} label(s), "
+            f"{summary.turns} turn(s), "
+            f"{summary.labelled_words}/{summary.words} words labelled"
+        )
+    print(f"wrote {paths.asr_dir} and {paths.diarization_dir}")
+    return 0
+
+
+def _positive_int(text: str) -> int:
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError("must be a positive whole number")
+    return value
 
 
 @contextlib.contextmanager

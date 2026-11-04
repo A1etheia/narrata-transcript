@@ -34,6 +34,24 @@ def mp4_with_audio() -> list[str]:
     return [*video(), *sine(rate=48000), "-ac", "2", "-c:a", "aac", "-shortest"]
 
 
+def flite_missing() -> str:
+    """Why speech cannot be synthesized here, or "" if ffmpeg has flite."""
+    if TOOLS is None:
+        return "ffmpeg is needed to synthesize speech"
+    filters = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-filters"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return "" if " flite " in filters else "ffmpeg lacks the flite filter"
+
+
+def speech(text: str, voice: str = "kal") -> list[str]:
+    """ffmpeg input that speaks a made-up English `text` with a flite voice."""
+    return ["-f", "lavfi", "-i", f"flite=text='{text}':voice={voice}"]
+
+
 needs_media = unittest.skipIf(
     TOOLS is None, "ffmpeg and ffprobe are needed to synthesize media"
 )

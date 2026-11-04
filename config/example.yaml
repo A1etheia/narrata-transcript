@@ -34,5 +34,13 @@ asr:
   compute_type: null
   beam_size: 5
 
+# Sprecher-Diarisierung: pyannote, nur aus dem lokalen Modell-Cache.
+# Einrichtung, einmaliger Download und Hardware siehe README, Abschnitt „Diarisierung“.
+diarization:
+  # Modellname auf Hugging Face oder ein lokales Modellverzeichnis.
+  model: pyannote/speaker-diarization-community-1
+  # auto nimmt die NVIDIA-GPU, wenn eine erreichbar ist, sonst die CPU.
+  device: auto
+
 # Schreibt Transkripttext nach work/<gruppe>/<ordinal>/debug.log, nie auf die Konsole.
 debug: false

@@ -100,6 +100,14 @@ class SessionPaths:
         return self.asr_dir / reference_raw_name(index)
 
     @property
+    def diarization_dir(self) -> Path:
+        return self.work_dir / "diarization"
+
+    def diarization_raw(self, index: int) -> Path:
+        """Stored diarization turns of the `index`-th segment (TOOL-76)."""
+        return self.diarization_dir / f"{segment_name(index)}.json"
+
+    @property
     def manifest(self) -> Path:
         return self.work_dir / "manifest.json"
 

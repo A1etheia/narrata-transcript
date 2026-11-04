@@ -239,7 +239,7 @@ def _extract_one(
         raise AudioError(f"{info.path.name}: extraction failed ({error})") from error
 
     # Hashed right after ffmpeg read the file, while it is likely still cached.
-    sha256 = _sha256(info.path)
+    sha256 = sha256_file(info.path)
     frames, sample_rate = wav_frames(tmp_wav)
     duration = frames / sample_rate
     if abs(duration - expected) > _DURATION_TOLERANCE_SECONDS:
@@ -297,7 +297,8 @@ def _metadata(
     }
 
 
-def _sha256(path: Path) -> str:
+def sha256_file(path: Path) -> str:
+    """Hex SHA-256 of a file, read in chunks so large recordings fit in memory."""
     digest = hashlib.sha256()
     with path.open("rb") as file:
         while chunk := file.read(_HASH_CHUNK_BYTES):

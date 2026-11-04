@@ -1,18 +1,25 @@
 import contextlib
+import dataclasses
 import io
 import json
 import os
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 from media import mp4_with_audio, needs_media, sine, synth, video
+from test_diarization import FakeDiarizer
+from test_reference import KEY, MANIFEST, SECRET, SEGMENT, minimal
 
 import transcript
+from transcript import __main__ as transcript_main
 from transcript import audio_tools
 from transcript.__main__ import main
+from transcript.asr import BackendUnavailableError
 from transcript.audio_tools import AudioToolError, AudioTools, ToolInfo
+from transcript.reference import Passage, Word, update_reference
 from transcript.session import SessionKey, SessionPaths
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -272,6 +279,101 @@ class ManifestCommandTest(unittest.TestCase):
 
         self.assertEqual(code, 0, stderr)
         self.assertIn("warning: no consent note", stderr)
+
+
+class DiarizeCommandTest(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.config = self.root / "config.yaml"
+        self.config.write_text(
+            f"language: de\npaths:\n  root: {self.root}\ndiarization:\n  device: cpu\n",
+            encoding="utf-8",
+        )
+        self.paths = SessionPaths(KEY, self.root)
+        self.paths.audio_dir.mkdir(parents=True)
+        self.paths.segment_wav(1).write_bytes(b"audio")
+        update_reference(
+            self.paths,
+            minimal(
+                passages=(
+                    Passage(
+                        index=1,
+                        text=f" Zum {SECRET}.",
+                        words=(Word("Zum", 0, 400), Word(SECRET, 400, 1500)),
+                    ),
+                )
+            ),
+        )
+        self.manifest = dataclasses.replace(
+            MANIFEST, segments=(dataclasses.replace(SEGMENT, index=1),)
+        )
+        self.diarizers: list[FakeDiarizer] = []
+        for patcher in (
+            mock.patch.object(
+                transcript_main.manifest, "load_manifest", return_value=self.manifest
+            ),
+            mock.patch.object(
+                transcript_main.PyannoteDiarizer,
+                "from_config",
+                side_effect=self.diarizer,
+            ),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def diarizer(self, config: Any) -> FakeDiarizer:
+        self.assertEqual(config.diarization_device, "cpu")
+        self.diarizers.append(FakeDiarizer())
+        return self.diarizers[-1]
+
+    def diarize(self, *extra: str) -> tuple[int, str, str]:
+        return run("diarize", str(KEY), "--config", str(self.config), *extra)
+
+    def test_prints_counts_and_times_but_no_labels_or_text(self) -> None:
+        code, stdout, stderr = self.diarize("--num-speakers", "2")
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("beispielgruppe/042: 1 segment(s)", stdout)
+        self.assertRegex(
+            stdout,
+            r"1\. diarized in \d+\.\d s: 2 label\(s\), 2 turn\(s\), "
+            r"1/2 words labelled",  # the second word lies between turns
+        )
+        self.assertEqual(self.diarizers[0].diarized[0][2], 2)
+        for secret in (SECRET, "SPEAKER_"):
+            self.assertNotIn(secret, stdout + stderr)
+
+    def test_second_run_reuses_and_force_diarizes_again(self) -> None:
+        self.diarize()
+
+        _, stdout, _ = self.diarize()
+        self.assertIn("1. reused stored diarization", stdout)
+
+        _, stdout, _ = self.diarize("--force")
+        self.assertIn("1. diarized in", stdout)
+
+    def test_invalid_speaker_count_is_rejected_by_argparse(self) -> None:
+        with (
+            self.assertRaises(SystemExit) as caught,
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            self.diarize("--num-speakers", "0")
+        self.assertEqual(caught.exception.code, 2)
+
+    def test_backend_errors_are_reported_without_traceback(self) -> None:
+        with mock.patch.object(
+            FakeDiarizer,
+            "identity",
+            side_effect=BackendUnavailableError(
+                "pyannote: model not in the local cache"
+            ),
+        ):
+            code, stdout, stderr = self.diarize()
+
+        self.assertEqual((code, stdout), (2, ""))
+        self.assertIn("error: pyannote: model not in the local cache", stderr)
 
 
 if __name__ == "__main__":

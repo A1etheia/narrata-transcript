@@ -11,7 +11,8 @@ Error messages name the backend and the audio path, never transcript text or
 keywords: both may contain names of real people.
 """
 
-from collections.abc import Callable, Iterator, Mapping
+import os
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -106,6 +107,59 @@ class BackendInfo:
     model: str  # e.g. "large-v3-turbo"
     model_version: str | None = None  # revision or checksum, when known
     runtime_version: str | None = None  # version of the backend library
+
+
+def hub_revision(model_path: Path) -> str | None:
+    """The revision of a Hugging Face cache snapshot (`…/snapshots/<sha>`), else None."""
+    return model_path.name if model_path.parent.name == "snapshots" else None
+
+
+def resolve_device(requested: str, cuda_available: bool, backend_id: str) -> str:
+    """`auto` picks cuda when available, else cpu; `cuda` without a GPU is an error."""
+    if requested == "auto":
+        return "cuda" if cuda_available else "cpu"
+    if requested == "cuda" and not cuda_available:
+        raise BackendUnavailableError(f"{backend_id}: no CUDA device found")
+    return requested
+
+
+def cached_model_dir(
+    name: str,
+    lookup: Callable[[str], str],
+    required: Sequence[str],
+    backend_id: str,
+) -> Path:
+    """A local model directory, or `name` resolved by `lookup` from the local cache.
+
+    `lookup` must never download; a miss names the model and the README step.
+    """
+    if os.path.isdir(name):
+        path = Path(name)
+    else:
+        try:
+            path = Path(lookup(name))
+        except Exception as error:
+            raise BackendUnavailableError(
+                f"{backend_id}: model {name} not in the local cache, "
+                f"download it once, see README ({type(error).__name__})"
+            ) from error
+    if not all((path / file).is_file() for file in required):
+        raise BackendUnavailableError(
+            f"{backend_id}: {path} lacks {' or '.join(required)}"
+        )
+    return path
+
+
+def runtime_error(error: Exception, cause: str) -> BackendError:
+    """Out of memory as a `ResourceError`, anything else as a `BackendRuntimeError`.
+
+    `cause` names backend, action and exception type; the runtime's own message
+    is only searched, never repeated.
+    """
+    message = str(error).lower() if isinstance(error, RuntimeError) else ""
+    if isinstance(error, MemoryError) or "out of memory" in message:
+        return ResourceError(f"{cause}, out of memory")
+    return BackendRuntimeError(cause)
 
 
 @dataclass(frozen=True)

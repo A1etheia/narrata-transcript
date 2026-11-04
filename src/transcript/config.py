@@ -11,13 +11,22 @@ import yaml
 from transcript.session import SessionKey, SessionPaths
 
 _LANGUAGE_PATTERN = re.compile(r"[a-z]{2}")
-_TOP_LEVEL_KEYS = {"language", "paths", "segmentation", "audio", "asr", "debug"}
+_TOP_LEVEL_KEYS = {
+    "language",
+    "paths",
+    "segmentation",
+    "audio",
+    "asr",
+    "diarization",
+    "debug",
+}
 _PATHS_KEYS = {"root"}
 _SEGMENTATION_KEYS = {"length_seconds", "overlap_seconds"}
 _AUDIO_KEYS = {"sample_rate", "channels"}
 _AUDIO_CHANNELS = (1, 2)
 _ASR_KEYS = {"model", "device", "compute_type", "beam_size"}
-_ASR_DEVICES = ("auto", "cpu", "cuda")
+_DIARIZATION_KEYS = {"model", "device"}
+_DEVICES = ("auto", "cpu", "cuda")  # for every model-backed step
 
 
 class ConfigError(Exception):
@@ -34,9 +43,12 @@ class Config:
     audio_sample_rate: int = 16000
     audio_channels: int = 1
     asr_model: str = "large-v3-turbo"  # faster-whisper name or local model directory
-    asr_device: str = "auto"  # one of _ASR_DEVICES; auto prefers cuda
+    asr_device: str = "auto"  # one of _DEVICES; auto prefers cuda
     asr_compute_type: str | None = None  # None: float16 on cuda, int8 on cpu
     asr_beam_size: int = 5
+    # Hugging Face name or local model directory, loaded from the local cache only
+    diarization_model: str = "pyannote/speaker-diarization-community-1"
+    diarization_device: str = "auto"  # one of _DEVICES; auto prefers cuda
 
     def session_paths(self, key: SessionKey) -> SessionPaths:
         return SessionPaths(key, self.root)
@@ -85,14 +97,20 @@ def load_config(path: Path) -> Config:
     model = asr.get("model", Config.asr_model)
     if not _is_text(model):
         raise _invalid(path, "asr.model", "must be a model name or directory")
-    device = asr.get("device", Config.asr_device)
-    if device not in _ASR_DEVICES:
-        raise _invalid(path, "asr.device", f"must be one of {', '.join(_ASR_DEVICES)}")
+    device = _choice(path, asr, "asr", "device", Config.asr_device, _DEVICES)
     compute_type = asr.get("compute_type")
     if compute_type is not None and not _is_text(compute_type):
         raise _invalid(path, "asr.compute_type", "must be a name such as float16")
     beam_size = _positive_number(
         path, asr, "asr", "beam_size", Config.asr_beam_size, integer=True
+    )
+
+    diarization = _section(path, data, "diarization", _DIARIZATION_KEYS)
+    diarization_model = diarization.get("model", Config.diarization_model)
+    if not _is_text(diarization_model):
+        raise _invalid(path, "diarization.model", "must be a model name or directory")
+    diarization_device = _choice(
+        path, diarization, "diarization", "device", Config.diarization_device, _DEVICES
     )
 
     return Config(
@@ -107,6 +125,8 @@ def load_config(path: Path) -> Config:
         asr_device=device,
         asr_compute_type=compute_type,
         asr_beam_size=beam_size,
+        diarization_model=diarization_model,
+        diarization_device=diarization_device,
     )
 
 
@@ -129,6 +149,10 @@ def format_config(config: Config) -> str:
                 "device": config.asr_device,
                 "compute_type": config.asr_compute_type,
                 "beam_size": config.asr_beam_size,
+            },
+            "diarization": {
+                "model": config.diarization_model,
+                "device": config.diarization_device,
             },
             "debug": config.debug,
         },
@@ -194,6 +218,22 @@ def _positive_number(
             else "must be a positive number"
         )
         raise _invalid(path, f"{section_name}.{key}", rule)
+    return value
+
+
+def _choice(
+    path: Path,
+    section: dict[str, Any],
+    section_name: str,
+    key: str,
+    default: str,
+    options: tuple[str, ...],
+) -> str:
+    value = section.get(key, default)
+    if value not in options:
+        raise _invalid(
+            path, f"{section_name}.{key}", f"must be one of {', '.join(options)}"
+        )
     return value
 
 

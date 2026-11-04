@@ -51,7 +51,7 @@ class Word:
     speaker: str | None = None  # None is a valid value: no turn covers the word
 
     def __post_init__(self) -> None:
-        _check_span(self.start_ms, self.end_ms, "word time")
+        check_span(self.start_ms, self.end_ms, "word time")
         if self.confidence is not None and not 0 <= self.confidence <= 1:
             raise ValueError("word confidence outside 0..1")
 
@@ -71,7 +71,7 @@ class Passage:
     def __post_init__(self) -> None:
         if self.index < 1:
             raise ValueError("passage index must be positive")
-        _check_span(self.start_ms, self.end_ms, "passage time")
+        check_span(self.start_ms, self.end_ms, "passage time")
 
 
 @dataclass(frozen=True)
@@ -113,7 +113,7 @@ class Overlap:
     end_ms: int
 
     def __post_init__(self) -> None:
-        _check_span(self.start_ms, self.end_ms, "overlap time")
+        check_span(self.start_ms, self.end_ms, "overlap time")
 
 
 @dataclass(frozen=True)
@@ -256,14 +256,26 @@ def write_reference(
     `raw` is the backend's answer, JSON-ready and stored unchanged; `None` for a
     failed segment.
     """
-    if reference.key != paths.key:
-        raise ValueError(f"transcript of {reference.key} given for {paths.key}")
-    index = reference.segment.index
+    _check_key(paths, reference)
     jsonfile.write_atomic(
-        paths.reference_raw(index),
+        paths.reference_raw(reference.segment.index),
         {"backend_id": reference.asr.backend_id, "raw": raw},
     )
-    jsonfile.write_atomic(paths.reference(index), to_json(reference))
+    update_reference(paths, reference)
+
+
+def update_reference(paths: SessionPaths, reference: ReferenceTranscript) -> None:
+    """Rewrite only the normalized transcript, e.g. with speaker labels added.
+
+    The raw file stays as the backend wrote it.
+    """
+    _check_key(paths, reference)
+    jsonfile.write_atomic(paths.reference(reference.segment.index), to_json(reference))
+
+
+def _check_key(paths: SessionPaths, reference: ReferenceTranscript) -> None:
+    if reference.key != paths.key:
+        raise ValueError(f"transcript of {reference.key} given for {paths.key}")
 
 
 def _asr_info(info: BackendInfo, backend: Backend, **result: Any) -> AsrInfo:
@@ -524,7 +536,7 @@ def _passage(data: Any, number: int, path: Path) -> Passage:
         raise ValueError(f"passage {number}: {error}") from None
 
 
-def _check_span(start: int | None, end: int | None, what: str) -> None:
+def check_span(start: int | None, end: int | None, what: str) -> None:
     """Both times absent or non-negative, and in order when both are given."""
     if any(value is not None and value < 0 for value in (start, end)):
         raise ValueError(f"{what} is negative")
