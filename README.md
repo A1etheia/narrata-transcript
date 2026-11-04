@@ -2,7 +2,7 @@
 
 Lokale Pipeline, die Aufnahmen von Rollenspielsitzungen in strukturierte Transkripte für [Narrata](https://github.com/A1etheia/ios-archiv) überführen soll.
 
-**Aktueller Stand: nur das Projektgerüst.** Das Paket lässt sich installieren, `transcript --help` läuft und `transcript config` zeigt die Konfiguration. Session-Schlüssel und Verzeichnislayout sind festgelegt. Audioverarbeitung, Transkription und Export existieren noch nicht.
+**Aktueller Stand: nur das Projektgerüst.** Das Paket lässt sich installieren, `transcript --help` läuft, `transcript config` zeigt die Konfiguration und `transcript doctor` prüft ffmpeg und ffprobe. Session-Schlüssel und Verzeichnislayout sind festgelegt. Audioverarbeitung, Transkription und Export existieren noch nicht.
 
 ## Zielarchitektur
 
@@ -20,6 +20,7 @@ Der JSON-Contract ist die einzige Kopplung zu Narrata. Sein Schema liegt in `ios
 
 - Python 3.10 oder neuer
 - Unter Ubuntu das Paket `python3-venv`
+- `ffmpeg` und `ffprobe` im `PATH`; unter Ubuntu/WSL beide über `sudo apt install ffmpeg`
 
 ## Setup
 
@@ -28,7 +29,10 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
 cp config/example.yaml config/config.yaml
+transcript doctor
 ```
+
+`transcript doctor` gibt die gefundenen Versionen von `ffmpeg` und `ffprobe` aus. Fehlt eines oder läuft es nicht, endet der Befehl mit Exit-Code 2 und einer Meldung, die das Werkzeug und die Installation nennt.
 
 ## Konfiguration
 

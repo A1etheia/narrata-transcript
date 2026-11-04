@@ -1,11 +1,11 @@
-"""Command-line entry point. Only `config` exists so far; no pipeline commands yet."""
+"""Command-line entry point: `config` and `doctor` so far; no pipeline commands yet."""
 
 import argparse
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from transcript import __version__
+from transcript import __version__, audio_tools
 from transcript.config import ConfigError, format_config, load_config
 
 _DEFAULT_CONFIG = Path("config/config.yaml")
@@ -30,11 +30,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=_DEFAULT_CONFIG,
         help=f"configuration file (default: {_DEFAULT_CONFIG})",
     )
+    commands.add_parser(
+        "doctor", help="Check that ffmpeg and ffprobe are installed and run."
+    )
     args = parser.parse_args(argv)
 
     if args.command == "config":
         return _show_config(args.config)
+    if args.command == "doctor":
+        return _doctor()
     parser.print_help()
+    return 0
+
+
+def _doctor() -> int:
+    try:
+        tools = audio_tools.check_audio_tools()
+    except audio_tools.AudioToolError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    for info in (tools.ffmpeg, tools.ffprobe):
+        print(f"{info.name} {info.version} ({info.path})")
     return 0
 
 

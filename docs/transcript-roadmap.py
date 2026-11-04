@@ -42,8 +42,8 @@ P = [
     ]),
     ("Phase 2 — Pipeline-Kern bis Referenztranskription",
      "M2 — Eine Session läuft vom MP4 bis zur Referenztranskription mit Sprecher-Labels und Wissens-Snapshot.", [
-        ("TOOL-9", "ffmpeg/ffprobe-Preflight", 0.5, ""),
-        ("TOOL-10", "Formate erkennen, Audiospur extrahieren", 1.0, "aus TOOL-5: Tests mit Audio erzeugen es zur Laufzeit synthetisch, Audio-Fixtures sind nicht vorgesehen"),
+        ("TOOL-9", "ffmpeg/ffprobe-Preflight", 0.5, "erledigt: `src/transcript/audio_tools.py`, `transcript doctor`"),
+        ("TOOL-10", "Formate erkennen, Audiospur extrahieren", 1.0, "aus TOOL-5: Tests mit Audio erzeugen es zur Laufzeit synthetisch, Audio-Fixtures sind nicht vorgesehen; aus TOOL-9: `check_audio_tools()` vor der ersten Extraktion aufrufen und die Versionen ins Log schreiben"),
         ("TOOL-12", "Session-Manifest, absolute Zeiten", 0.5, "aus TOOL-66: Manifest vermerkt die mündliche Zustimmung pro Sitzung; aus TOOL-4: Manifest liegt unter `work/<gruppe>/<ordinal>/manifest.json`, beim Lesen `play_session_id` prüfen, weil Ordinale neu vergeben werden können; aus TOOL-62: `input/<gruppe>/ordinal/` enthält viele Sitzungen ohne gültiges Ordinal, vor dem ersten Manifest pro Sitzung einsortieren"),
         ("TOOL-63", "Backend-Schnittstelle, Capabilities, Fake-Backend", 1.0, ""),
         ("TOOL-16", "Internes Referenztranskript-Format", 1.0, "vor TOOL-64: der Adapter schreibt in dieses Format; aus TOOL-20: optionales Sprecher-Label pro Wort (fehlt bei 6–14 % der Wörter), Diarisierungs-Metadaten getrennt von ASR-Metadaten"),
@@ -80,7 +80,7 @@ P = [
     ]),
     ("Phase 4 — End-to-End-Pilot",
      "M4 — Pilot-Review (TOOL-60): Kernhypothese geprüft; Entscheidungen Review-Kanal, Remote-Backend, Freigabe IT/OT. Zweiter großer Reflexionspunkt.", [
-        ("TOOL-56", "Preflight", 0.5, ""),
+        ("TOOL-56", "Preflight", 0.5, "aus TOOL-9: `transcript doctor` ist der Ausgangspunkt des Gesamt-Preflights"),
         ("TOOL-55", "E2E-CLI mit Halt an manuellen Schritten", 1.0, ""),
         ("TOOL-57", "Pipeline-Status + Resume", 1.0, ""),
         ("TOOL-58", "Erste reale Session komplett (inkl. Review- und Zuordnungszeit)", 2.0, "Export → Fixture für IOA-1218"),

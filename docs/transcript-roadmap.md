@@ -80,8 +80,8 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| TOOL-9 | ffmpeg/ffprobe-Preflight | 0.5 | 01.12.2026 | 01.12.2026 |  |
-| TOOL-10 | Formate erkennen, Audiospur extrahieren | 1 | 03.12.2026 | 03.12.2026 | aus TOOL-5: Tests mit Audio erzeugen es zur Laufzeit synthetisch, Audio-Fixtures sind nicht vorgesehen |
+| TOOL-9 | ffmpeg/ffprobe-Preflight | 0.5 | 01.12.2026 | 01.12.2026 | erledigt: `src/transcript/audio_tools.py`, `transcript doctor` |
+| TOOL-10 | Formate erkennen, Audiospur extrahieren | 1 | 03.12.2026 | 03.12.2026 | aus TOOL-5: Tests mit Audio erzeugen es zur Laufzeit synthetisch, Audio-Fixtures sind nicht vorgesehen; aus TOOL-9: `check_audio_tools()` vor der ersten Extraktion aufrufen und die Versionen ins Log schreiben |
 | TOOL-12 | Session-Manifest, absolute Zeiten | 0.5 | 07.12.2026 | 07.12.2026 | aus TOOL-66: Manifest vermerkt die mündliche Zustimmung pro Sitzung; aus TOOL-4: Manifest liegt unter `work/<gruppe>/<ordinal>/manifest.json`, beim Lesen `play_session_id` prüfen, weil Ordinale neu vergeben werden können; aus TOOL-62: `input/<gruppe>/ordinal/` enthält viele Sitzungen ohne gültiges Ordinal, vor dem ersten Manifest pro Sitzung einsortieren |
 | TOOL-63 | Backend-Schnittstelle, Capabilities, Fake-Backend | 1 | 07.12.2026 | 08.12.2026 |  |
 | TOOL-16 | Internes Referenztranskript-Format | 1 | 08.12.2026 | 10.12.2026 | vor TOOL-64: der Adapter schreibt in dieses Format; aus TOOL-20: optionales Sprecher-Label pro Wort (fehlt bei 6–14 % der Wörter), Diarisierungs-Metadaten getrennt von ASR-Metadaten |
@@ -126,7 +126,7 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| TOOL-56 | Preflight | 0.5 | 18.02.2027 | 18.02.2027 |  |
+| TOOL-56 | Preflight | 0.5 | 18.02.2027 | 18.02.2027 | aus TOOL-9: `transcript doctor` ist der Ausgangspunkt des Gesamt-Preflights |
 | TOOL-55 | E2E-CLI mit Halt an manuellen Schritten | 1 | 18.02.2027 | 22.02.2027 |  |
 | TOOL-57 | Pipeline-Status + Resume | 1 | 22.02.2027 | 23.02.2027 |  |
 | TOOL-58 | Erste reale Session komplett (inkl. Review- und Zuordnungszeit) | 2 | 23.02.2027 | 01.03.2027 | Export → Fixture für IOA-1218 |

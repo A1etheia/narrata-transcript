@@ -4,9 +4,12 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import transcript
+from transcript import audio_tools
 from transcript.__main__ import main
+from transcript.audio_tools import AudioToolError, AudioTools, ToolInfo
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -73,6 +76,30 @@ class ConfigCommandTest(unittest.TestCase):
 
         self.assertEqual(code, 2)
         self.assertIn("config/example.yaml", stderr)
+
+
+class DoctorCommandTest(unittest.TestCase):
+    def test_prints_each_tool_with_version_and_path(self) -> None:
+        tools = AudioTools(
+            ffmpeg=ToolInfo("ffmpeg", Path("/bin/ffmpeg"), "6.1.1"),
+            ffprobe=ToolInfo("ffprobe", Path("/bin/ffprobe"), "6.1.1"),
+        )
+        with mock.patch.object(audio_tools, "check_audio_tools", return_value=tools):
+            code, stdout, _ = run("doctor")
+
+        self.assertEqual(code, 0)
+        self.assertIn("ffmpeg 6.1.1 (/bin/ffmpeg)", stdout)
+        self.assertIn("ffprobe 6.1.1 (/bin/ffprobe)", stdout)
+
+    def test_missing_tool_is_reported_without_traceback(self) -> None:
+        error = AudioToolError("ffprobe not found on PATH; install with: sudo apt …")
+        with mock.patch.object(audio_tools, "check_audio_tools", side_effect=error):
+            code, stdout, stderr = run("doctor")
+
+        self.assertEqual(code, 2)
+        self.assertEqual(stdout, "")
+        self.assertIn("error: ffprobe not found", stderr)
+        self.assertNotIn("Traceback", stderr)
 
 
 if __name__ == "__main__":
