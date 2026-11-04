@@ -101,6 +101,8 @@ with opened(backend):
     result = transcribe(backend, TranscriptionRequest(wav, language=config.language, keywords=hints))
 ```
 
+In der Pipeline übernimmt das `transcript.transcription.transcribe_segment(paths, manifest, index, backend, language, keywords)`. Es prüft Segment, WAV und ein vorhandenes Ergebnis vor dem Laden, misst `elapsed_ms` nur um `transcribe` und speichert über `write_reference`. Ein Fehlschlag wird als `failed` gespeichert, ersetzt aber nie ein erfolgreiches Ergebnis. Auf der Kommandozeile: `transcript transcribe <session> --segment N`.
+
 - **Nur lokal.** Ein Modellname wird mit `local_files_only` aus dem Hugging-Face-Cache aufgelöst, ein Verzeichnis direkt genommen. Beides muss `model.bin` und `tokenizer.json` enthalten, sonst würde faster-whisper den Tokenizer nachladen. `info.model_version` ist die Revision des Cache-Snapshots, bei einem eigenen Verzeichnis `None`. `info.runtime_version` ist die Version von faster-whisper.
 - **Einstellungen.** `vad_filter`, `word_timestamps` und `condition_on_previous_text: false` sind fest (TOOL-62, Wortzeiten für TOOL-76). Konfigurierbar sind Modell, Gerät, `compute_type` und `beam_size`. Alles steht in `result.settings`.
 - **Hotwords.** Die Keywords des Requests gehen der Reihe nach in den Hotword-Prompt, solange er in 223 Tokens passt. Der erste Begriff, der nicht mehr passt, beendet die Liste. Die wichtigsten Begriffe gehören also nach vorne. `keywords_used` nennt genau die übergebenen Begriffe; die interne Kürzung von faster-whisper greift so nie.

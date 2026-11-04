@@ -23,7 +23,7 @@ write_reference(paths, reference, result.raw)
 reference = load_reference(paths, segment.index)   # ohne Backend
 ```
 
-Schlägt ein Segment fehl, hält `failed_reference(error, backend, manifest, segment)` das fest.
+Schlägt ein Segment fehl, hält `failed_reference(error, backend, manifest, segment)` das fest. Beides zusammen, samt Laufzeitmessung und den Regeln für vorhandene Ergebnisse, erledigt `transcript.transcription.transcribe_segment`, auf der Kommandozeile `transcript transcribe <session> --segment N`.
 
 ## Normalform
 
