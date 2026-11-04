@@ -1,4 +1,4 @@
-"""Shared helpers for the TOOL-62 runners. Standard library only, one venv per runner.
+"""Shared helpers for the TOOL-62 ASR and TOOL-20 diarization runners. Standard library only, one venv per runner.
 
 Privacy: nothing here prints transcript text. Console output carries timings and counts.
 """
@@ -23,13 +23,20 @@ def parse_args(
     description: str,
     block_seconds: int | None = None,
     repetition_penalty: float | None = None,
+    keywords: bool = True,
+    num_speakers: bool = False,
 ) -> argparse.Namespace:
-    """Common flags; a runner passes a default to get the matching tuning flag."""
+    """Common flags; a runner opts into the flags it understands."""
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("audio", type=Path)
     parser.add_argument("--out", type=Path, required=True, help="directory under work/")
     parser.add_argument("--model", required=True)
-    parser.add_argument("--keywords", type=Path, help="local file, one term per line")
+    if keywords:
+        parser.add_argument(
+            "--keywords", type=Path, help="local file, one term per line"
+        )
+    if num_speakers:
+        parser.add_argument("--num-speakers", type=int, help="known speaker count")
     if block_seconds is not None:
         parser.add_argument("--block-seconds", type=int, default=block_seconds)
     if repetition_penalty is not None:
@@ -46,14 +53,27 @@ def read_keywords(path: Path | None) -> list[str]:
     return [line.strip() for line in lines if line.strip()]
 
 
+@contextmanager
+def open_wav(path: Path) -> Iterator[wave.Wave_read]:
+    """Open a 16 kHz mono WAV from cut.sh; anything else stops the run."""
+    with wave.open(str(path), "rb") as source:
+        if source.getframerate() != SAMPLE_RATE or source.getnchannels() != 1:
+            raise SystemExit("expected 16 kHz mono WAV, use cut.sh")
+        yield source
+
+
+def read_wav(path: Path) -> bytes:
+    """The whole file as 16-bit PCM."""
+    with open_wav(path) as source:
+        return source.readframes(source.getnframes())
+
+
 def wav_blocks(path: Path, seconds: int) -> Iterator[tuple[float, bytes]]:
     """Yield (offset in seconds, 16-bit PCM) per block, reading one block at a time.
 
     Blocks do not overlap, so a word at a boundary can be split.
     """
-    with wave.open(str(path), "rb") as source:
-        if source.getframerate() != SAMPLE_RATE or source.getnchannels() != 1:
-            raise SystemExit("expected 16 kHz mono WAV, use cut.sh")
+    with open_wav(path) as source:
         frames = seconds * SAMPLE_RATE
         offset = 0
         while pcm := source.readframes(frames):
@@ -120,6 +140,34 @@ class VramPeak:
         self._thread.join()
 
 
+def _common_meta(args: argparse.Namespace) -> dict:
+    return {
+        "model": args.model,
+        "audio_seconds": audio_seconds(args.audio),
+        "peak_ram_mib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024,
+        "offline": os.environ.get("HF_HUB_OFFLINE") == "1",
+    }
+
+
+def _write_run(out: Path, label: str, filename: str, run: dict) -> Path:
+    """A new directory per run, so results are never overwritten."""
+    stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+    run_dir = out / f"{stamp}-{label}"
+    run_dir.mkdir(parents=True)
+    (run_dir / filename).write_text(
+        json.dumps(run, ensure_ascii=False, indent=1), encoding="utf-8"
+    )
+    return run_dir
+
+
+def _report(run_dir: Path, counts: str, seconds: float, meta: dict) -> None:
+    speed = meta["audio_seconds"] / seconds
+    print(
+        f"{run_dir.name}: {counts}, {seconds:.0f} s ({speed:.1f}x realtime), "
+        f"peak VRAM {meta['peak_vram_mib']} MiB, peak RAM {meta['peak_ram_mib']} MiB"
+    )
+
+
 def finish(
     args: argparse.Namespace,
     label: str,
@@ -127,29 +175,37 @@ def finish(
     meta: dict,
     keyword_count: int,
 ) -> None:
-    """Write a finished run into a new directory and print its counts.
+    """Write a finished ASR run as `run.json` and print its counts.
 
     `meta` carries backend, version, settings, timings and peak VRAM from the runner.
-    A new directory per run, so results are never overwritten.
     """
-    meta |= {
-        "model": args.model,
-        "keyword_count": keyword_count,
-        "audio_seconds": audio_seconds(args.audio),
-        "peak_ram_mib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024,
-        "offline": os.environ.get("HF_HUB_OFFLINE") == "1",
-    }
-    stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
-    run_dir = args.out / f"{stamp}-{label}"
-    run_dir.mkdir(parents=True)
-    run = {"meta": meta, "segments": segments}
-    (run_dir / "run.json").write_text(
-        json.dumps(run, ensure_ascii=False, indent=1), encoding="utf-8"
+    meta |= _common_meta(args) | {"keyword_count": keyword_count}
+    run_dir = _write_run(
+        args.out, label, "run.json", {"meta": meta, "segments": segments}
     )
     words = sum(len(segment["words"]) for segment in segments)
-    speed = meta["audio_seconds"] / meta["transcribe_seconds"]
-    print(
-        f"{run_dir.name}: {len(segments)} segments, {words} words, "
-        f"{meta['transcribe_seconds']:.0f} s ({speed:.1f}x realtime), "
-        f"peak VRAM {meta['peak_vram_mib']} MiB, peak RAM {meta['peak_ram_mib']} MiB"
-    )
+    counts = f"{len(segments)} segments, {words} words"
+    _report(run_dir, counts, meta["transcribe_seconds"], meta)
+
+
+def finish_diarization(
+    args: argparse.Namespace,
+    label: str,
+    turns: list[dict],
+    meta: dict,
+    exclusive_turns: list[dict] | None = None,
+) -> None:
+    """Write a finished diarization run as `diar.json` and print its counts.
+
+    `turns` may overlap; `exclusive_turns`, if the backend has them, never do.
+    Each turn is `{"start", "end", "label"}` in seconds. Labels are generic
+    backend labels, never names.
+    """
+    meta |= _common_meta(args) | {"num_speakers": args.num_speakers}
+    run = {"meta": meta, "turns": turns}
+    if exclusive_turns is not None:
+        run["exclusive_turns"] = exclusive_turns
+    run_dir = _write_run(args.out, label, "diar.json", run)
+    labels = len({turn["label"] for turn in turns})
+    counts = f"{len(turns)} turns, {labels} labels"
+    _report(run_dir, counts, meta["diarize_seconds"], meta)
