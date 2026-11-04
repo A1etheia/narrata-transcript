@@ -9,12 +9,11 @@ sentence; flite speaks English, so this run uses language "en".
 
 import importlib.util
 import os
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-from media import TOOLS, synth
+from media import flite_missing, speech, synth
 from test_reference import MANIFEST, SEGMENT
 
 from transcript.asr import TranscriptionRequest, opened, transcribe
@@ -30,17 +29,7 @@ def _skip_reason() -> str:
         return "set TRANSCRIPT_WHISPER_SMOKE=1 to run the real model"
     if importlib.util.find_spec("faster_whisper") is None:
         return "install the whisper extra: pip install -e '.[whisper]'"
-    if TOOLS is None:
-        return "ffmpeg is needed to synthesize speech"
-    filters = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-filters"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    if " flite " not in filters:
-        return "ffmpeg lacks the flite filter"
-    return ""
+    return flite_missing()
 
 
 SKIP_REASON = _skip_reason()
@@ -53,7 +42,7 @@ class WhisperSmokeTest(unittest.TestCase):
             root = Path(directory)
             audio = synth(
                 root / "speech.wav",
-                *("-f", "lavfi", "-i", f"flite=text='{SENTENCE}'"),
+                *speech(SENTENCE),
                 *("-ar", "16000", "-ac", "1"),
             )
             device = os.environ.get("TRANSCRIPT_WHISPER_DEVICE", "auto")
