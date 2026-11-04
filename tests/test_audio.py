@@ -13,8 +13,15 @@ from pathlib import Path
 from media import TOOLS, mp4_with_audio, needs_media, sine, synth, video
 from test_audio_tools import write_stub
 
-from transcript.audio import MP4_CONTAINER, AudioError, extract, probe
-from transcript.audio_tools import ToolInfo
+from transcript.audio import (
+    MP4_CONTAINER,
+    AudioError,
+    AudioInfo,
+    ExtractedSegment,
+    extract,
+    probe,
+)
+from transcript.audio_tools import AudioTools, ToolInfo
 from transcript.config import Config
 from transcript.session import SessionKey
 
@@ -104,28 +111,71 @@ class ExtractTest(MediaTestCase):
     def metadata(self) -> dict:
         return json.loads(self.paths.audio_metadata.read_text(encoding="utf-8"))
 
+    def extract_one(self, info: AudioInfo, **kwargs: object) -> ExtractedSegment:
+        (segment,) = extract([info], self.paths, self.config, self.tools, **kwargs)
+        return segment
+
     def test_mp4_audio_becomes_16_khz_mono_wav(self) -> None:
         source = synth(self.dir / "talk.mp4", *mp4_with_audio())
         info = probe(source, self.tools)
 
-        result = extract(info, self.paths, self.config, self.tools)
+        segment = self.extract_one(info)
 
-        with wave.open(str(self.paths.audio_wav), "rb") as wav:
+        with wave.open(str(self.paths.segment_wav(1)), "rb") as wav:
             self.assertEqual(wav.getframerate(), 16000)
             self.assertEqual(wav.getnchannels(), 1)
             self.assertEqual(wav.getsampwidth(), 2)
-        self.assertAlmostEqual(result.duration, info.duration, delta=0.5)
+            self.assertEqual(wav.getnframes(), segment.frames)
+        self.assertAlmostEqual(segment.duration_ms, info.duration * 1000, delta=500)
 
         metadata = self.metadata()
-        self.assertEqual(metadata["format_version"], 1)
-        self.assertTrue(metadata["source"]["has_video"])
-        self.assertEqual(metadata["source"]["file"], "talk.mp4")
-        self.assertEqual(
-            metadata["selected_stream"], {"audio_index": 0, "stream_index": 1}
-        )
-        self.assertEqual(metadata["output"]["file"], "audio.wav")
-        self.assertEqual(metadata["output"]["sample_rate"], 16000)
+        self.assertEqual(metadata["format_version"], 2)
+        self.assertEqual(metadata["output_format"]["sample_rate"], 16000)
         self.assertEqual(metadata["tools"]["ffmpeg"], self.tools.ffmpeg.version)
+        (entry,) = metadata["segments"]
+        self.assertEqual(entry["index"], 1)
+        self.assertEqual(entry["file"], "segment-01.wav")
+        self.assertEqual(entry["frames"], segment.frames)
+        self.assertTrue(entry["source"]["has_video"])
+        self.assertEqual(entry["source"]["file"], "talk.mp4")
+        self.assertEqual(
+            entry["source"]["sha256"], hashlib.sha256(source.read_bytes()).hexdigest()
+        )
+        self.assertEqual(
+            entry["selected_stream"], {"audio_index": 0, "stream_index": 1}
+        )
+
+    def test_recordings_become_segments_in_the_given_order(self) -> None:
+        first = synth(self.dir / "part 1.wav", *sine(seconds=1))
+        second = synth(self.dir / "part 2.mp3", *sine(seconds=2))
+        infos = [probe(first, self.tools), probe(second, self.tools)]
+
+        segments = extract(infos, self.paths, self.config, self.tools)
+
+        self.assertEqual([segment.index for segment in segments], [1, 2])
+        self.assertAlmostEqual(segments[0].duration_ms, 1000, delta=50)
+        self.assertAlmostEqual(segments[1].duration_ms, 2000, delta=100)
+        entries = self.metadata()["segments"]
+        self.assertEqual(
+            [entry["source"]["file"] for entry in entries], ["part 1.wav", "part 2.mp3"]
+        )
+        self.assertEqual(
+            [entry["source"]["sha256"] for entry in entries],
+            [hashlib.sha256(path.read_bytes()).hexdigest() for path in (first, second)],
+        )
+        self.assertTrue(self.paths.segment_wav(2).is_file())
+
+    def test_fewer_recordings_remove_stale_segments(self) -> None:
+        first = probe(synth(self.dir / "a.wav", *sine(seconds=1)), self.tools)
+        second = probe(synth(self.dir / "b.wav", *sine(seconds=1)), self.tools)
+        extract([first, second], self.paths, self.config, self.tools)
+
+        extract([first], self.paths, self.config, self.tools)
+
+        self.assertEqual(
+            sorted(path.name for path in self.paths.audio_dir.iterdir()),
+            ["audio.json", "segment-01.wav"],
+        )
 
     def test_configured_format_is_used(self) -> None:
         config = dataclasses.replace(
@@ -133,9 +183,9 @@ class ExtractTest(MediaTestCase):
         )
         info = probe(synth(self.dir / "talk.wav", *sine()), self.tools)
 
-        extract(info, self.paths, config, self.tools)
+        extract([info], self.paths, config, self.tools)
 
-        with wave.open(str(self.paths.audio_wav), "rb") as wav:
+        with wave.open(str(self.paths.segment_wav(1)), "rb") as wav:
             self.assertEqual((wav.getframerate(), wav.getnchannels()), (22050, 2))
 
     def test_supported_formats_extract(self) -> None:
@@ -147,9 +197,9 @@ class ExtractTest(MediaTestCase):
             with self.subTest(name=name):
                 info = probe(synth(self.dir / name, *args), self.tools)
 
-                result = extract(info, self.paths, self.config, self.tools)
+                segment = self.extract_one(info)
 
-                self.assertAlmostEqual(result.duration, 2, delta=0.1)
+                self.assertAlmostEqual(segment.duration_ms, 2000, delta=100)
 
     def test_stream_choice_is_deterministic_and_recorded(self) -> None:
         source = synth(
@@ -165,21 +215,22 @@ class ExtractTest(MediaTestCase):
         )
         info = probe(source, self.tools)
 
-        extract(info, self.paths, self.config, self.tools)
-        default_frequency = frequency(self.paths.audio_wav)
-        extract(info, self.paths, self.config, self.tools, stream=1)
+        self.extract_one(info)
+        default_frequency = frequency(self.paths.segment_wav(1))
+        self.extract_one(info, stream=1)
 
         self.assertAlmostEqual(default_frequency, 440, delta=20)
-        self.assertAlmostEqual(frequency(self.paths.audio_wav), 880, delta=20)
+        self.assertAlmostEqual(frequency(self.paths.segment_wav(1)), 880, delta=20)
         self.assertEqual(
-            self.metadata()["selected_stream"], {"audio_index": 1, "stream_index": 1}
+            self.metadata()["segments"][0]["selected_stream"],
+            {"audio_index": 1, "stream_index": 1},
         )
 
     def test_missing_stream_is_rejected(self) -> None:
         info = probe(synth(self.dir / "talk.wav", *sine()), self.tools)
 
         with self.assertRaises(AudioError) as caught:
-            extract(info, self.paths, self.config, self.tools, stream=1)
+            self.extract_one(info, stream=1)
 
         self.assertIn("no audio stream 1; the recording has 1", str(caught.exception))
 
@@ -187,21 +238,41 @@ class ExtractTest(MediaTestCase):
         source = synth(self.dir / "talk.mp4", *mp4_with_audio())
         before = hashlib.sha256(source.read_bytes()).hexdigest()
 
-        extract(probe(source, self.tools), self.paths, self.config, self.tools)
+        self.extract_one(probe(source, self.tools))
 
         self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), before)
 
     def test_failing_ffmpeg_leaves_no_files(self) -> None:
         info = probe(synth(self.dir / "talk.wav", *sine()), self.tools)
-        write_stub(self.dir, "ffmpeg", "echo 'boom: Invalid data' >&2\nexit 1")
-        stub = ToolInfo("ffmpeg", self.dir / "ffmpeg", "x")
-        tools = dataclasses.replace(self.tools, ffmpeg=stub)
+        tools = self.failing_ffmpeg("exit 1")
 
         with self.assertRaises(AudioError) as caught:
-            extract(info, self.paths, self.config, tools)
+            extract([info], self.paths, self.config, tools)
 
         self.assertIn("extraction failed (boom: Invalid data)", str(caught.exception))
         self.assertEqual(list(self.paths.audio_dir.iterdir()), [])
+
+    def test_failure_in_a_later_recording_keeps_the_previous_state(self) -> None:
+        first = probe(synth(self.dir / "a.wav", *sine(seconds=1)), self.tools)
+        second = probe(synth(self.dir / "b.wav", *sine(seconds=1)), self.tools)
+        self.extract_one(first)
+        before = {
+            path.name: path.read_bytes() for path in self.paths.audio_dir.iterdir()
+        }
+        # The stub passes the first recording on to the real ffmpeg.
+        tools = self.failing_ffmpeg(
+            f'case "$*" in *b.wav*) exit 1;; esac\nexec "{self.tools.ffmpeg.path}" "$@"'
+        )
+
+        with self.assertRaises(AudioError) as caught:
+            extract([first, second], self.paths, self.config, tools)
+
+        self.assertIn("b.wav: extraction failed", str(caught.exception))
+
+        after = {
+            path.name: path.read_bytes() for path in self.paths.audio_dir.iterdir()
+        }
+        self.assertEqual(after, before)
 
     def test_duration_mismatch_is_rejected_and_leaves_no_files(self) -> None:
         info = probe(synth(self.dir / "talk.wav", *sine()), self.tools)
@@ -209,10 +280,16 @@ class ExtractTest(MediaTestCase):
         claims_ten_seconds = dataclasses.replace(info, audio_streams=(stream,))
 
         with self.assertRaises(AudioError) as caught:
-            extract(claims_ten_seconds, self.paths, self.config, self.tools)
+            self.extract_one(claims_ten_seconds)
 
         self.assertIn("may be damaged", str(caught.exception))
         self.assertEqual(list(self.paths.audio_dir.iterdir()), [])
+
+    def failing_ffmpeg(self, body: str) -> AudioTools:
+        """ffmpeg stub that prints an error line and runs `body`."""
+        write_stub(self.dir, "ffmpeg", f"echo 'boom: Invalid data' >&2\n{body}")
+        stub = ToolInfo("ffmpeg", self.dir / "ffmpeg", "x")
+        return dataclasses.replace(self.tools, ffmpeg=stub)
 
 
 def frequency(path: Path) -> float:

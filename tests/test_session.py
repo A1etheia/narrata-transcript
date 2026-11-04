@@ -57,8 +57,21 @@ class SessionPathsTest(unittest.TestCase):
             paths.debug_log, Path("/data/work/beispielgruppe/042/debug.log")
         )
         self.assertEqual(paths.audio_dir, Path("/data/work/beispielgruppe/042/audio"))
-        self.assertEqual(paths.audio_wav.parent, paths.audio_dir)
+        self.assertEqual(
+            paths.segment_wav(1),
+            Path("/data/work/beispielgruppe/042/audio/segment-01.wav"),
+        )
+        self.assertEqual(paths.segment_wav(12).name, "segment-12.wav")
+        with self.assertRaises(ValueError):
+            paths.segment_wav(0)
         self.assertEqual(paths.audio_metadata.parent, paths.audio_dir)
+        self.assertEqual(
+            paths.manifest, Path("/data/work/beispielgruppe/042/manifest.json")
+        )
+        self.assertEqual(
+            paths.narrata_context,
+            Path("/data/work/beispielgruppe/042/narrata/transcription-context.json"),
+        )
 
     def test_equal_sessions_resolve_to_the_same_directory(self) -> None:
         first = SessionPaths(SessionKey.parse("beispielgruppe/42"), Path("/data"))

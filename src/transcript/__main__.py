@@ -1,4 +1,4 @@
-"""Command-line entry point: `config`, `doctor` and `extract`."""
+"""Command-line entry point: `config`, `doctor`, `extract` and `manifest`."""
 
 import argparse
 import contextlib
@@ -7,9 +7,11 @@ import sys
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-from transcript import __version__, audio, audio_tools
+from transcript import __version__, audio, audio_tools, manifest
 from transcript.config import Config, ConfigError, format_config, load_config
+from transcript.jsonfile import DataFileError
 from transcript.session import SessionKey
+from transcript.timecode import format_ms
 
 _DEFAULT_CONFIG = Path("config/config.yaml")
 _EXAMPLE_CONFIG = Path("config/example.yaml")
@@ -31,7 +33,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "doctor", help="Check that ffmpeg and ffprobe are installed and run."
     )
     extract_command = commands.add_parser(
-        "extract", help="Extract the audio track of a session's recording."
+        "extract", help="Extract the audio track of a session's recordings."
     )
     extract_command.add_argument("session", help="session key <group>/<ordinal>")
     extract_command.add_argument(
@@ -40,7 +42,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=0,
         help="audio stream to use, counted from 0 (default: 0, the first)",
     )
-    for command in (config_command, extract_command):
+    manifest_command = commands.add_parser(
+        "manifest", help="Write the session manifest from audio and Narrata context."
+    )
+    manifest_command.add_argument("session", help="session key <group>/<ordinal>")
+    manifest_command.add_argument(
+        "--consent",
+        action="store_true",
+        help="note that everyone audible agreed to the recording orally",
+    )
+    for command in (config_command, extract_command, manifest_command):
         command.add_argument(
             "--config",
             type=Path,
@@ -55,6 +66,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _doctor()
     if args.command == "extract":
         return _extract(args.session, args.config, args.stream)
+    if args.command == "manifest":
+        return _manifest(args.session, args.config, args.consent)
     parser.print_help()
     return 0
 
@@ -75,11 +88,11 @@ def _extract(raw_key: str, config_path: Path, stream: int) -> int:
         key = SessionKey.parse(raw_key)
         config = _load_config(config_path)
         paths = config.session_paths(key)
-        recording = audio.find_recording(paths)
+        recordings = audio.find_recordings(paths)
         with _log_to_stderr():
             tools = audio_tools.check_audio_tools()
-            info = audio.probe(recording, tools)
-            result = audio.extract(info, paths, config, tools, stream=stream)
+            infos = [audio.probe(recording, tools) for recording in recordings]
+            segments = audio.extract(infos, paths, config, tools, stream=stream)
     except (
         ValueError,
         ConfigError,
@@ -89,13 +102,47 @@ def _extract(raw_key: str, config_path: Path, stream: int) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 2
 
-    video = ", video ignored" if info.has_video else ""
+    print(f"{key}: {len(segments)} recording(s) in this order")
+    for segment in segments:
+        info = segment.source
+        video = ", video ignored" if info.has_video else ""
+        print(
+            f"  {segment.index}. {info.path.name}: {info.container}, "
+            f"audio stream {stream} of {len(info.audio_streams)} "
+            f"({segment.stream.codec}){video}, "
+            f"{format_ms(segment.duration_ms)} -> {paths.segment_wav(segment.index).name}"
+        )
+    print(f"wrote {paths.audio_dir} and {paths.audio_metadata.name}")
+    return 0
+
+
+def _manifest(raw_key: str, config_path: Path, consent: bool) -> int:
+    try:
+        key = SessionKey.parse(raw_key)
+        paths = _load_config(config_path).session_paths(key)
+        result = manifest.build_manifest(paths, consent=consent)
+    except (ValueError, ConfigError, DataFileError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+
     print(
-        f"{key}: {info.container}, audio stream {stream} of {len(info.audio_streams)} "
-        f"({result.stream.codec}){video}"
+        f"{key}: play session {result.play_session_id}, "
+        f"{result.session_date.isoformat()}, {len(result.segments)} segment(s)"
     )
-    print(f"duration {info.duration:.2f} s, extracted {result.duration:.2f} s")
-    print(f"wrote {paths.audio_wav} and {paths.audio_metadata.name}")
+    for segment in result.segments:
+        print(
+            f"  {segment.index}. {format_ms(segment.start_ms)} - "
+            f"{format_ms(segment.end_ms)}  {segment.file} ({segment.source.file})"
+        )
+    if result.consent is None:
+        print(
+            "warning: no consent note; run again with --consent once everyone "
+            "audible agreed",
+            file=sys.stderr,
+        )
+    else:
+        print(f"consent noted at {result.consent.noted_at}")
+    print(f"wrote {paths.manifest}")
     return 0
 
 
