@@ -2,7 +2,7 @@
 
 Lokale Pipeline, die Aufnahmen von Rollenspielsitzungen in strukturierte Transkripte für [Narrata](https://github.com/A1etheia/ios-archiv) überführen soll.
 
-**Aktueller Stand: Audio-Vorbereitung.** Das Paket lässt sich installieren, `transcript config` zeigt die Konfiguration, `transcript doctor` prüft ffmpeg und ffprobe, und `transcript extract` prüft die Aufnahmen einer Session und extrahiert ihre Audiospur, eine Datei pro Aufnahme, und `transcript manifest` schreibt das Session-Manifest mit absoluter Zeitachse. Session-Schlüssel und Verzeichnislayout sind festgelegt. Die Schnittstelle für ASR-Backends steht, mit einem Fake-Backend für Tests; ein echtes Backend, Transkription und Export existieren noch nicht.
+**Aktueller Stand: Audio-Vorbereitung.** Das Paket lässt sich installieren, `transcript config` zeigt die Konfiguration, `transcript doctor` prüft ffmpeg und ffprobe, und `transcript extract` prüft die Aufnahmen einer Session und extrahiert ihre Audiospur, eine Datei pro Aufnahme, und `transcript manifest` schreibt das Session-Manifest mit absoluter Zeitachse. Session-Schlüssel und Verzeichnislayout sind festgelegt. Die Schnittstelle für ASR-Backends steht, mit einem Fake-Backend für Tests, ebenso das interne Referenztranskript-Format, in dem Ergebnisse gespeichert werden; ein echtes Backend, Transkription und Export existieren noch nicht.
 
 ## Zielarchitektur
 
@@ -67,6 +67,8 @@ Das Manifest `work/<gruppe>/<ordinal>/manifest.json` (`format_version: 1`) ist d
 
 Die Pipeline spricht lokale Spracherkennung nur über `transcript.asr` an: Backend laden, Fähigkeiten abfragen, ein Segment transkribieren, ein einheitliches Ergebnis und einheitliche Fehler erhalten. Modellbibliotheken bleiben in den Adaptern. Schnittstelle, Fähigkeiten, Fehlerkategorien und die Regeln für Adapter stehen in [`docs/asr-backends.md`](docs/asr-backends.md). Für Tests ohne Modell gibt es `transcript.asr.fake.FakeBackend`.
 
+Das Ergebnis eines Segments wird als Referenztranskript gespeichert: `work/<gruppe>/<ordinal>/asr/segment-NN.json` (`format_version: 1`) in einer Normalform, die kein Backend kennt, daneben `segment-NN.raw.json` mit der unveränderten Backend-Antwort. Zeiten, Confidence und Sprecher-Labels sind optional, Backend und Modell stehen in jeder Datei. Felder und Regeln: [`docs/referenzformat.md`](docs/referenzformat.md).
+
 ## Konfiguration
 
 Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht im Repo, ebenso alles andere unter `config/` außer `config/example.yaml`. `transcript config` zeigt die wirksamen Werte, `transcript config --config <pfad>` liest eine andere Datei. Fehlende Pflichtwerte, ungültige Werte und unbekannte Schlüssel enden mit einer Meldung, die Datei und Schlüssel nennt.
@@ -123,7 +125,7 @@ work/beispielgruppe/042/
   narrata/                     transcription-context.json (Rohantwort von Narrata)
   audio/                       segment-NN.wav (Arbeitsformat, eine pro Aufnahme), audio.json (Audio-Metadaten)
   snapshot/                    Wissens-Snapshot
-  asr/                         ASR-Zwischenergebnisse
+  asr/                         segment-NN.json (Referenztranskript), segment-NN.raw.json (Backend-Rohantwort)
   review/                      Review-Kandidaten, CSV
   speakers/                    Sprecherzuordnung
   debug.log                    nur im Debug-Modus

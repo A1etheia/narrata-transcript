@@ -40,6 +40,18 @@ class SessionKey:
         return f"{self.group}/{self.ordinal:03d}"
 
 
+def segment_name(index: int) -> str:
+    """File stem of the `index`-th segment, counted from 1: `segment-NN`."""
+    if index < 1:
+        raise ValueError(f"invalid segment index: {index!r}")
+    return f"segment-{index:02d}"
+
+
+def reference_raw_name(index: int) -> str:
+    """Name of the raw backend answer next to the `index`-th reference transcript."""
+    return f"{segment_name(index)}.raw.json"
+
+
 @dataclass(frozen=True)
 class SessionPaths:
     """Directories of one session. `input_dir` is read-only by convention."""
@@ -65,9 +77,7 @@ class SessionPaths:
 
     def segment_wav(self, index: int) -> Path:
         """Working WAV of the `index`-th recording of the session, counted from 1."""
-        if index < 1:
-            raise ValueError(f"invalid segment index: {index!r}")
-        return self.audio_dir / f"segment-{index:02d}.wav"
+        return self.audio_dir / f"{segment_name(index)}.wav"
 
     def segment_wavs(self) -> list[Path]:
         """All segment WAVs currently in the audio dir, including stale ones."""
@@ -76,6 +86,18 @@ class SessionPaths:
     @property
     def audio_metadata(self) -> Path:
         return self.audio_dir / "audio.json"
+
+    @property
+    def asr_dir(self) -> Path:
+        return self.work_dir / "asr"
+
+    def reference(self, index: int) -> Path:
+        """Normalized reference transcript of the `index`-th segment (TOOL-16)."""
+        return self.asr_dir / f"{segment_name(index)}.json"
+
+    def reference_raw(self, index: int) -> Path:
+        """The backend's unchanged answer for the `index`-th segment."""
+        return self.asr_dir / reference_raw_name(index)
 
     @property
     def manifest(self) -> Path:

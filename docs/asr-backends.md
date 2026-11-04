@@ -23,7 +23,7 @@ with opened(backend):                      # load() einmal, close() immer
 
 ## Ergebnis
 
-`BackendResult` ist die Antwort für ein Segment. Es ist flüchtig und kein gespeichertes Format. Das versionierte interne Format und die Ablage von Roh- und Normalform kommen mit TOOL-16.
+`BackendResult` ist die Antwort für ein Segment. Es ist flüchtig und kein gespeichertes Format. Gespeichert wird es über `transcript.reference` im versionierten Referenzformat, Roh- und Normalform getrennt, siehe [`referenzformat.md`](referenzformat.md).
 
 | Feld | Inhalt |
 | --- | --- |

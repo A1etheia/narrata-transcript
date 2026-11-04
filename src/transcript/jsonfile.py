@@ -39,9 +39,49 @@ def field(
 ) -> Any:
     """`data[name]` if it has type `kind`; `True` does not count as an int."""
     value = data.get(name) if isinstance(data, dict) else None
-    if not isinstance(value, kind) or (kind is int and isinstance(value, bool)):
+    if not _is_kind(value, kind):
         raise error(f"{path}: field {name!r} missing or invalid")
     return value
+
+
+def optional_field(
+    data: Any,
+    name: str,
+    kind: type,
+    path: Path,
+    error: type[DataFileError] = DataFileError,
+) -> Any:
+    """Like `field`, but an absent or null value yields `None`."""
+    if isinstance(data, dict) and data.get(name) is None:
+        return None
+    return field(data, name, kind, path, error)
+
+
+def optional_number(
+    data: Any, name: str, path: Path, error: type[DataFileError] = DataFileError
+) -> float | None:
+    """An optional JSON number as float; `True` does not count as a number."""
+    value = optional_field(data, name, (int, float), path, error)
+    return None if value is None else float(value)
+
+
+def list_of(
+    data: Any,
+    name: str,
+    kind: type,
+    path: Path,
+    error: type[DataFileError] = DataFileError,
+) -> list[Any]:
+    """`data[name]` as a list whose items all have type `kind`."""
+    values = field(data, name, list, path, error)
+    if not all(_is_kind(value, kind) for value in values):
+        raise error(f"{path}: field {name!r} holds invalid items")
+    return values
+
+
+def _is_kind(value: Any, kind: type) -> bool:
+    """`isinstance`, except that booleans never count as numbers."""
+    return isinstance(value, kind) and (kind is bool or not isinstance(value, bool))
 
 
 def write_atomic(path: Path, data: dict[str, Any]) -> None:
