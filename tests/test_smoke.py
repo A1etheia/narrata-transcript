@@ -6,10 +6,13 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from media import mp4_with_audio, needs_media, sine, synth, video
+
 import transcript
 from transcript import audio_tools
 from transcript.__main__ import main
 from transcript.audio_tools import AudioToolError, AudioTools, ToolInfo
+from transcript.session import SessionKey, SessionPaths
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -100,6 +103,87 @@ class DoctorCommandTest(unittest.TestCase):
         self.assertEqual(stdout, "")
         self.assertIn("error: ffprobe not found", stderr)
         self.assertNotIn("Traceback", stderr)
+
+
+class ExtractCommandTest(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.config = self.root / "config.yaml"
+        self.config.write_text(
+            f"language: de\npaths:\n  root: {self.root}\n", encoding="utf-8"
+        )
+        self.paths = SessionPaths(SessionKey("beispielgruppe", 1), self.root)
+        self.input = self.paths.input_dir
+        self.input.mkdir(parents=True)
+
+    def extract(self, *extra: str) -> tuple[int, str, str]:
+        return run("extract", "beispielgruppe/1", "--config", str(self.config), *extra)
+
+    @needs_media
+    def test_extracts_the_session_recording(self) -> None:
+        synth(self.input / "talk.mp4", *mp4_with_audio())
+
+        code, stdout, stderr = self.extract()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("audio stream 0 of 1 (aac), video ignored", stdout)
+        self.assertTrue(self.paths.audio_wav.is_file())
+        self.assertTrue(self.paths.audio_metadata.is_file())
+        self.assertIn("ffmpeg", stderr)
+        self.assertNotIn("talk.mp4", stderr)
+
+    def test_empty_input_directory_is_reported(self) -> None:
+        code, stdout, stderr = self.extract()
+
+        self.assertEqual((code, stdout), (2, ""))
+        self.assertIn("error: ", stderr)
+        self.assertIn("expected one recording, found 0", stderr)
+        self.assertNotIn("Traceback", stderr)
+
+    def test_two_recordings_are_reported(self) -> None:
+        (self.input / "a.mp4").write_bytes(b"")
+        (self.input / "b.mp4").write_bytes(b"")
+
+        code, _, stderr = self.extract()
+
+        self.assertEqual(code, 2)
+        self.assertIn("expected one recording, found 2", stderr)
+
+    def test_hidden_and_windows_zone_files_are_not_recordings(self) -> None:
+        (self.input / ".DS_Store").write_bytes(b"")
+        (self.input / "talk.mp3:Zone.Identifier").write_bytes(b"")
+
+        code, _, stderr = self.extract()
+
+        self.assertEqual(code, 2)
+        self.assertIn("expected one recording, found 0", stderr)
+
+    def test_invalid_session_key_is_reported(self) -> None:
+        code, _, stderr = run("extract", "Beispiel", "--config", str(self.config))
+
+        self.assertEqual(code, 2)
+        self.assertIn("invalid session key", stderr)
+
+    @needs_media
+    def test_recording_without_audio_is_reported(self) -> None:
+        synth(self.input / "silent.mp4", *video())
+
+        code, _, stderr = self.extract()
+
+        self.assertEqual(code, 2)
+        self.assertIn("error: silent.mp4: no audio stream", stderr)
+        self.assertNotIn("Traceback", stderr)
+
+    @needs_media
+    def test_missing_stream_is_reported(self) -> None:
+        synth(self.input / "talk.wav", *sine())
+
+        code, _, stderr = self.extract("--stream", "1")
+
+        self.assertEqual(code, 2)
+        self.assertIn("no audio stream 1", stderr)
 
 
 if __name__ == "__main__":

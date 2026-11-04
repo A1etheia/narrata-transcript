@@ -27,6 +27,7 @@ _PROBE_TIMEOUT_SECONDS = 60
 _DURATION_TOLERANCE_SECONDS = 0.5
 _WAV_CODEC = "pcm_s16le"
 METADATA_FORMAT_VERSION = 1
+_ZONE_IDENTIFIER = ":Zone.Identifier"
 
 _logger = logging.getLogger(__name__)
 
@@ -59,6 +60,27 @@ class ExtractedAudio:
 
     stream: AudioStream
     duration: float
+
+
+def find_recording(paths: SessionPaths) -> Path:
+    """Return the session's single recording in `input/`.
+
+    Hidden files and the `:Zone.Identifier` files Windows leaves behind when
+    recordings are copied into WSL are ignored.
+    """
+    directory = paths.input_dir
+    if not directory.is_dir():
+        raise AudioError(f"{directory}: no input directory for session {paths.key}")
+    files = sorted(
+        entry
+        for entry in directory.iterdir()
+        if entry.is_file()
+        and not entry.name.startswith(".")
+        and not entry.name.endswith(_ZONE_IDENTIFIER)
+    )
+    if len(files) != 1:
+        raise AudioError(f"{directory}: expected one recording, found {len(files)}")
+    return files[0]
 
 
 def probe(path: Path, tools: AudioTools) -> AudioInfo:

@@ -2,7 +2,7 @@
 
 Lokale Pipeline, die Aufnahmen von Rollenspielsitzungen in strukturierte Transkripte für [Narrata](https://github.com/A1etheia/ios-archiv) überführen soll.
 
-**Aktueller Stand: nur das Projektgerüst.** Das Paket lässt sich installieren, `transcript --help` läuft, `transcript config` zeigt die Konfiguration und `transcript doctor` prüft ffmpeg und ffprobe. Session-Schlüssel und Verzeichnislayout sind festgelegt. Audioverarbeitung, Transkription und Export existieren noch nicht.
+**Aktueller Stand: Audio-Vorbereitung.** Das Paket lässt sich installieren, `transcript config` zeigt die Konfiguration, `transcript doctor` prüft ffmpeg und ffprobe, und `transcript extract` prüft die Aufnahme einer Session und extrahiert ihre Audiospur. Session-Schlüssel und Verzeichnislayout sind festgelegt. Transkription und Export existieren noch nicht.
 
 ## Zielarchitektur
 
@@ -33,6 +33,19 @@ transcript doctor
 ```
 
 `transcript doctor` gibt die gefundenen Versionen von `ffmpeg` und `ffprobe` aus. Fehlt eines oder läuft es nicht, endet der Befehl mit Exit-Code 2 und einer Meldung, die das Werkzeug und die Installation nennt.
+
+## Audiospur extrahieren
+
+```bash
+transcript extract beispielgruppe/042            # erster Audiostream
+transcript extract beispielgruppe/042 --stream 1 # zweiter Audiostream
+```
+
+Der Befehl erwartet genau eine Aufnahme in `input/<gruppe>/<ordinal>/` (versteckte Dateien zählen nicht). Welches Format vorliegt, entscheidet ffprobe, nicht die Dateiendung. Angenommen werden MP4, M4A, MP3 und WAV; bei MP4 wird nur die Audiospur gelesen, das Bild nie dekodiert. Hat eine Datei mehrere Audiostreams, gilt ohne `--stream` der erste.
+
+Ergebnis sind `work/<gruppe>/<ordinal>/audio/audio.wav` im Arbeitsformat aus `audio.*` (Default 16 kHz mono, 16 bit PCM) und daneben `audio.json` mit Quelle, Container, allen Audiostreams, dem gewählten Stream, Quell- und extrahierter Dauer und den Versionen von ffmpeg und ffprobe (`format_version: 1`). Ein erneuter Lauf ersetzt beide Dateien; bricht er ab, bleiben die alten unverändert. Die Originalaufnahme wird nur gelesen.
+
+Abgelehnt werden mit Exit-Code 2 und einer Meldung, die die Datei nennt: Dateien, die ffprobe nicht lesen kann (beschädigt oder kein Medienformat), andere Container, Dateien ohne Audiostream oder ohne Dauer und Extraktionen, deren Dauer um mehr als 0,5 s von der Angabe der Aufnahme abweicht. Das Log auf stderr enthält Werkzeugversionen, Container, Codec und Dauern, keine Dateinamen.
 
 ## Konfiguration
 
@@ -87,7 +100,7 @@ Beispiel-Session `beispielgruppe/042`:
 input/beispielgruppe/042/      Originalaufnahme, unveränderlich
 work/beispielgruppe/042/
   manifest.json                Gruppe, Ordinal, play_session_id, Sitzungsdatum, Audio-Hash
-  audio/                       extrahierte Spur, Segmente
+  audio/                       audio.wav (Arbeitsformat), audio.json (Audio-Metadaten)
   snapshot/                    Wissens-Snapshot
   asr/                         ASR-Zwischenergebnisse
   review/                      Review-Kandidaten, CSV
