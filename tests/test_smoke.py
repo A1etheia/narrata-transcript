@@ -128,8 +128,11 @@ class ExtractCommandTest(unittest.TestCase):
         code, stdout, stderr = self.extract()
 
         self.assertEqual(code, 0, stderr)
+        self.assertIn("1 recording(s) in this order", stdout)
+        self.assertIn("1. talk.mp4: ", stdout)
         self.assertIn("audio stream 0 of 1 (aac), video ignored", stdout)
-        self.assertTrue(self.paths.audio_wav.is_file())
+        self.assertIn("-> segment-01.wav", stdout)
+        self.assertTrue(self.paths.segment_wav(1).is_file())
         self.assertTrue(self.paths.audio_metadata.is_file())
         self.assertIn("ffmpeg", stderr)
         self.assertNotIn("talk.mp4", stderr)
@@ -139,17 +142,20 @@ class ExtractCommandTest(unittest.TestCase):
 
         self.assertEqual((code, stdout), (2, ""))
         self.assertIn("error: ", stderr)
-        self.assertIn("expected one recording, found 0", stderr)
+        self.assertIn("no recording found", stderr)
         self.assertNotIn("Traceback", stderr)
 
-    def test_two_recordings_are_reported(self) -> None:
-        (self.input / "a.mp4").write_bytes(b"")
-        (self.input / "b.mp4").write_bytes(b"")
+    @needs_media
+    def test_recordings_are_listed_in_session_order(self) -> None:
+        synth(self.input / "teil 2.mp3", *sine(seconds=1))
+        synth(self.input / "teil 1.mp3", *sine(seconds=1))
 
-        code, _, stderr = self.extract()
+        code, stdout, stderr = self.extract()
 
-        self.assertEqual(code, 2)
-        self.assertIn("expected one recording, found 2", stderr)
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("2 recording(s) in this order", stdout)
+        self.assertLess(stdout.index("1. teil 1.mp3"), stdout.index("2. teil 2.mp3"))
+        self.assertTrue(self.paths.segment_wav(2).is_file())
 
     def test_hidden_and_windows_zone_files_are_not_recordings(self) -> None:
         (self.input / ".DS_Store").write_bytes(b"")
@@ -158,7 +164,7 @@ class ExtractCommandTest(unittest.TestCase):
         code, _, stderr = self.extract()
 
         self.assertEqual(code, 2)
-        self.assertIn("expected one recording, found 0", stderr)
+        self.assertIn("no recording found", stderr)
 
     def test_invalid_session_key_is_reported(self) -> None:
         code, _, stderr = run("extract", "Beispiel", "--config", str(self.config))

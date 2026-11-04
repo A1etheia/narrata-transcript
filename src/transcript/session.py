@@ -63,9 +63,15 @@ class SessionPaths:
     def audio_dir(self) -> Path:
         return self.work_dir / "audio"
 
-    @property
-    def audio_wav(self) -> Path:
-        return self.audio_dir / "audio.wav"
+    def segment_wav(self, index: int) -> Path:
+        """Working WAV of the `index`-th recording of the session, counted from 1."""
+        if index < 1:
+            raise ValueError(f"invalid segment index: {index!r}")
+        return self.audio_dir / f"segment-{index:02d}.wav"
+
+    def segment_wavs(self) -> list[Path]:
+        """All segment WAVs currently in the audio dir, including stale ones."""
+        return sorted(self.audio_dir.glob("segment-*.wav"))
 
     @property
     def audio_metadata(self) -> Path:

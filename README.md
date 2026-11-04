@@ -2,7 +2,7 @@
 
 Lokale Pipeline, die Aufnahmen von Rollenspielsitzungen in strukturierte Transkripte für [Narrata](https://github.com/A1etheia/ios-archiv) überführen soll.
 
-**Aktueller Stand: Audio-Vorbereitung.** Das Paket lässt sich installieren, `transcript config` zeigt die Konfiguration, `transcript doctor` prüft ffmpeg und ffprobe, und `transcript extract` prüft die Aufnahme einer Session und extrahiert ihre Audiospur. Session-Schlüssel und Verzeichnislayout sind festgelegt. Transkription und Export existieren noch nicht.
+**Aktueller Stand: Audio-Vorbereitung.** Das Paket lässt sich installieren, `transcript config` zeigt die Konfiguration, `transcript doctor` prüft ffmpeg und ffprobe, und `transcript extract` prüft die Aufnahmen einer Session und extrahiert ihre Audiospur, eine Datei pro Aufnahme. Session-Schlüssel und Verzeichnislayout sind festgelegt. Transkription und Export existieren noch nicht.
 
 ## Zielarchitektur
 
@@ -41,9 +41,9 @@ transcript extract beispielgruppe/042            # erster Audiostream
 transcript extract beispielgruppe/042 --stream 1 # zweiter Audiostream
 ```
 
-Der Befehl erwartet genau eine Aufnahme in `input/<gruppe>/<ordinal>/` (versteckte Dateien zählen nicht). Welches Format vorliegt, entscheidet ffprobe, nicht die Dateiendung. Angenommen werden MP4, M4A, MP3 und WAV; bei MP4 wird nur die Audiospur gelesen, das Bild nie dekodiert. Hat eine Datei mehrere Audiostreams, gilt ohne `--stream` der erste.
+Der Befehl liest alle Aufnahmen in `input/<gruppe>/<ordinal>/` (versteckte Dateien und `:Zone.Identifier` zählen nicht). Eine Sitzung darf aus mehreren Aufnahmen bestehen, etwa wenn das Gerät nach fünf Stunden eine neue Datei beginnt. Jede Aufnahme wird ein Segment. Die Reihenfolge der Segmente ist die Sortierung der Dateinamen; der Befehl gibt sie aus, und wer eine andere will, benennt die Dateien um (`… 1.m4a`, `… 2.m4a`). Welches Format vorliegt, entscheidet ffprobe, nicht die Dateiendung. Angenommen werden MP4, M4A, MP3 und WAV; bei MP4 wird nur die Audiospur gelesen, das Bild nie dekodiert. Hat eine Datei mehrere Audiostreams, gilt ohne `--stream` der erste, und zwar für alle Aufnahmen der Sitzung.
 
-Ergebnis sind `work/<gruppe>/<ordinal>/audio/audio.wav` im Arbeitsformat aus `audio.*` (Default 16 kHz mono, 16 bit PCM) und daneben `audio.json` mit Quelle, Container, allen Audiostreams, dem gewählten Stream, Quell- und extrahierter Dauer und den Versionen von ffmpeg und ffprobe (`format_version: 1`). Ein erneuter Lauf ersetzt beide Dateien; bricht er ab, bleiben die alten unverändert. Die Originalaufnahme wird nur gelesen.
+Ergebnis ist pro Aufnahme ein `work/<gruppe>/<ordinal>/audio/segment-NN.wav` im Arbeitsformat aus `audio.*` (Default 16 kHz mono, 16 bit PCM) und daneben `audio.json` (`format_version: 2`). Sie enthält das Arbeitsformat, die Versionen von ffmpeg und ffprobe und je Segment Quelle, Größe, SHA-256, Container, alle Audiostreams, den gewählten Stream, die Quelldauer und die exakte Länge in Frames. Ein erneuter Lauf ersetzt alle Dateien erst, wenn jede Aufnahme extrahiert ist; Segmente eines früheren Laufs, die es nicht mehr gibt, werden entfernt. Bricht er ab, bleibt der alte Stand. Die Originalaufnahmen werden nur gelesen.
 
 Abgelehnt werden mit Exit-Code 2 und einer Meldung, die die Datei nennt: Dateien, die ffprobe nicht lesen kann (beschädigt oder kein Medienformat), andere Container, Dateien ohne Audiostream oder ohne Dauer und Extraktionen, deren Dauer um mehr als 0,5 s von der Angabe der Aufnahme abweicht. Das Log auf stderr enthält Werkzeugversionen, Container, Codec und Dauern, keine Dateinamen.
 
@@ -100,7 +100,7 @@ Beispiel-Session `beispielgruppe/042`:
 input/beispielgruppe/042/      Originalaufnahme, unveränderlich
 work/beispielgruppe/042/
   manifest.json                Gruppe, Ordinal, play_session_id, Sitzungsdatum, Audio-Hash
-  audio/                       audio.wav (Arbeitsformat), audio.json (Audio-Metadaten)
+  audio/                       segment-NN.wav (Arbeitsformat, eine pro Aufnahme), audio.json (Audio-Metadaten)
   snapshot/                    Wissens-Snapshot
   asr/                         ASR-Zwischenergebnisse
   review/                      Review-Kandidaten, CSV
@@ -109,7 +109,7 @@ work/beispielgruppe/042/
 output/beispielgruppe/042/     JSON-Export, TXT, DOCX
 ```
 
-Die Verzeichnisse von `input/` werden von Hand befüllt. Die Pipeline liest dort nur und schreibt ausschließlich nach `work/` und `output/`. ASR-Ergebnisse werden nie überschrieben.
+Die Verzeichnisse von `input/` werden von Hand befüllt: Vor dem ersten Lauf kommen die Aufnahmen einer Sitzung nach `input/<gruppe>/<ordinal>/`, mit dem Ordinal aus Narrata. Liegt eine Aufnahme auch bearbeitet vor (etwa ohne Stille), gehört nur eine Fassung dorthin, sonst zählt sie doppelt. Die Pipeline liest dort nur und schreibt ausschließlich nach `work/` und `output/`. ASR-Ergebnisse werden nie überschrieben.
 
 ## Dateiregeln
 

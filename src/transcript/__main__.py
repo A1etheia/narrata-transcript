@@ -10,6 +10,7 @@ from pathlib import Path
 from transcript import __version__, audio, audio_tools
 from transcript.config import Config, ConfigError, format_config, load_config
 from transcript.session import SessionKey
+from transcript.timecode import format_ms
 
 _DEFAULT_CONFIG = Path("config/config.yaml")
 _EXAMPLE_CONFIG = Path("config/example.yaml")
@@ -75,11 +76,11 @@ def _extract(raw_key: str, config_path: Path, stream: int) -> int:
         key = SessionKey.parse(raw_key)
         config = _load_config(config_path)
         paths = config.session_paths(key)
-        recording = audio.find_recording(paths)
+        recordings = audio.find_recordings(paths)
         with _log_to_stderr():
             tools = audio_tools.check_audio_tools()
-            info = audio.probe(recording, tools)
-            result = audio.extract(info, paths, config, tools, stream=stream)
+            infos = [audio.probe(recording, tools) for recording in recordings]
+            segments = audio.extract(infos, paths, config, tools, stream=stream)
     except (
         ValueError,
         ConfigError,
@@ -89,13 +90,17 @@ def _extract(raw_key: str, config_path: Path, stream: int) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 2
 
-    video = ", video ignored" if info.has_video else ""
-    print(
-        f"{key}: {info.container}, audio stream {stream} of {len(info.audio_streams)} "
-        f"({result.stream.codec}){video}"
-    )
-    print(f"duration {info.duration:.2f} s, extracted {result.duration:.2f} s")
-    print(f"wrote {paths.audio_wav} and {paths.audio_metadata.name}")
+    print(f"{key}: {len(segments)} recording(s) in this order")
+    for segment in segments:
+        info = segment.source
+        video = ", video ignored" if info.has_video else ""
+        print(
+            f"  {segment.index}. {info.path.name}: {info.container}, "
+            f"audio stream {stream} of {len(info.audio_streams)} "
+            f"({segment.stream.codec}){video}, "
+            f"{format_ms(segment.duration_ms)} -> {paths.segment_wav(segment.index).name}"
+        )
+    print(f"wrote {paths.audio_dir} and {paths.audio_metadata.name}")
     return 0
 
 
