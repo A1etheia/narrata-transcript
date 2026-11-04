@@ -27,6 +27,16 @@ def tokens(text: str) -> list[str]:
     return [token.casefold() for token in _TOKEN.findall(text)]
 
 
+def speech_only(text: str) -> str:
+    """Reference text without notes and inaudible marks."""
+    return _UNKNOWN.sub(" ", _NOTE.sub(" ", text))
+
+
+def in_range(time: float, start: float | None, end: float | None) -> bool:
+    """A word counts where it starts; an open bound does not limit."""
+    return (start is None or time >= start) and (end is None or time < end)
+
+
 def reference_tokens(text: str) -> tuple[list[str], set[int]]:
     """Reference words plus the word positions where an inaudible gap sits."""
     words, gaps = [], set()
@@ -83,15 +93,13 @@ def run_tokens(path: Path, start: float | None, end: float | None) -> list[str]:
     """Words in the range: a word counts where it starts; a segment without word
     times counts if it overlaps the range."""
     run = json.loads(path.read_text(encoding="utf-8"))
-    after = (lambda t: True) if start is None else (lambda t: t >= start)
-    before = (lambda t: True) if end is None else (lambda t: t < end)
     kept = []
     for segment in run["segments"]:
         if words := segment.get("words"):
-            kept += [
-                w["word"] for w in words if after(w["start"]) and before(w["start"])
-            ]
-        elif before(segment["start"]) and (start is None or segment["end"] > start):
+            kept += [w["word"] for w in words if in_range(w["start"], start, end)]
+        elif in_range(segment["start"], None, end) and (
+            start is None or segment["end"] > start
+        ):
             kept.append(segment["text"])
     return tokens(" ".join(kept))
 
