@@ -68,6 +68,15 @@ class SessionPathsTest(unittest.TestCase):
         self.assertEqual(
             paths.manifest, Path("/data/work/beispielgruppe/042/manifest.json")
         )
+        self.assertEqual(paths.asr_dir, Path("/data/work/beispielgruppe/042/asr"))
+        self.assertEqual(
+            paths.reference(3),
+            Path("/data/work/beispielgruppe/042/asr/segment-03.json"),
+        )
+        self.assertEqual(paths.reference_raw(3).name, "segment-03.raw.json")
+        for invalid in (paths.reference, paths.reference_raw):
+            with self.subTest(path=invalid.__name__), self.assertRaises(ValueError):
+                invalid(0)
         self.assertEqual(
             paths.narrata_context,
             Path("/data/work/beispielgruppe/042/narrata/transcription-context.json"),
