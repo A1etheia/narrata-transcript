@@ -38,8 +38,8 @@ Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht 
 | --- | --- | --- | --- |
 | `language` | ja | | Sprache der Aufnahmen als zweistelliger Code, z. B. `de` |
 | `paths.root` | ja | | Wurzel für `input/`, `work/`, `output/`; ein relativer Pfad gilt ab dem aktuellen Arbeitsverzeichnis |
-| `segmentation.length_seconds` | nein | `null` | Platzhalter, `null` heißt nicht festgelegt; die Entscheidung fällt in TOOL-62 |
-| `segmentation.overlap_seconds` | nein | `null` | Platzhalter wie oben; muss kleiner als die Segmentlänge sein |
+| `segmentation.length_seconds` | nein | `null` | bleibt `null`: Das V0.1-Backend braucht keine eigene Segmentierung ([TOOL-62](docs/spikes/TOOL-62-asr-vergleich.md)); nur für ein Backend, das in Blöcken arbeiten muss |
+| `segmentation.overlap_seconds` | nein | `null` | wie oben; muss kleiner als die Segmentlänge sein |
 | `debug` | nein | `false` | schreibt Transkripttext nach `work/<gruppe>/<ordinal>/debug.log`, nie auf die Konsole |
 
 Einen eigenen Ausgabepfad gibt es nicht: `output/` liegt immer unter `paths.root`, damit echte Daten im Layout unter [Sessions](#sessions) bleiben. Secrets gehören nicht in diese Datei, sondern in `.env`.
@@ -59,8 +59,8 @@ python -m transcript --help
 
 ```
 config/          Beispielkonfiguration, lokale Konfiguration (nicht im Repo)
-docs/            Roadmap und Ticket-Pläne
-scripts/         Prüfskripte
+docs/            Roadmap, Ticket-Pläne, Spike-Berichte
+scripts/         Prüfskripte; `scripts/spike/` Wegwerf-Werkzeug des ASR-Spikes
 src/transcript/  Python-Paket
 tests/           Tests
 tests/fixtures/  kleine synthetische oder anonymisierte Beispieldaten
