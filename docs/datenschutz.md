@@ -9,7 +9,7 @@ Dieses Dokument enthält keine Klarnamen und keine Sitzungsdaten.
 | Daten | Ort | Verlässt den Rechner? |
 | --- | --- | --- |
 | Rohaudio, Audiosegmente | `input/`, `work/` | Nein, nie |
-| ASR-Ergebnisse, Review-Dateien, Sprecherzuordnung | `work/` | Nein |
+| ASR-Ergebnisse, Sprecher-Turns, Review-Dateien, Sprecherzuordnung | `work/` | Nein |
 | Wissens-Snapshot (kann Klarnamen enthalten) | `work/` | Nein |
 | Strukturierter Transkript-Export | `output/` | Ja, nach Narrata |
 
@@ -35,6 +35,9 @@ Dieses Dokument enthält keine Klarnamen und keine Sitzungsdaten.
 
 **Logs und Fehlermeldungen.** Sie enthalten standardmäßig nur Session-Schlüssel, Passagen-IDs, Laufzeiten und Zähler. Nur ein ausdrücklich aktivierter Debug-Modus darf Transkripttext schreiben, und zwar in eine Logdatei unter `work/`, nie auf die Konsole.
 *Grund:* Konsolenausgaben landen schnell in Tickets oder Chats; zum Fehlersuchen braucht es den Text trotzdem manchmal.
+
+**Modelle und Telemetrie.** Modelle kommen einmalig per Download in den lokalen Cache; danach läuft die Pipeline ohne Netz. Bibliotheken, die von sich aus Daten nach außen melden, werden abgeschaltet: pyannote.audio 4 schickt sonst Laufmetadaten (Audiodauer, Sprecherzahl) an seinen Hersteller.
+*Grund:* Auch Metadaten über eine Sitzung gehören nicht zu Dritten, und „vollständig lokal“ soll ohne Ausnahmen gelten.
 
 **Test-Fixtures.** Fixtures sind synthetisch oder vollständig anonymisiert.
 *Grund:* Sie liegen im Repo, und das Repo ist derzeit öffentlich erreichbar.

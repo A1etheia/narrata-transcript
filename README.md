@@ -90,7 +90,7 @@ export LD_LIBRARY_PATH=$SP/nvidia/cublas/lib:$SP/nvidia/cudnn/lib
 
 Erprobt sind faster-whisper 1.2.1, ctranslate2 4.8, cuBLAS 12.9 und cuDNN 8.9.
 
-**Hardware.** Getestet auf einer NVIDIA-GPU mit 12 GB VRAM (RTX 3080 Ti, unter WSL). Ohne GPU läuft dasselbe auf der CPU (`int8`), aber um ein Vielfaches langsamer. Eine Aufnahme von 5 h braucht bis 10,5 GB RAM. Die Diarisierung (pyannote, TOOL-76) braucht auf 5 h bis 13,8 GB und darf nicht gleichzeitig laufen; das Whisper-Modell wird vorher freigegeben. Unter WSL reicht das Standardlimit von 15 GB dafür kaum, in `%UserProfile%\.wslconfig` etwa `memory=26GB` wie auf dem Testrechner setzen.
+**Hardware.** Getestet auf einer NVIDIA-GPU mit 12 GB VRAM (RTX 3080 Ti, unter WSL). Ohne GPU läuft dasselbe auf der CPU (`int8`), aber um ein Vielfaches langsamer. Eine Aufnahme von 5 h braucht bis 10,5 GB RAM. Die [Diarisierung](#diarisierung) braucht auf 5 h bis 13,8 GB und darf nicht gleichzeitig laufen; das Whisper-Modell wird vorher freigegeben. Unter WSL reicht das Standardlimit von 15 GB dafür kaum, in `%UserProfile%\.wslconfig` etwa `memory=26GB` wie auf dem Testrechner setzen.
 
 **Lizenzen.** faster-whisper und CTranslate2 stehen unter MIT. Das Modell `mobiuslabsgmbh/faster-whisper-large-v3-turbo` (auf Hugging Face inzwischen unter `dropbox-dash/faster-whisper-large-v3-turbo`) ist laut Modellkarte eine FP16-Konvertierung von `openai/whisper-large-v3-turbo` und steht wie dieses unter MIT. cuBLAS und cuDNN unterliegen den NVIDIA-Lizenzen für Laufzeitbibliotheken; sie werden nur lokal installiert, nicht weitergegeben.
 
@@ -101,6 +101,51 @@ Erprobt sind faster-whisper 1.2.1, ctranslate2 4.8, cuBLAS 12.9 und cuDNN 8.9.
 ```bash
 TRANSCRIPT_WHISPER_SMOKE=1 python -m unittest discover -s tests -p test_whisper_smoke.py -v
 TRANSCRIPT_WHISPER_SMOKE=1 TRANSCRIPT_WHISPER_DEVICE=cpu python -m unittest discover -s tests -p test_whisper_smoke.py
+```
+
+## Diarisierung
+
+Wer wann spricht, bestimmt pyannote `speaker-diarization-community-1` (`transcript.diarization.pyannote.PyannoteDiarizer`, Wahl und Messwerte in [TOOL-20](docs/spikes/TOOL-20-diarisierung.md)). Die Diarisierung läuft als eigener Schritt nach der Transkription, vollständig lokal und nur aus dem lokalen Modell-Cache.
+
+**Installation.** Ebenfalls ein optionales Extra; es bringt torch mit und macht die venv um einige GB größer. Es verträgt sich mit dem Whisper-Extra in derselben venv: torch nutzt CUDA 13 und cuDNN 9, faster-whisper CUDA 12 und cuDNN 8, in getrennten Paketen.
+
+```bash
+pip install -e '.[dev,whisper,diarization]'
+```
+
+**Einmaliger Download.** Das Modell ist auf Hugging Face *gated*: Einmal auf der [Modellseite](https://huggingface.co/pyannote/speaker-diarization-community-1) mit einem Hugging-Face-Konto die Bedingungen annehmen, dann mit Netz:
+
+```bash
+hf auth login          # Token mit Leserechten; liegt danach im HF-Cache, nie im Repo oder in .env
+hf download pyannote/speaker-diarization-community-1
+```
+
+Danach braucht die Pipeline weder Token noch Netz.
+
+**Offline und ohne Telemetrie.** pyannote.audio 4 schickt per Default Laufmetadaten (Audiodauer, Sprecherzahl, Version, eine Session-ID) an `otel.pyannote.ai`. Das Paket `transcript` setzt deshalb beim Import `PYANNOTE_METRICS_ENABLED=false` und `HF_HUB_OFFLINE=1`, auch wenn die Umgebung etwas anderes vorgibt (`src/transcript/__init__.py`). Ein Lauf lädt also nichts nach und meldet nichts nach außen.
+
+**Lauf.** Voraussetzung sind Manifest und Referenztranskripte unter `work/<gruppe>/<ordinal>/asr/`.
+
+```bash
+transcript diarize beispielgruppe/042                  # die Zahl der Personen findet das Modell selbst
+transcript diarize beispielgruppe/042 --num-speakers 4 # Vorgabe, falls bekannt
+transcript diarize beispielgruppe/042 --force          # neu rechnen statt wiederverwenden
+```
+
+Pro Segment entsteht `work/<gruppe>/<ordinal>/diarization/segment-NN.json` mit den Turns des Modells. Danach trägt jedes Wort im Referenztranskript das Label des Turns, in dem seine Mitte liegt, jede Passage das Mehrheitslabel; Wörter ohne Turn bleiben ohne Label. Text, Zeiten und Confidence bleiben unverändert. Ein zweiter Lauf verwendet die gespeicherten Turns wieder, solange WAV, Modell-Revision, Einstellungen und `--num-speakers` gleich sind, und lädt dann kein Modell. Die Konsole zeigt nur Zähler und Laufzeiten, nie Labels oder Text.
+
+**Labels gelten pro Segment.** `SPEAKER_00` der ersten Aufnahme ist nicht automatisch dieselbe Person wie `SPEAKER_00` der zweiten. Die Zuordnung zu Personen kommt mit TOOL-68.
+
+**Hardware.** Auf 5 h unter 4 GB VRAM, bis 13,8 GB RAM und etwa 4 Minuten auf der GPU des Testrechners. Nicht gleichzeitig mit Whisper laufen lassen; als eigener Befehl ist das ohnehin so. Ohne GPU läuft es auf der CPU, deutlich langsamer.
+
+**Lizenzen.** pyannote.audio steht unter MIT. Das Modell [`pyannote/speaker-diarization-community-1`](https://huggingface.co/pyannote/speaker-diarization-community-1) von pyannoteAI steht unter [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); es wird nur lokal genutzt, nicht weitergegeben.
+
+**Fehler.** Fehlt die Runtime, das Modell im Cache oder eine GPU bei `diarization.device: cuda`, meldet der Befehl `BackendUnavailableError` mit dem nächsten Schritt; Speichermangel kommt als `ResourceError`. Die Meldungen nennen Modell, Gerät und Segmentdatei, nie Labels oder Text.
+
+**Smoke-Test** mit beiden echten Modellen: ffmpeg spricht mit zwei `flite`-Stimmen zwei erfundene Sätze, Whisper transkribiert, pyannote vergibt die Labels, ein zweiter Lauf verwendet sie wieder. `LD_LIBRARY_PATH` wie unter [Spracherkennung](#spracherkennung).
+
+```bash
+TRANSCRIPT_DIARIZATION_SMOKE=1 python -m unittest discover -s tests -p test_diarization_smoke.py -v
 ```
 
 ## Konfiguration
@@ -119,6 +164,8 @@ Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht 
 | `asr.device` | nein | `auto` | `auto` nimmt die GPU, wenn eine erreichbar ist, sonst die CPU; `cpu` oder `cuda` erzwingen das Gerät |
 | `asr.compute_type` | nein | `null` | `null`: `float16` auf der GPU, `int8` auf der CPU; sonst ein CTranslate2-Typ wie `int8_float16` |
 | `asr.beam_size` | nein | `5` | Strahlbreite der Suche; VAD, Wortzeiten und `condition_on_previous_text: false` sind fest |
+| `diarization.model` | nein | `pyannote/speaker-diarization-community-1` | Modellname auf Hugging Face oder ein lokales Verzeichnis mit `config.yaml`; nur aus dem lokalen Cache |
+| `diarization.device` | nein | `auto` | wie `asr.device` |
 | `debug` | nein | `false` | schreibt Transkripttext nach `work/<gruppe>/<ordinal>/debug.log`, nie auf die Konsole |
 
 Einen eigenen Ausgabepfad gibt es nicht: `output/` liegt immer unter `paths.root`, damit echte Daten im Layout unter [Sessions](#sessions) bleiben. Secrets gehören nicht in diese Datei, sondern in `.env`.
@@ -164,6 +211,7 @@ work/beispielgruppe/042/
   audio/                       segment-NN.wav (Arbeitsformat, eine pro Aufnahme), audio.json (Audio-Metadaten)
   snapshot/                    Wissens-Snapshot
   asr/                         segment-NN.json (Referenztranskript), segment-NN.raw.json (Backend-Rohantwort)
+  diarization/                 segment-NN.json (Sprecher-Turns von pyannote)
   review/                      Review-Kandidaten, CSV
   speakers/                    Sprecherzuordnung
   debug.log                    nur im Debug-Modus
