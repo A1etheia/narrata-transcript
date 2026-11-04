@@ -57,6 +57,10 @@ class LoadConfigTest(unittest.TestCase):
             segment_overlap_seconds=2.5,
             audio_sample_rate=22050,
             audio_channels=2,
+            asr_model="/models/whisper",
+            asr_device="cuda",
+            asr_compute_type="int8_float16",
+            asr_beam_size=3,
         )
 
         self.assertEqual(self.load(format_config(config)), config)
@@ -83,6 +87,53 @@ class LoadConfigTest(unittest.TestCase):
             with self.subTest(text=text):
                 self.assert_rejected(
                     MINIMAL + f"audio:\n  {text}\n", f"invalid value for {key}"
+                )
+
+    def test_asr_defaults_to_whisper_turbo_on_any_device(self) -> None:
+        config = self.load(MINIMAL)
+
+        self.assertEqual(
+            (
+                config.asr_model,
+                config.asr_device,
+                config.asr_compute_type,
+                config.asr_beam_size,
+            ),
+            ("large-v3-turbo", "auto", None, 5),
+        )
+
+    def test_asr_values_are_read(self) -> None:
+        config = self.load(
+            MINIMAL
+            + "asr:\n  model: /models/whisper\n  device: cpu\n"
+            + "  compute_type: int8\n  beam_size: 1\n"
+        )
+
+        self.assertEqual(
+            (
+                config.asr_model,
+                config.asr_device,
+                config.asr_compute_type,
+                config.asr_beam_size,
+            ),
+            ("/models/whisper", "cpu", "int8", 1),
+        )
+
+    def test_asr_values_are_validated(self) -> None:
+        for text, key in (
+            ("model: ''", "asr.model"),
+            ("model: 3", "asr.model"),
+            ("device: gpu", "asr.device"),
+            ("device: null", "asr.device"),
+            ("compute_type: 16", "asr.compute_type"),
+            ("compute_type: ''", "asr.compute_type"),
+            ("beam_size: 0", "asr.beam_size"),
+            ("beam_size: 2.5", "asr.beam_size"),
+            ("beam_size: true", "asr.beam_size"),
+        ):
+            with self.subTest(text=text):
+                self.assert_rejected(
+                    MINIMAL + f"asr:\n  {text}\n", f"invalid value for {key}"
                 )
 
     def test_session_paths_use_the_configured_root(self) -> None:
@@ -152,6 +203,7 @@ class LoadConfigTest(unittest.TestCase):
             ("language: de\npaths:\n  root: /data\n  out: /x\n", "paths.out"),
             (MINIMAL + "segmentation:\n  length: 1\n", "segmentation.length"),
             (MINIMAL + "audio:\n  codec: flac\n", "audio.codec"),
+            (MINIMAL + "asr:\n  vad: false\n", "asr.vad"),
         ):
             with self.subTest(key=key):
                 self.assert_rejected(text, f"unknown key: {key}")

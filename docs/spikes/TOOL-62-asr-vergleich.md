@@ -1,6 +1,6 @@
 # TOOL-62 — Lokale ASR-Modelle im Vergleich
 
-Stand 2026-11-04. Spike-Bericht zu [TOOL-62](../plans/TOOL-62-asr-spike.md), Werkzeug unter [`scripts/spike/`](../../scripts/spike/README.md). Alle Läufe liefen lokal und offline. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel.
+Stand 2026-11-04. Spike-Bericht zu [TOOL-62](../plans/TOOL-62-asr-spike.md), Werkzeug unter `scripts/spike/`, mit TOOL-64 entfernt und [im Stand von `2f5b875`](https://github.com/A1etheia/narrata-transcript/tree/2f5b875f32237a8e0c565f09642f24f7195ee6ab/scripts/spike) erhalten. Alle Läufe liefen lokal und offline. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel.
 
 ## Kurzfassung
 

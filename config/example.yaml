@@ -23,5 +23,16 @@ audio:
   # 1 = mono, 2 = stereo.
   channels: 1
 
+# Spracherkennung: Whisper über faster-whisper, nur aus dem lokalen Modell-Cache.
+# Einrichtung und Hardware siehe README, Abschnitt „Spracherkennung“.
+asr:
+  # Modellname von faster-whisper oder ein lokales Modellverzeichnis.
+  model: large-v3-turbo
+  # auto nimmt die NVIDIA-GPU, wenn eine erreichbar ist, sonst die CPU.
+  device: auto
+  # null: float16 auf der GPU, int8 auf der CPU.
+  compute_type: null
+  beam_size: 5
+
 # Schreibt Transkripttext nach work/<gruppe>/<ordinal>/debug.log, nie auf die Konsole.
 debug: false

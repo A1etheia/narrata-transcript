@@ -1,6 +1,6 @@
 # TOOL-20 — Sprecher-Diarisierung im Vergleich
 
-Stand 2026-11-04. Spike-Bericht zu [TOOL-20](../plans/TOOL-20-diarisierung.md), Werkzeug unter [`scripts/spike/`](../../scripts/spike/README.md#diarisierung-tool-20). Alle Läufe liefen lokal und offline. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel.
+Stand 2026-11-04. Spike-Bericht zu [TOOL-20](../plans/TOOL-20-diarisierung.md), Werkzeug unter `scripts/spike/`, mit TOOL-64 entfernt und [im Stand von `2f5b875`](https://github.com/A1etheia/narrata-transcript/tree/2f5b875f32237a8e0c565f09642f24f7195ee6ab/scripts/spike) erhalten. Alle Läufe liefen lokal und offline. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel.
 
 ## Kurzfassung
 
