@@ -256,14 +256,26 @@ def write_reference(
     `raw` is the backend's answer, JSON-ready and stored unchanged; `None` for a
     failed segment.
     """
-    if reference.key != paths.key:
-        raise ValueError(f"transcript of {reference.key} given for {paths.key}")
-    index = reference.segment.index
+    _check_key(paths, reference)
     jsonfile.write_atomic(
-        paths.reference_raw(index),
+        paths.reference_raw(reference.segment.index),
         {"backend_id": reference.asr.backend_id, "raw": raw},
     )
-    jsonfile.write_atomic(paths.reference(index), to_json(reference))
+    update_reference(paths, reference)
+
+
+def update_reference(paths: SessionPaths, reference: ReferenceTranscript) -> None:
+    """Rewrite only the normalized transcript, e.g. with speaker labels added.
+
+    The raw file stays as the backend wrote it.
+    """
+    _check_key(paths, reference)
+    jsonfile.write_atomic(paths.reference(reference.segment.index), to_json(reference))
+
+
+def _check_key(paths: SessionPaths, reference: ReferenceTranscript) -> None:
+    if reference.key != paths.key:
+        raise ValueError(f"transcript of {reference.key} given for {paths.key}")
 
 
 def _asr_info(info: BackendInfo, backend: Backend, **result: Any) -> AsrInfo:

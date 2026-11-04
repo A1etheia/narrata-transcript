@@ -16,14 +16,17 @@ Error messages name the file and the field, never a label or any text.
 import bisect
 import functools
 import itertools
+import time
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from transcript import jsonfile
 from transcript.asr import BackendInfo
+from transcript.audio import sha256_file
 from transcript.jsonfile import DataFileError
+from transcript.manifest import Manifest
 from transcript.reference import (
     Diarization,
     Overlap,
@@ -31,7 +34,9 @@ from transcript.reference import (
     ReferenceTranscript,
     Word,
     check_span,
+    load_reference,
     majority_speaker,
+    update_reference,
 )
 from transcript.session import SessionPaths
 
@@ -109,6 +114,110 @@ class DiarizationRun:
         )
 
 
+class Diarizer(Protocol):
+    """What `diarize_session` needs from a diarizer such as `PyannoteDiarizer`."""
+
+    @property
+    def settings(self) -> Mapping[str, Any]:
+        """Besides the model, what decides the turns; known before `load`."""
+
+    def identity(self) -> BackendInfo:
+        """Model and revision without loading the model."""
+
+    def load(self) -> None: ...
+
+    def diarize(
+        self,
+        audio: Path,
+        info: BackendInfo,
+        audio_sha256: str,
+        num_speakers: int | None = None,
+    ) -> "DiarizationRun": ...
+
+    def close(self) -> None: ...
+
+
+@dataclass(frozen=True)
+class SegmentSummary:
+    """What happened to one segment: counts and times only, never labels or text."""
+
+    index: int
+    outcome: str  # "diarized", "reused" or "skipped"
+    reason: str | None = None  # why it was skipped
+    labels: int = 0
+    turns: int = 0
+    words: int = 0
+    labelled_words: int = 0
+    elapsed_ms: int | None = None  # of the diarizer call, when it ran
+
+
+def diarize_session(
+    paths: SessionPaths,
+    manifest: Manifest,
+    diarizer: Diarizer,
+    num_speakers: int | None = None,
+    force: bool = False,
+) -> list[SegmentSummary]:
+    """Label the words of every transcribed segment with speakers.
+
+    A stored run is reused when audio, model, revision, settings and
+    `num_speakers` match, unless `force`. The model is loaded only for the first
+    segment that needs it and closed at the end. Segments without a transcript
+    or with a failed one are skipped. Run it after the ASR backend is closed:
+    both models together do not fit in memory.
+    """
+    info = diarizer.identity()
+    loaded = False
+    summaries = []
+    try:
+        for segment in manifest.segments:
+            index = segment.index
+            reference = (
+                load_reference(paths, index)
+                if paths.reference(index).is_file()
+                else None
+            )
+            if reference is None or reference.status != "transcribed":
+                reason = (
+                    "no transcript" if reference is None else "transcription failed"
+                )
+                summaries.append(SegmentSummary(index, "skipped", reason))
+                continue
+            audio = paths.segment_wav(index)
+            audio_sha256 = sha256_file(audio)
+            run = None if force else load_run(paths, index)
+            elapsed_ms = None
+            if run is None or not run.matches(
+                info, diarizer.settings, num_speakers, audio_sha256
+            ):
+                if not loaded:
+                    diarizer.load()
+                    loaded = True
+                started = time.perf_counter()
+                run = diarizer.diarize(audio, info, audio_sha256, num_speakers)
+                elapsed_ms = round((time.perf_counter() - started) * 1000)
+                write_run(paths, index, run)
+            labelled = assign_speakers(reference, run)
+            if labelled != reference:  # a reused run usually changes nothing
+                update_reference(paths, labelled)
+            words = [word for passage in labelled.passages for word in passage.words]
+            summaries.append(
+                SegmentSummary(
+                    index,
+                    "reused" if elapsed_ms is None else "diarized",
+                    labels=len(run.labels),
+                    turns=len(run.turns),
+                    words=len(words),
+                    labelled_words=sum(word.speaker is not None for word in words),
+                    elapsed_ms=elapsed_ms,
+                )
+            )
+    finally:
+        if loaded:
+            diarizer.close()
+    return summaries
+
+
 def assign_speakers(
     reference: ReferenceTranscript, run: DiarizationRun
 ) -> ReferenceTranscript:
@@ -151,13 +260,13 @@ def overlaps(turns: Iterable[Turn]) -> tuple[Overlap, ...]:
     ranges: list[Overlap] = []
     active = 0
     start = 0
-    for time, step in events:
+    for moment, step in events:
         if step > 0 and active == 1:
-            start = time
-        elif step < 0 and active == 2 and time > start:
+            start = moment
+        elif step < 0 and active == 2 and moment > start:
             if ranges and ranges[-1].end_ms == start:
                 start = ranges.pop().start_ms
-            ranges.append(Overlap(start_ms=start, end_ms=time))
+            ranges.append(Overlap(start_ms=start, end_ms=moment))
         active += step
     return tuple(ranges)
 

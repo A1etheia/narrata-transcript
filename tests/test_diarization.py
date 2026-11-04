@@ -4,16 +4,20 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
-from test_reference import KEY, minimal
+from test_reference import KEY, MANIFEST, SEGMENT, minimal
 
-from transcript.asr import BackendInfo
+from transcript.asr import BackendInfo, ResourceError
+from transcript.audio import sha256_file
 from transcript.diarization import (
     DIARIZATION_FORMAT_VERSION,
     DiarizationError,
     DiarizationRun,
+    SegmentSummary,
     Turn,
     assign_speakers,
+    diarize_session,
     load_run,
     overlaps,
     to_json,
@@ -26,6 +30,11 @@ from transcript.reference import (
     Passage,
     ReferenceTranscript,
     Word,
+    load_reference,
+    update_reference,
+)
+from transcript.reference import (
+    to_json as reference_json,
 )
 from transcript.session import SessionPaths
 
@@ -310,6 +319,189 @@ class StoredRunTest(unittest.TestCase):
         path = self.paths.diarization_raw(1)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data), encoding="utf-8")
+
+
+class FakeDiarizer:
+    """Answers with fixed turns and counts what it was asked to do."""
+
+    def __init__(self, info: BackendInfo = INFO) -> None:
+        self.settings = {"device": "cpu"}
+        self.info = info
+        self.load_calls = 0
+        self.close_calls = 0
+        self.diarized: list[tuple[str, str, int | None]] = []
+
+    def identity(self) -> BackendInfo:
+        return self.info
+
+    def load(self) -> None:
+        self.load_calls += 1
+
+    def diarize(
+        self,
+        audio: Path,
+        info: BackendInfo,
+        audio_sha256: str,
+        num_speakers: int | None = None,
+    ) -> DiarizationRun:
+        assert self.load_calls == 1
+        self.diarized.append((audio.name, audio_sha256, num_speakers))
+        return DiarizationRun(
+            info=info,
+            audio_sha256=audio_sha256,
+            turns=(Turn(0, 1000, "SPEAKER_00"), Turn(800, 2000, "SPEAKER_01")),
+            exclusive_turns=(
+                Turn(0, 800, "SPEAKER_00"),
+                Turn(1000, 2000, "SPEAKER_01"),
+            ),
+            settings=self.settings,
+            num_speakers=num_speakers,
+        )
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+class DiarizeSessionTest(unittest.TestCase):
+    """Segment 1 transcribed, 2 failed, 3 without transcript."""
+
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.paths = SessionPaths(KEY, Path(directory.name))
+        self.manifest = dataclasses.replace(
+            MANIFEST,
+            segments=tuple(
+                dataclasses.replace(SEGMENT, index=i, file=f"segment-0{i}.wav")
+                for i in (1, 2, 3)
+            ),
+        )
+        self.paths.audio_dir.mkdir(parents=True)
+        for index in (1, 2, 3):
+            self.paths.segment_wav(index).write_bytes(b"audio %d" % index)
+        self.transcribed = minimal(
+            passages=(
+                Passage(
+                    index=1,
+                    text=f" Wir betreten den {SECRET}.",
+                    words=(
+                        Word("Wir", 0, 400),  # in SPEAKER_00
+                        Word("den", 850, 950),  # in no exclusive turn
+                        Word(SECRET, 1200, 1800),  # in SPEAKER_01
+                    ),
+                ),
+            )
+        )
+        update_reference(self.paths, self.transcribed)
+        update_reference(
+            self.paths,
+            minimal(
+                segment=dataclasses.replace(self.transcribed.segment, index=2),
+                status="failed",
+                error=Failure(category="ResourceError", retryable=True),
+            ),
+        )
+
+    def diarize(self, diarizer: FakeDiarizer, **options: Any) -> list[SegmentSummary]:
+        return diarize_session(self.paths, self.manifest, diarizer, **options)
+
+    def test_transcribed_segments_get_labels_and_others_are_skipped(self) -> None:
+        diarizer = FakeDiarizer()
+
+        summaries = self.diarize(diarizer, num_speakers=2)
+
+        self.assertEqual(
+            [(s.index, s.outcome, s.reason) for s in summaries],
+            [
+                (1, "diarized", None),
+                (2, "skipped", "transcription failed"),
+                (3, "skipped", "no transcript"),
+            ],
+        )
+        first = summaries[0]
+        self.assertEqual(
+            (first.labels, first.turns, first.words, first.labelled_words),
+            (2, 2, 3, 2),
+        )
+        self.assertIsNotNone(first.elapsed_ms)
+        stored = load_reference(self.paths, 1)
+        self.assertEqual(words_of(stored), ["SPEAKER_00", None, "SPEAKER_01"])
+        self.assertEqual(stored.diarization.num_speakers, 2)
+        self.assertEqual(stored.diarization.overlaps, (Overlap(800, 1000),))
+        self.assertEqual(
+            diarizer.diarized,
+            [("segment-01.wav", sha256_file(self.paths.segment_wav(1)), 2)],
+        )
+        self.assertEqual((diarizer.load_calls, diarizer.close_calls), (1, 1))
+        self.assertIsNotNone(load_run(self.paths, 1))
+
+    def test_asr_result_and_raw_file_stay_as_they_were(self) -> None:
+        raw = self.paths.reference_raw(1)
+        raw.write_text('{"backend_id": "fake", "raw": {}}', encoding="utf-8")
+        before = raw.read_bytes()
+
+        self.diarize(FakeDiarizer())
+
+        self.assertEqual(raw.read_bytes(), before)
+        stored = load_reference(self.paths, 1)
+        stripped = reference_json(dataclasses.replace(stored, diarization=None))
+        for passage in stripped["passages"]:
+            passage["speaker"] = None
+            for word in passage["words"]:
+                word["speaker"] = None
+        self.assertEqual(stripped, reference_json(self.transcribed))
+
+    def test_second_run_reuses_the_stored_diarization_without_loading(self) -> None:
+        self.diarize(FakeDiarizer())
+        update_reference(self.paths, self.transcribed)  # e.g. after a new ASR run
+        again = FakeDiarizer()
+
+        summaries = self.diarize(again)
+
+        self.assertEqual(summaries[0].outcome, "reused")
+        self.assertIsNone(summaries[0].elapsed_ms)
+        self.assertEqual(
+            (again.load_calls, again.close_calls, again.diarized), (0, 0, [])
+        )
+        self.assertEqual(
+            words_of(load_reference(self.paths, 1)), ["SPEAKER_00", None, "SPEAKER_01"]
+        )
+
+    def test_changed_inputs_or_force_diarize_again(self) -> None:
+        newer = dataclasses.replace(INFO, model_version="rev-2")
+        for name, diarizer, options, new_audio in (
+            ("force", FakeDiarizer(), {"force": True}, False),
+            ("num_speakers", FakeDiarizer(), {"num_speakers": 3}, False),
+            ("revision", FakeDiarizer(newer), {}, False),
+            ("audio", FakeDiarizer(), {}, True),
+        ):
+            with self.subTest(changed=name):
+                self.paths.segment_wav(1).write_bytes(b"audio 1")
+                self.diarize(FakeDiarizer(), force=True)  # the stored baseline
+                if new_audio:
+                    self.paths.segment_wav(1).write_bytes(b"other audio")
+
+                summaries = self.diarize(diarizer, **options)
+
+                self.assertEqual(summaries[0].outcome, "diarized")
+                self.assertEqual(len(diarizer.diarized), 1)
+
+    def test_unchanged_reference_is_not_rewritten(self) -> None:
+        self.diarize(FakeDiarizer())
+        written = self.paths.reference(1).stat().st_mtime_ns
+
+        with mock.patch("transcript.diarization.update_reference") as update:
+            self.diarize(FakeDiarizer())
+        update.assert_not_called()
+        self.assertEqual(self.paths.reference(1).stat().st_mtime_ns, written)
+
+    def test_diarizer_is_closed_when_a_segment_fails(self) -> None:
+        diarizer = FakeDiarizer()
+        diarizer.diarize = mock.Mock(side_effect=ResourceError("pyannote: oom"))
+
+        with self.assertRaises(ResourceError):
+            self.diarize(diarizer)
+        self.assertEqual(diarizer.close_calls, 1)
 
 
 if __name__ == "__main__":
