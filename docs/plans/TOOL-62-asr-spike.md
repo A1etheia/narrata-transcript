@@ -70,11 +70,13 @@ N/A — `run.json` ist ein Wegwerf-Format des Spikes ohne Versionsfeld und ohne 
 - AC: Alle verbleibenden Akzeptanzkriterien des Tickets sind abgehakt; offene Fragen stehen bei `TOOL-20` und `TOOL-35`.
 
 ## Folge-Tickets
-- `TOOL-20`: nutzt denselben Ausschnitt; offene Fragen zur Sprechertrennung, insbesondere die Sprecherlabels von Granite Plus.
-- `TOOL-35`: Qualität der Confidence-Signale, Stichprobe wiederverwenden.
-- `TOOL-64`: Umsetzung des gewählten Backends.
-- `TOOL-11`, `TOOL-33`: bleiben oder werden mit Begründung verworfen, je nach Chunk 4.
-- [kein Ticket: Eine Ablösung der Skripte in `scripts/spike/` entsteht mit `TOOL-64`, Löschen gehört dorthin]
+- `TOOL-20`: Die Handreferenz aus TOOL-62 (3 min, Sprecherkennung pro Zeile, 46 Wechsel) taugt als erste Referenz für die Diarisierung; die Sprecherzuordnung von Granite Plus ist ungetestet.
+- `TOOL-35`: Word-Confidence trennt mit einer AUC von 0,79–0,82, die unsichersten 30 % enthalten 62–71 % der falschen Wörter; Auslassungen bleiben unsichtbar; beim Mundartsprecher ist die Fehlerquote mehr als dreimal so hoch. Stichprobe und Referenz aus TOOL-62 wiederverwenden.
+- `TOOL-64`: Backend ist Whisper large-v3-turbo über faster-whisper (VAD, Wortzeiten, `beam_size 5`, ohne `condition_on_previous_text`); RAM bis 10,5 GB auf 5 h einplanen; Lizenz der CTranslate2-Konvertierung prüfen; `scripts/spike/` ablösen.
+- `TOOL-44`: Hotwords nur mit large-v3-turbo, nie mit large-v3 (zerfällt); faster-whisper nimmt höchstens 223 Tokens, die wichtigsten Begriffe nach vorne; Wirkung auf die WER ist unbelegt.
+- `TOOL-12`: `input/<gruppe>/ordinal/` enthält viele Sitzungen ohne gültiges Ordinal; vor dem ersten Manifest pro Sitzung einsortieren.
+- `TOOL-11`, `TOOL-33`: verworfen, weil das V0.1-Backend ganze Aufnahmen ohne eigene Segmentierung verarbeitet (`docs/spikes/TOOL-62-asr-vergleich.md`).
+- [kein Ticket: Mehrere Aufnahmen enden bei genau 5:00:00; ob das Aufnahmegerät begrenzt, prüft die Projektverantwortliche am Gerät]
 
 ## Chunk-Tabelle
 | Chunk | Scope | Clear context after? |
