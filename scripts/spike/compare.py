@@ -4,6 +4,11 @@
 
 The reference covers `--start` to `--end` of the audio in seconds. Without a range the
 whole run is scored. Text never reaches the console, so the output is safe to share.
+
+Reference conventions: every line may start with a one-word speaker label (`Name:`),
+and notes in square brackets are not speech; both are dropped. `???` marks an
+inaudible stretch. It becomes a gap in the reference: words a run puts there are
+counted as `absorbed` instead of insertions, so every run is scored on the same words.
 """
 
 import argparse
@@ -13,25 +18,47 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 _TOKEN = re.compile(r"[\w'-]+")
+_LABEL = re.compile(r"^\s*[^\s:]+:", re.MULTILINE)
+_NOTE = re.compile(r"\[[^\]]*\]")
+_UNKNOWN = re.compile(r"\?{3,}")
 
 
 def tokens(text: str) -> list[str]:
     return [token.casefold() for token in _TOKEN.findall(text)]
 
 
-def edit_counts(reference: list[str], hypothesis: list[str]) -> dict[str, int]:
-    """Count edits on a difflib alignment, close to but not exactly a minimal WER."""
-    counts = {"hits": 0, "substitutions": 0, "deletions": 0, "insertions": 0}
+def reference_tokens(text: str) -> tuple[list[str], set[int]]:
+    """Reference words plus the word positions where an inaudible gap sits."""
+    words, gaps = [], set()
+    pieces = _UNKNOWN.split(_NOTE.sub(" ", _LABEL.sub(" ", text)))
+    for index, piece in enumerate(pieces):
+        if index:
+            gaps.add(len(words))
+        words += tokens(piece)
+    return words, gaps
+
+
+def edit_counts(
+    reference: list[str], hypothesis: list[str], gaps: set[int] = frozenset()
+) -> dict[str, int]:
+    """Count edits on a difflib alignment, close to but not exactly a minimal WER.
+
+    Surplus run words in a block that touches a gap are absorbed, not inserted.
+    """
+    counts = dict.fromkeys(
+        ("hits", "substitutions", "deletions", "insertions", "absorbed"), 0
+    )
     matcher = SequenceMatcher(a=reference, b=hypothesis, autojunk=False)
     for tag, ref_start, ref_end, hyp_start, hyp_end in matcher.get_opcodes():
         ref_len, hyp_len = ref_end - ref_start, hyp_end - hyp_start
         if tag == "equal":
             counts["hits"] += ref_len
-        else:
-            paired = min(ref_len, hyp_len)
-            counts["substitutions"] += paired
-            counts["deletions"] += ref_len - paired
-            counts["insertions"] += hyp_len - paired
+            continue
+        paired = min(ref_len, hyp_len)
+        counts["substitutions"] += paired
+        counts["deletions"] += ref_len - paired
+        at_gap = any(ref_start <= gap <= ref_end for gap in gaps)
+        counts["absorbed" if at_gap else "insertions"] += hyp_len - paired
     return counts
 
 
@@ -53,13 +80,19 @@ def name_recall(
 
 
 def run_tokens(path: Path, start: float | None, end: float | None) -> list[str]:
+    """Words in the range: a word counts where it starts; a segment without word
+    times counts if it overlaps the range."""
     run = json.loads(path.read_text(encoding="utf-8"))
-    kept = [
-        segment["text"]
-        for segment in run["segments"]
-        if (start is None or segment["end"] > start)
-        and (end is None or segment["start"] < end)
-    ]
+    after = (lambda t: True) if start is None else (lambda t: t >= start)
+    before = (lambda t: True) if end is None else (lambda t: t < end)
+    kept = []
+    for segment in run["segments"]:
+        if words := segment.get("words"):
+            kept += [
+                w["word"] for w in words if after(w["start"]) and before(w["start"])
+            ]
+        elif before(segment["start"]) and (start is None or segment["end"] > start):
+            kept.append(segment["text"])
     return tokens(" ".join(kept))
 
 
@@ -72,17 +105,19 @@ def main() -> None:
     parser.add_argument("--end", type=float)
     args = parser.parse_args()
 
-    reference = tokens(args.reference.read_text(encoding="utf-8"))
+    text = args.reference.read_text(encoding="utf-8-sig")
+    reference, gaps = reference_tokens(text)
     lines = args.names.read_text(encoding="utf-8").splitlines() if args.names else []
     names = [phrase for line in lines if (phrase := tokens(line))]
     for run_path in args.runs:
         hypothesis = run_tokens(run_path, args.start, args.end)
-        counts = edit_counts(reference, hypothesis)
+        counts = edit_counts(reference, hypothesis, gaps)
         errors = counts["substitutions"] + counts["deletions"] + counts["insertions"]
         print(
             f"{run_path.parent.name}: WER {errors / len(reference):.1%}, "
             f"S {counts['substitutions']}, D {counts['deletions']}, "
-            f"I {counts['insertions']}, names {name_recall(reference, hypothesis, names)}"
+            f"I {counts['insertions']}, absorbed {counts['absorbed']}, "
+            f"names {name_recall(reference, hypothesis, names)}"
         )
 
 
