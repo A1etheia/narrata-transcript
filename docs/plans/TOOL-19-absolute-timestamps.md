@@ -22,7 +22,7 @@ Danach kann jeder nachgelagerte Schritt (Konfidenz TOOL-35, Review TOOL-46, Expo
   - `SessionSpan` (frozen): `granularity` (`"word"` | `"passage"`), `local_start_ms`, `local_end_ms`, `start_ms`, `end_ms` (jeweils `int | None`, nur bei fehlendem Backendwert `None`) und `clamped: bool`. Dazu `timecode()`, das `HH:MM:SS.mmm–HH:MM:SS.mmm` über `format_ms` liefert und für eine fehlende Grenze `?` schreibt.
   - `passage_span(segment, passage)` und `word_span(segment, word)` geben `None` zurück, wenn beide Grenzen fehlen. Erfunden wird kein Wert, und eine Passagenzeit wird nicht auf ihre Wörter übertragen oder umgekehrt.
   - `time_granularity(reference) -> "word" | "passage" | "none"`: die feinste Stufe, für die das Transkript tatsächlich Zeiten hat. Maßgeblich sind die Daten, nicht die Capabilities, denn ein Wort-fähiges Backend kann für ein stilles Segment trotzdem nichts liefern.
-  - Prüft, dass `reference.segment.index == segment.index`, sonst `ValueError`. So landet keine Zeit im falschen Segment.
+  - `segment_of(manifest, reference)` sucht das Manifest-Segment der Referenz und prüft `file` und `source_sha256`, sonst `ValueError`. So landet keine Zeit im falschen Segment.
 - **Überlappung:** Da `start_ms ≥ 0` und das Ergebnis höchstens `segment.end_ms ≤ manifest.duration_ms` ist, kann kein Wert negativ werden oder hinter der Session liegen, auch im Überlappungsbereich nicht. Deduplizieren gehört nicht zum Scope. Getestet wird mit einem konstruierten Manifest mit `overlap_before_ms > 0`.
 
 ## Daten-Check
@@ -53,7 +53,7 @@ N/A. Weder neues Paket noch neues Modell.
 
 ### Chunk 2 — `session_time`: Spannen, Granularität, Darstellung
 - Dateien: `src/transcript/session_time.py`, `tests/test_session_time.py`
-- Änderung: `END_TOLERANCE_MS`, `SessionSpan`, `passage_span`, `word_span`, `time_granularity`, `SessionSpan.timecode()`, wie unter Entscheidungen beschrieben.
+- Änderung: `END_TOLERANCE_MS`, `SessionSpan`, `segment_of`, `passage_span`, `word_span`, `time_granularity`, `SessionSpan.timecode()`, wie unter Entscheidungen beschrieben.
 - Verify: `scripts/check`
 - AC:
   - Wort bei lokal `00:02:13.500` in einem Segment ab `01:19:45.000` → `start_ms` ergibt `01:21:58.500`, `local_start_ms` bleibt 133 500, `granularity == "word"`.
@@ -62,7 +62,7 @@ N/A. Weder neues Paket noch neues Modell.
   - Nur `start_ms` gesetzt → `end_ms is None`, `timecode()` endet auf `?`.
   - Endzeit 400 ms bzw. genau `END_TOLERANCE_MS` hinter dem WAV-Ende → `end_ms == segment.end_ms`, `clamped`, `local_end_ms` unverändert. Im letzten Segment gilt `end_ms ≤ manifest.duration_ms`. `END_TOLERANCE_MS + 1` dahinter → `ValueError`.
   - Segment mit `overlap_before_ms > 0`, Zeit 0 → `start_ms == segment.start_ms ≥ 0`.
-  - Referenz von Segment 2 mit Segment 1 → `ValueError`.
+  - `segment_of` liefert das Segment der Referenz. Bei einem unbekannten Index oder einer anderen Quelle → `ValueError`.
 
 ### Chunk 3 — Doku
 - Dateien: `docs/referenzformat.md`, `docs/asr-backends.md`
