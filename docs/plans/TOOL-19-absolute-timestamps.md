@@ -15,7 +15,8 @@ Danach kann jeder nachgelagerte Schritt (Konfidenz TOOL-35, Review TOOL-46, Expo
 ## Entscheidungen
 - **Absolute Zeiten werden nicht gespeichert** (Übergabe TOOL-16). Sie werden beim Lesen aus Manifest und Referenz berechnet und bleiben so richtig, wenn das Manifest neu gebaut wird. Auch die Granularität wird nicht gespeichert. Sie folgt aus den vorhandenen Feldern, die Herkunft steht schon in `asr.backend_id` und `asr.capabilities`. Der Punkt „Granularität nachvollziehbar speichern“ ist damit ohne Formatänderung erfüllt.
 - **`Segment.to_absolute_ms(local_ms: int) -> int`** nimmt künftig Millisekunden, die Einheit des Referenzformats. Die Sekunden-Variante hat keinen Aufrufer außerhalb der Tests.
-- **Begrenzung am WAV-Ende:** Eine lokale Zeit bis `END_TOLERANCE_MS = 1000` hinter `duration_ms` wird auf das Segmentende gesetzt, alles darüber hinaus ist ein `ValueError` mit Segmentnummer und ms-Wert. 1 s deckt das Runden der Backends und das Polstern des letzten Worts ab. Ein größerer Abstand deutet auf ein falsches WAV oder ein veraltetes Manifest hin und darf nicht still verschwinden. Negative Werte bleiben ein Fehler.
+- **`to_absolute_ms` bleibt streng** (0 bis `duration_ms`). `Segment` ist gemeinsame Infrastruktur, und das Überschießen ist eine Eigenschaft der Backend-Zeiten, nicht des Segments. Toleranz, Begrenzung und `clamped` stehen deshalb an einer Stelle in `session_time` (Altitude-Fund aus `/simplify` zu Chunk 1).
+- **Begrenzung am WAV-Ende:** In `session_time` wird eine lokale Zeit bis `END_TOLERANCE_MS = 1000` hinter `duration_ms` auf das Segmentende gesetzt, bevor `to_absolute_ms` rechnet. Alles darüber hinaus ist ein `ValueError` mit Segmentnummer und ms-Wert. 1 s deckt das Runden der Backends und das Polstern des letzten Worts ab. Ein größerer Abstand deutet auf ein falsches WAV oder ein veraltetes Manifest hin und darf nicht still verschwinden. Negative Werte bleiben ein Fehler.
 - **Begrenzung ist sichtbar, nicht still:** Das Ergebnis trägt `clamped=True`, der lokale Originalwert bleibt erhalten. Damit gilt weiterhin „kein Schritt korrigiert Zeiten still“ (TOOL-16).
 - **Neues Modul `src/transcript/session_time.py`**, weil es Manifest und Referenz zusammenführt und `reference.py` schon 570 Zeilen hat:
   - `SessionSpan` (frozen): `granularity` (`"word"` | `"passage"`), `local_start_ms`, `local_end_ms`, `start_ms`, `end_ms` (jeweils `int | None`, nur bei fehlendem Backendwert `None`) und `clamped: bool`. Dazu `timecode()`, das `HH:MM:SS.mmm–HH:MM:SS.mmm` über `format_ms` liefert und für eine fehlende Grenze `?` schreibt.
@@ -44,22 +45,22 @@ N/A. Weder neues Paket noch neues Modell.
 - Manifest: handled. Unverändert, `MANIFEST_FORMAT_VERSION` bleibt 1. Nur die Signatur von `to_absolute_ms` ändert sich, nicht die Datei.
 
 ## Chunks
-### Chunk 1 — Umrechnung in Millisekunden mit Toleranz am WAV-Ende
+### Chunk 1 — Umrechnung in Millisekunden
 - Dateien: `src/transcript/manifest.py`, `tests/test_manifest.py`
-- Änderung: `END_TOLERANCE_MS`, `Segment.to_absolute_ms(local_ms: int)`, das bis zur Toleranz auf `end_ms` begrenzt und dahinter oder bei negativem Wert `ValueError` wirft. Bestehenden Test auf ms umstellen.
+- Änderung: `Segment.to_absolute_ms(local_ms: int)`, streng in 0 bis `duration_ms`. Den bestehenden Test auf ms umstellen.
 - Verify: `scripts/check`
-- AC: `to_absolute_ms(250)` im zweiten Segment ergibt `start_ms + 250`. `duration_ms + 1000` ergibt `end_ms`. `duration_ms + 1001` und `-1` werfen `ValueError`, die Meldung nennt Segmentnummer und Wert.
+- AC: `to_absolute_ms(250)` im zweiten Segment ergibt `start_ms + 250`. `duration_ms + 1` und `-1` werfen `ValueError`, die Meldung nennt Segmentnummer und Wert.
 
 ### Chunk 2 — `session_time`: Spannen, Granularität, Darstellung
 - Dateien: `src/transcript/session_time.py`, `tests/test_session_time.py`
-- Änderung: `SessionSpan`, `passage_span`, `word_span`, `time_granularity`, `SessionSpan.timecode()`, wie unter Entscheidungen beschrieben.
+- Änderung: `END_TOLERANCE_MS`, `SessionSpan`, `passage_span`, `word_span`, `time_granularity`, `SessionSpan.timecode()`, wie unter Entscheidungen beschrieben.
 - Verify: `scripts/check`
 - AC:
   - Wort bei lokal `00:02:13.500` in einem Segment ab `01:19:45.000` → `start_ms` ergibt `01:21:58.500`, `local_start_ms` bleibt 133 500, `granularity == "word"`.
   - Ereignis in einem Segment nach mehr als einer Stunde → `timecode()` beginnt mit `01:`.
   - Passage mit Zeiten und ohne Wörter → `time_granularity == "passage"`. Mit Wortzeiten → `"word"`. Nur Text (Granite-artig) → `"none"`, `passage_span` ist `None`.
   - Nur `start_ms` gesetzt → `end_ms is None`, `timecode()` endet auf `?`.
-  - Endzeit 400 ms hinter dem WAV-Ende → `end_ms == segment.end_ms`, `clamped`, `local_end_ms` unverändert. Im letzten Segment gilt `end_ms ≤ manifest.duration_ms`.
+  - Endzeit 400 ms bzw. genau `END_TOLERANCE_MS` hinter dem WAV-Ende → `end_ms == segment.end_ms`, `clamped`, `local_end_ms` unverändert. Im letzten Segment gilt `end_ms ≤ manifest.duration_ms`. `END_TOLERANCE_MS + 1` dahinter → `ValueError`.
   - Segment mit `overlap_before_ms > 0`, Zeit 0 → `start_ms == segment.start_ms ≥ 0`.
   - Referenz von Segment 2 mit Segment 1 → `ValueError`.
 
@@ -75,6 +76,6 @@ N/A. Weder neues Paket noch neues Modell.
 ## Chunk-Tabelle
 | Chunk | Scope | Clear context after? |
 | --- | --- | --- |
-| 1 | `Segment.to_absolute_ms` in ms, Toleranz am WAV-Ende | no |
-| 2 | `session_time`: Spannen, Granularität, Timecode | no |
+| 1 | `Segment.to_absolute_ms` in ms, streng | no |
+| 2 | `session_time`: Spannen, Granularität, Toleranz, Timecode | no |
 | 3 | Doku Referenzformat und Backends | no |
