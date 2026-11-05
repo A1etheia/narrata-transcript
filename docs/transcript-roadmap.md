@@ -106,7 +106,7 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| TOOL-35 | Konfidenz-/Unsicherheitsregeln kalibrieren | 1.5 | 25.01.2027 | 26.01.2027 | Stichprobe aus Phase 1 wiederverwenden; aus TOOL-62: AUC 0,79–0,82, unsicherste 30 % enthalten 62–71 % der falschen Wörter, Auslassungen unsichtbar, Mundart verdreifacht die Fehlerquote |
+| TOOL-35 | Konfidenz-/Unsicherheitsregeln kalibrieren | 1.5 | 25.01.2027 | 26.01.2027 | Stichprobe aus Phase 1 wiederverwenden; aus TOOL-62: AUC 0,79–0,82, unsicherste 30 % enthalten 62–71 % der falschen Wörter, Auslassungen unsichtbar, Mundart verdreifacht die Fehlerquote; entscheidet mit Messwerten aus der Stichprobe, ob ein Abgleich mit Parakeet als zweites Review-Signal (v. a. für Auslassungen) aufgenommen wird, Umsetzung dann als Folge-Ticket |
 | TOOL-36 | Review-Kandidaten | 1 | 28.01.2027 | 28.01.2027 |  |
 | TOOL-46 | Review-Datenmodell | 0.5 | 01.02.2027 | 01.02.2027 |  |
 | TOOL-47 | Review-CSV | 0.5 | 01.02.2027 | 01.02.2027 |  |

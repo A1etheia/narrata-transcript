@@ -64,7 +64,7 @@ P = [
     ]),
     ("Phase 3 — Review, Sprecherzuordnung, Export",
      "M3 — JSON-Export (Contract v1) einer Session importiert lokal in Narrata und rendert dort als Rohliste.", [
-        ("TOOL-35", "Konfidenz-/Unsicherheitsregeln kalibrieren", 1.5, "Stichprobe aus Phase 1 wiederverwenden; aus TOOL-62: AUC 0,79–0,82, unsicherste 30 % enthalten 62–71 % der falschen Wörter, Auslassungen unsichtbar, Mundart verdreifacht die Fehlerquote"),
+        ("TOOL-35", "Konfidenz-/Unsicherheitsregeln kalibrieren", 1.5, "Stichprobe aus Phase 1 wiederverwenden; aus TOOL-62: AUC 0,79–0,82, unsicherste 30 % enthalten 62–71 % der falschen Wörter, Auslassungen unsichtbar, Mundart verdreifacht die Fehlerquote; entscheidet mit Messwerten aus der Stichprobe, ob ein Abgleich mit Parakeet als zweites Review-Signal (v. a. für Auslassungen) aufgenommen wird, Umsetzung dann als Folge-Ticket"),
         ("TOOL-36", "Review-Kandidaten", 1.0, ""),
         ("TOOL-46", "Review-Datenmodell", 0.5, ""),
         ("TOOL-47", "Review-CSV", 0.5, ""),
