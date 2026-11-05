@@ -82,8 +82,8 @@ N/A. Kein neues Paket, kein neues Modell.
 - AC: Das README erklärt, was bei einem vorübergehenden und bei einem dauerhaften Fehler passiert und wie man `failed` erneut versucht.
 
 ## Folge-Tickets
-- Protokoll in eine Datei unter `work/<session>/`: TOOL-57 (Pipeline-Status + Resume), Hinweis in der Roadmap.
-- Zahl der Versuche im Referenzformat speichern: [kein Ticket: erst nötig, wenn TOOL-59 Fehlerraten auswertet, dann dort entscheiden]
+- Protokoll in eine Datei unter `work/<session>/`: TOOL-77 (Epic TOOL-54, zusammen mit TOOL-57 entwerfen).
+- Zahl der Versuche im Referenzformat speichern: TOOL-78 (Epic TOOL-54), umsetzen nur, wenn TOOL-59 Fehlerraten auswerten will.
 - Retry beim Laden des Modells: [kein Ticket: Ladefehler sind fehlendes Modell, Runtime oder GPU, ein Retry im selben Prozess hilft nicht]
 
 ## Chunk-Tabelle

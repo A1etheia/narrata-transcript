@@ -82,9 +82,9 @@ P = [
      "M4 — Pilot-Review (TOOL-60): Kernhypothese geprüft; Entscheidungen Review-Kanal, Remote-Backend, Freigabe IT/OT. Zweiter großer Reflexionspunkt.", [
         ("TOOL-56", "Preflight", 0.5, "aus TOOL-9: `transcript doctor` ist der Ausgangspunkt des Gesamt-Preflights"),
         ("TOOL-55", "E2E-CLI mit Halt an manuellen Schritten", 1.0, "aus TOOL-10: `transcript extract` ist der erste Schritt des E2E-Befehls"),
-        ("TOOL-57", "Pipeline-Status + Resume", 1.0, "aus TOOL-18: Fehlversuche stehen nur als `WARNING` auf stderr (`transcript.retry.FailureLog`); ein dauerhaftes Protokoll unter `work/<session>/` gehört hierher"),
+        ("TOOL-57", "Pipeline-Status + Resume", 1.0, "aus TOOL-18: Fehlversuche stehen nur als `WARNING` auf stderr (`transcript.retry.FailureLog`); dauerhaftes Protokoll unter `work/<session>/` ist TOOL-77, mit TOOL-57 zusammen entwerfen"),
         ("TOOL-58", "Erste reale Session komplett (inkl. Review- und Zuordnungszeit)", 2.0, "Export → Fixture für IOA-1218"),
-        ("TOOL-59", "Laufzeit/Ressourcen/Aufwand auswerten", 0.5, ""),
+        ("TOOL-59", "Laufzeit/Ressourcen/Aufwand auswerten", 0.5, "aus TOOL-18: entscheidet, ob TOOL-78 (Versuche pro Segment im Referenzformat) gebraucht wird"),
         ("TOOL-61", "E2E-Workflow dokumentieren", 0.5, ""),
         ("TOOL-60", "V0.1 bewerten, Entscheidungen, V0.2-Backlog", 1.0, "Go/No-Go für Phase 6"),
     ]),
