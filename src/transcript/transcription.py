@@ -101,8 +101,9 @@ def transcribe_session(
 
     A stored transcribed result is reused, unless `force`, when backend, model,
     revision and settings match the backend's identity, it was made with the
-    same `knowledge_snapshot_id` (`None` for none) and, with `language` set,
-    the detected language matches it. Everything else is transcribed in manifest
+    same `knowledge_snapshot_id` (`None` for none) and the same `keywords`
+    (see `_same_keywords`) and, with `language` set, the detected language
+    matches it. Everything else is transcribed in manifest
     order with the backend loaded once. A retryable `BackendError` from one
     segment is tried again up to `retries` times, each failed attempt logged;
     the last error is recorded as `failed` and the run goes on. One from
@@ -119,6 +120,7 @@ def transcribe_session(
     for segment in segments:
         _check_audio(paths, segment.index)
 
+    hints = tuple(keywords) if backend.capabilities.keyword_biasing else None
     outcomes: dict[int, SegmentOutcome] = {}
     pending: list[tuple[Segment, bool]] = []
     for segment in segments:
@@ -127,7 +129,13 @@ def transcribe_session(
         if (
             transcribed
             and not force
-            and _reusable(stored, found, language, knowledge_snapshot_id)
+            and _reusable(
+                stored,
+                found,
+                language,
+                knowledge_snapshot_id,
+                hints,
+            )
         ):
             outcomes[segment.index] = _outcome(stored, "reused")
             report(outcomes[segment.index])
@@ -262,14 +270,32 @@ def _reusable(
     found: BackendIdentity,
     language: str | None,
     knowledge_snapshot_id: str | None,
+    keywords: tuple[str, ...] | None,
 ) -> bool:
-    """A new or newly built snapshot means new knowledge, so transcribe again."""
+    """A new or newly built snapshot means new knowledge, so transcribe again.
+
+    `keywords` is `None` for a backend without `keyword_biasing`: it ignores them.
+    """
     asr = reference.asr
     return (
         found.matches(asr.info, asr.settings)
         and asr.knowledge_snapshot_id == knowledge_snapshot_id
+        and (keywords is None or _same_keywords(asr.keywords_used, keywords))
         and (language is None or asr.language == language)
     )
+
+
+def _same_keywords(used: Sequence[str], keywords: Sequence[str]) -> bool:
+    """Whether a result that took `used` effect was made with these `keywords`.
+
+    A backend may cut the list but keeps its order, so `used` must be an ordered
+    subsequence of `keywords`, and empty only when `keywords` is. A result made
+    without hints is thus transcribed again once there are some. When not even
+    the first keyword fits, `used` stays empty and every run transcribes again.
+    """
+    remaining = iter(keywords)
+    in_order = all(term in remaining for term in used)
+    return in_order and bool(used) == bool(keywords)
 
 
 def _outcome(
