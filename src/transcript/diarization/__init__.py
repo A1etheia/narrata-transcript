@@ -197,7 +197,7 @@ def diarize_session(
             labelled = assign_speakers(reference, run)
             if labelled != reference:  # a reused run usually changes nothing
                 update_reference(paths, labelled)
-            words = [word for passage in labelled.passages for word in passage.words]
+            words = labelled.words
             summaries.append(
                 SegmentSummary(
                     index,

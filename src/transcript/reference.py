@@ -97,6 +97,13 @@ class AsrInfo:
     language_probability: float | None = None
     keywords_used: tuple[str, ...] = ()
 
+    @property
+    def info(self) -> BackendInfo:
+        """Backend and model as `BackendIdentity.matches` compares them."""
+        return BackendInfo(
+            self.backend_id, self.model, self.model_version, self.runtime_version
+        )
+
 
 @dataclass(frozen=True)
 class Processing:
@@ -178,6 +185,11 @@ class ReferenceTranscript:
     def raw_file(self) -> str:
         """Name of the raw file next to this transcript."""
         return reference_raw_name(self.segment.index)
+
+    @property
+    def words(self) -> tuple[Word, ...]:
+        """The words of all passages in order."""
+        return tuple(word for passage in self.passages for word in passage.words)
 
     @property
     def text(self) -> str:
