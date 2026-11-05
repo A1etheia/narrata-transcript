@@ -24,9 +24,10 @@ _PATHS_KEYS = {"root"}
 _SEGMENTATION_KEYS = {"length_seconds", "overlap_seconds"}
 _AUDIO_KEYS = {"sample_rate", "channels"}
 _AUDIO_CHANNELS = (1, 2)
-_ASR_KEYS = {"model", "device", "compute_type", "beam_size"}
-_DIARIZATION_KEYS = {"model", "device"}
+_ASR_KEYS = {"model", "device", "compute_type", "beam_size", "retries"}
+_DIARIZATION_KEYS = {"model", "device", "retries"}
 _DEVICES = ("auto", "cpu", "cuda")  # for every model-backed step
+MAX_RETRIES = 5  # per segment; the cap rules out endless retry loops
 
 
 class ConfigError(Exception):
@@ -46,9 +47,11 @@ class Config:
     asr_device: str = "auto"  # one of _DEVICES; auto prefers cuda
     asr_compute_type: str | None = None  # None: float16 on cuda, int8 on cpu
     asr_beam_size: int = 5
+    asr_retries: int = 2  # further attempts after a retryable failure
     # Hugging Face name or local model directory, loaded from the local cache only
     diarization_model: str = "pyannote/speaker-diarization-community-1"
     diarization_device: str = "auto"  # one of _DEVICES; auto prefers cuda
+    diarization_retries: int = 2
 
     def session_paths(self, key: SessionKey) -> SessionPaths:
         return SessionPaths(key, self.root)
@@ -104,6 +107,7 @@ def load_config(path: Path) -> Config:
     beam_size = _positive_number(
         path, asr, "asr", "beam_size", Config.asr_beam_size, integer=True
     )
+    retries = _retries(path, asr, "asr", Config.asr_retries)
 
     diarization = _section(path, data, "diarization", _DIARIZATION_KEYS)
     diarization_model = diarization.get("model", Config.diarization_model)
@@ -111,6 +115,9 @@ def load_config(path: Path) -> Config:
         raise _invalid(path, "diarization.model", "must be a model name or directory")
     diarization_device = _choice(
         path, diarization, "diarization", "device", Config.diarization_device, _DEVICES
+    )
+    diarization_retries = _retries(
+        path, diarization, "diarization", Config.diarization_retries
     )
 
     return Config(
@@ -125,8 +132,10 @@ def load_config(path: Path) -> Config:
         asr_device=device,
         asr_compute_type=compute_type,
         asr_beam_size=beam_size,
+        asr_retries=retries,
         diarization_model=diarization_model,
         diarization_device=diarization_device,
+        diarization_retries=diarization_retries,
     )
 
 
@@ -149,10 +158,12 @@ def format_config(config: Config) -> str:
                 "device": config.asr_device,
                 "compute_type": config.asr_compute_type,
                 "beam_size": config.asr_beam_size,
+                "retries": config.asr_retries,
             },
             "diarization": {
                 "model": config.diarization_model,
                 "device": config.diarization_device,
+                "retries": config.diarization_retries,
             },
             "debug": config.debug,
         },
@@ -218,6 +229,21 @@ def _positive_number(
             else "must be a positive number"
         )
         raise _invalid(path, f"{section_name}.{key}", rule)
+    return value
+
+
+def _retries(
+    path: Path, section: dict[str, Any], section_name: str, default: int
+) -> int:
+    value = section.get("retries")
+    if value is None:
+        return default
+    if not _is_number(value, int) or not 0 <= value <= MAX_RETRIES:
+        raise _invalid(
+            path,
+            f"{section_name}.retries",
+            f"must be a whole number from 0 to {MAX_RETRIES}",
+        )
     return value
 
 
