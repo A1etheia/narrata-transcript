@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from transcript import jsonfile
-from transcript.asr import BackendInfo
+from transcript.asr import BackendIdentity, BackendInfo
 from transcript.audio import sha256_file
 from transcript.jsonfile import DataFileError
 from transcript.manifest import Manifest
@@ -102,13 +102,10 @@ class DiarizationRun:
     ) -> bool:
         """Whether a new run with these inputs would repeat this one.
 
-        The runtime version is left out: it is provenance, while model, revision
-        and settings decide the turns.
+        Model, revision and settings compare as in `BackendIdentity.matches`.
         """
         return (
-            (self.info.backend_id, self.info.model, self.info.model_version)
-            == (info.backend_id, info.model, info.model_version)
-            and dict(self.settings) == dict(settings)
+            BackendIdentity(self.info, self.settings).matches(info, settings)
             and self.num_speakers == num_speakers
             and self.audio_sha256 == audio_sha256
         )
@@ -200,7 +197,7 @@ def diarize_session(
             labelled = assign_speakers(reference, run)
             if labelled != reference:  # a reused run usually changes nothing
                 update_reference(paths, labelled)
-            words = [word for passage in labelled.passages for word in passage.words]
+            words = labelled.words
             summaries.append(
                 SegmentSummary(
                     index,

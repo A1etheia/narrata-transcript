@@ -20,6 +20,7 @@ with opened(backend):                      # load() einmal, close() immer
 - **`opened(backend)`** lädt Modell und Runtime einmal für viele Segmente und schließt immer, auch nach einem Fehler. Ein Modell zu laden dauert und belegt die GPU, bei Whisper turbo bis 10,5 GB RAM über 5 h.
 - **`transcribe(backend, request)`** prüft, ob die Audiodatei existiert, ruft das Backend und prüft das Ergebnis. Was dort ankommt, ist immer ein `BackendError`.
 - Gerät, Modellvariante und Inferenzparameter gibt man dem Adapter beim Erzeugen mit, nicht im Request.
+- **`identity(backend)`** liefert `BackendIdentity(info, settings)`: Backend, Modell, Revision und Einstellungen, ohne das Modell zu laden. Damit entscheidet der Session-Lauf vor dem Laden, welche gespeicherten Ergebnisse wiederverwendbar sind (`BackendIdentity.matches`, ohne `runtime_version`). Fehlen Runtime, Modell oder Gerät, kommt schon hier `BackendUnavailableError`.
 
 ## Ergebnis
 
@@ -67,11 +68,12 @@ Jedes Backend deklariert `Capabilities`. `capabilities.to_dict()` liefert sie al
 
 ## Regeln für Adapter
 
-- **Modellbibliothek erst in `load()` importieren.** Ein Test hält `faster_whisper`, `ctranslate2`, `nemo`, `torch` und `transformers` aus allem generischen Code heraus und in Adaptern aus der Modulebene.
+- **Modellbibliothek erst in `load()` und `identity()` importieren.** Ein Test hält `faster_whisper`, `ctranslate2`, `nemo`, `torch` und `transformers` aus allem generischen Code heraus und in Adaptern aus der Modulebene.
 - **Eigene Fehler selbst abbilden,** zum Beispiel CUDA-OOM auf `ResourceError` und fehlende Gewichte auf `BackendUnavailableError`. Die Hülle fängt nur, was durchrutscht.
 - **Kein Text in Messages oder Logs.** Transkripttext und `raw` gehen höchstens über `transcript_logger` (`src/transcript/debug_log.py`) in den Debug-Log unter `work/`, siehe [`docs/datenschutz.md`](datenschutz.md).
 - **`keywords_used` ehrlich setzen.** Kürzt die Runtime die Liste, stehen dort nur die übrigen Begriffe. Ohne `keyword_biasing` bleibt das Feld leer, sonst lehnt `transcribe` das Ergebnis ab.
 - **Fähigkeiten so deklarieren, wie der Adapter sie wirklich liefert,** nicht so, wie das Modell sie könnte.
+- **`identity()` billig halten und gleich `load()` rechnen.** Es baut kein Modell, liefert aber dieselbe Revision und dieselben `settings`, die später im Ergebnis stehen. Sonst gilt jedes gespeicherte Segment als veraltet.
 
 ## Abbildung der Kandidaten
 
@@ -101,7 +103,7 @@ with opened(backend):
     result = transcribe(backend, TranscriptionRequest(wav, language=config.language, keywords=hints))
 ```
 
-In der Pipeline übernimmt das `transcript.transcription.transcribe_segment(paths, manifest, index, backend, language, keywords)`. Es prüft Segment, WAV und ein vorhandenes Ergebnis vor dem Laden, misst `elapsed_ms` nur um `transcribe` und speichert über `write_reference`. Ein Fehlschlag wird als `failed` gespeichert, ersetzt aber nie ein erfolgreiches Ergebnis. Auf der Kommandozeile: `transcript transcribe <session> --segment N`.
+In der Pipeline übernimmt das `transcript.transcription.transcribe_session(paths, manifest, backend, language, keywords)`. Es prüft Identität, Segmente, WAVs und vorhandene Ergebnisse vor dem Laden, verwendet passende Ergebnisse wieder, lädt das Backend einmal für den Rest, misst `elapsed_ms` nur um `transcribe` und speichert über `write_reference`. Ein Fehlschlag wird als `failed` gespeichert, ersetzt aber nie ein erfolgreiches Ergebnis. Auf der Kommandozeile: `transcript transcribe <session> [--segment N]`.
 
 - **Nur lokal.** Ein Modellname wird mit `local_files_only` aus dem Hugging-Face-Cache aufgelöst, ein Verzeichnis direkt genommen. Beides muss `model.bin` und `tokenizer.json` enthalten, sonst würde faster-whisper den Tokenizer nachladen. `info.model_version` ist die Revision des Cache-Snapshots, bei einem eigenen Verzeichnis `None`. `info.runtime_version` ist die Version von faster-whisper.
 - **Einstellungen.** `vad_filter`, `word_timestamps` und `condition_on_previous_text: false` sind fest (TOOL-62, Wortzeiten für TOOL-76). Konfigurierbar sind Modell, Gerät, `compute_type` und `beam_size`. Alles steht in `result.settings`.

@@ -6,6 +6,7 @@ from transcript.asr import (
     FEATURES,
     AudioInputError,
     BackendError,
+    BackendIdentity,
     BackendInfo,
     BackendResult,
     BackendRuntimeError,
@@ -80,6 +81,23 @@ class ErrorsTest(unittest.TestCase):
             with self.subTest(error=error.__name__):
                 self.assertTrue(issubclass(error, BackendError))
                 self.assertIs(error("x").retryable, retryable)
+
+
+class IdentityTest(unittest.TestCase):
+    def test_matches_model_revision_and_settings_but_not_runtime(self) -> None:
+        stored = dataclasses.replace(INFO, model_version="abc", runtime_version="1")
+        identity = BackendIdentity(
+            dataclasses.replace(stored, runtime_version="2"), {"beam_size": 5}
+        )
+
+        self.assertTrue(identity.matches(stored, {"beam_size": 5}))
+        for info, settings in (
+            (dataclasses.replace(stored, model_version="def"), {"beam_size": 5}),
+            (dataclasses.replace(stored, model="other"), {"beam_size": 5}),
+            (stored, {"beam_size": 4}),
+        ):
+            with self.subTest(info=info, settings=settings):
+                self.assertFalse(identity.matches(info, settings))
 
 
 class ResultTest(unittest.TestCase):

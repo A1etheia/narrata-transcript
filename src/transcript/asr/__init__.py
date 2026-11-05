@@ -6,6 +6,7 @@ from transcript.asr.backend import (
     AudioInputError,
     Backend,
     BackendError,
+    BackendIdentity,
     BackendInfo,
     BackendResult,
     BackendRuntimeError,
@@ -16,6 +17,7 @@ from transcript.asr.backend import (
     ResultWord,
     TranscriptionRequest,
     UnsupportedCapabilityError,
+    identity,
     opened,
     transcribe,
 )
@@ -26,6 +28,7 @@ __all__ = [
     "AudioInputError",
     "Backend",
     "BackendError",
+    "BackendIdentity",
     "BackendInfo",
     "BackendResult",
     "BackendRuntimeError",
@@ -36,6 +39,7 @@ __all__ = [
     "ResultWord",
     "TranscriptionRequest",
     "UnsupportedCapabilityError",
+    "identity",
     "opened",
     "transcribe",
 ]

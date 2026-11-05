@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 from test_reference import KEY, MANIFEST, SECRET, SEGMENT
 
@@ -13,12 +14,17 @@ from transcript.asr import (
     ResourceError,
     ResultSegment,
     ResultWord,
+    TranscriptionRequest,
 )
 from transcript.asr.fake import FAKE_INFO, FakeBackend
 from transcript.audio import sha256_file
 from transcript.reference import ReferenceError, load_reference
 from transcript.session import SessionPaths
-from transcript.transcription import TranscriptionError, transcribe_segment
+from transcript.transcription import (
+    SegmentOutcome,
+    TranscriptionError,
+    transcribe_session,
+)
 
 SEGMENT_1 = dataclasses.replace(SEGMENT, index=1, file="segment-01.wav")
 MANIFEST_1 = dataclasses.replace(MANIFEST, segments=(SEGMENT_1,))
@@ -49,7 +55,9 @@ class FailingLoad(FakeBackend):
         raise BackendUnavailableError("fake: model not in the local cache")
 
 
-class TranscribeSegmentTest(unittest.TestCase):
+class SegmentWritingTest(unittest.TestCase):
+    """What one transcribed segment leaves on disk and in its outcome."""
+
     def setUp(self) -> None:
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -63,17 +71,20 @@ class TranscribeSegmentTest(unittest.TestCase):
 
     def run_segment(
         self,
-        backend: FakeBackend,
-        index: int = 1,
+        backend: FakeBackend | None = None,
         keywords: tuple[str, ...] = (),
         force: bool = False,
-    ):
-        return transcribe_segment(
-            self.paths, MANIFEST_1, index, backend, "de", keywords, force=force
+    ) -> SegmentOutcome:
+        backend = backend or FakeBackend(
+            RESULT, info=RESULT.info, settings=RESULT.settings
         )
+        run = transcribe_session(
+            self.paths, MANIFEST_1, backend, "de", keywords, force=force
+        )
+        return run.outcomes[0]
 
     def test_writes_normal_and_raw_form_with_provenance(self) -> None:
-        summary = self.run_segment(FakeBackend(RESULT))
+        outcome = self.run_segment()
 
         reference = load_reference(self.paths, 1)
         self.assertEqual(reference.status, "transcribed")
@@ -86,7 +97,7 @@ class TranscribeSegmentTest(unittest.TestCase):
             ("fake", "fake", "rev1"),
         )
         self.assertEqual(reference.asr.settings, {"beam_size": 5})
-        self.assertEqual(reference.processing.elapsed_ms, summary.elapsed_ms)
+        self.assertEqual(reference.processing.elapsed_ms, outcome.elapsed_ms)
         passage = reference.passages[0]
         self.assertEqual(passage.text, f" Zum {SECRET}.")
         self.assertEqual([w.confidence for w in passage.words], [0.9, None])
@@ -94,16 +105,16 @@ class TranscribeSegmentTest(unittest.TestCase):
         raw = json.loads(self.paths.reference_raw(1).read_text(encoding="utf-8"))
         self.assertEqual(raw, {"backend_id": "fake", "raw": RESULT.raw})
 
-    def test_summary_holds_counts_but_no_text(self) -> None:
-        summary = self.run_segment(FakeBackend(RESULT))
+    def test_outcome_holds_counts_but_no_text(self) -> None:
+        outcome = self.run_segment()
 
         self.assertEqual(
-            (summary.index, summary.passages, summary.words),
-            (1, 1, 2),
+            (outcome.index, outcome.status, outcome.passages, outcome.words),
+            (1, "transcribed", 1, 2),
         )
-        self.assertEqual(summary.words_with_confidence, 1)
-        self.assertEqual((summary.language, summary.model_version), ("de", "rev1"))
-        self.assertNotIn(SECRET, repr(summary))
+        self.assertEqual(outcome.words_with_confidence, 1)
+        self.assertEqual(outcome.language, "de")
+        self.assertNotIn(SECRET, repr(outcome))
 
     def test_language_and_keywords_reach_the_backend(self) -> None:
         backend = FakeBackend(capabilities=Capabilities(keyword_biasing=True))
@@ -122,45 +133,16 @@ class TranscribeSegmentTest(unittest.TestCase):
     def test_audio_is_not_changed(self) -> None:
         before = (sha256_file(self.wav), sha256_file(self.original))
 
-        self.run_segment(FakeBackend(RESULT))
+        self.run_segment()
 
         self.assertEqual((sha256_file(self.wav), sha256_file(self.original)), before)
 
-    def test_unknown_segment_fails_before_loading(self) -> None:
-        backend = FakeBackend()
-
-        with self.assertRaisesRegex(
-            TranscriptionError, "segment 3 not in the manifest"
-        ):
-            self.run_segment(backend, index=3)
-        self.assertEqual(backend.load_calls, 0)
-
-    def test_missing_audio_fails_before_loading(self) -> None:
-        self.wav.unlink()
-        backend = FakeBackend()
-
-        with self.assertRaisesRegex(TranscriptionError, "audio not found"):
-            self.run_segment(backend)
-        self.assertEqual(backend.load_calls, 0)
-        self.assertFalse(self.paths.reference(1).exists())
-
-    def test_existing_result_needs_force(self) -> None:
-        self.run_segment(FakeBackend(RESULT))
-        backend = FakeBackend()
-
-        with self.assertRaisesRegex(TranscriptionError, "--force"):
-            self.run_segment(backend)
-        self.assertEqual(backend.load_calls, 0)
-
-        self.run_segment(backend, force=True)
-        self.assertEqual(load_reference(self.paths, 1).text, "Fake-Transkript.")
-
-    def test_transcribe_failure_is_recorded_as_failed(self) -> None:
+    def test_failure_is_recorded_with_its_class_only(self) -> None:
         backend = FakeBackend(error=ResourceError("fake: out of memory"))
 
-        with self.assertRaises(ResourceError):
-            self.run_segment(backend)
+        outcome = self.run_segment(backend)
 
+        self.assertEqual(outcome.status, "failed")
         reference = load_reference(self.paths, 1)
         self.assertEqual(reference.status, "failed")
         self.assertEqual(
@@ -170,47 +152,230 @@ class TranscribeSegmentTest(unittest.TestCase):
         self.assertEqual(reference.passages, ())
         self.assertEqual((backend.load_calls, backend.close_calls), (1, 1))
 
-    def test_failed_result_is_retried_without_force(self) -> None:
-        with self.assertRaises(ResourceError):
-            self.run_segment(FakeBackend(error=ResourceError("fake: out of memory")))
-
-        self.run_segment(FakeBackend(RESULT))
-
-        self.assertEqual(load_reference(self.paths, 1).status, "transcribed")
-
-    def test_load_failure_writes_nothing(self) -> None:
-        backend = FailingLoad()
-
-        with self.assertRaises(BackendUnavailableError):
-            self.run_segment(backend)
-
-        self.assertFalse(self.paths.asr_dir.exists())
-        self.assertEqual(backend.requests, [])
-
     def test_failure_with_force_keeps_the_transcribed_result(self) -> None:
-        self.run_segment(FakeBackend(RESULT))
+        self.run_segment()
         files = {
             path: path.read_bytes()
             for path in (self.paths.reference(1), self.paths.reference_raw(1))
         }
 
-        with self.assertRaises(ResourceError):
-            self.run_segment(
-                FakeBackend(error=ResourceError("fake: out of memory")), force=True
-            )
+        self.run_segment(
+            FakeBackend(error=ResourceError("fake: out of memory")), force=True
+        )
 
         for path, content in files.items():
             self.assertEqual(path.read_bytes(), content)
 
-    def test_unreadable_existing_result_needs_force(self) -> None:
+    def test_unreadable_result_is_replaced_only_with_force(self) -> None:
         self.paths.asr_dir.mkdir()
         self.paths.reference(1).write_text("{}", encoding="utf-8")
 
         with self.assertRaises(ReferenceError):
-            self.run_segment(FakeBackend())
+            self.run_segment()
 
-        self.run_segment(FakeBackend(RESULT), force=True)
+        self.run_segment(force=True)
         self.assertEqual(load_reference(self.paths, 1).status, "transcribed")
+
+
+SEGMENTS = tuple(
+    dataclasses.replace(SEGMENT, index=index, file=f"segment-0{index}.wav")
+    for index in (1, 2, 3)
+)
+MANIFEST_3 = dataclasses.replace(MANIFEST, segments=SEGMENTS)
+SETTINGS = {"beam_size": 5}
+
+
+def session_backend(
+    revision: str = "rev1",
+    settings: dict[str, Any] = SETTINGS,
+    fail_on: int | None = None,
+    language: str = "de",
+) -> FakeBackend:
+    """A backend whose identity matches its results; `fail_on` segment raises."""
+    info = dataclasses.replace(FAKE_INFO, model_version=revision)
+
+    def answer(request: TranscriptionRequest) -> BackendResult:
+        if request.audio.name == f"segment-0{fail_on}.wav":
+            raise ResourceError("fake: out of memory")
+        return BackendResult(
+            info=info,
+            segments=(ResultSegment(text=f" Zum {SECRET}.", start=0.0, end=1.0),),
+            language=language,
+            settings=settings,
+        )
+
+    return FakeBackend(answer, info=info, settings=settings)
+
+
+class FailingIdentity(FakeBackend):
+    def identity(self) -> Any:
+        raise BackendUnavailableError("fake: model not in the local cache")
+
+
+class TranscribeSessionTest(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.paths = SessionPaths(KEY, Path(directory.name))
+        self.paths.audio_dir.mkdir(parents=True)
+        for segment in SEGMENTS:
+            self.paths.segment_wav(segment.index).write_bytes(b"RIFF fake audio")
+
+    def run_session(self, backend: FakeBackend, **options: Any):
+        return transcribe_session(self.paths, MANIFEST_3, backend, "de", **options)
+
+    def statuses(self, run) -> list[str]:
+        return [outcome.status for outcome in run.outcomes]
+
+    def test_all_segments_in_manifest_order_with_one_load(self) -> None:
+        backend = session_backend()
+
+        run = self.run_session(backend)
+
+        self.assertEqual(self.statuses(run), ["transcribed"] * 3)
+        self.assertTrue(run.complete)
+        self.assertEqual((backend.load_calls, backend.close_calls), (1, 1))
+        self.assertEqual(
+            [request.audio.name for request in backend.requests],
+            ["segment-01.wav", "segment-02.wav", "segment-03.wav"],
+        )
+        for segment in SEGMENTS:
+            self.assertEqual(
+                load_reference(self.paths, segment.index).status, "transcribed"
+            )
+        self.assertEqual(run.identity.info.model_version, "rev1")
+
+    def test_rerun_reuses_matching_results_without_loading(self) -> None:
+        self.run_session(session_backend())
+        backend = session_backend()
+
+        run = self.run_session(backend)
+
+        self.assertEqual(self.statuses(run), ["reused"] * 3)
+        self.assertEqual(backend.load_calls, 0)
+        self.assertEqual(run.outcomes[0].passages, 1)
+        self.assertIsNone(run.outcomes[0].elapsed_ms)
+
+    def test_other_revision_settings_or_language_transcribe_again(self) -> None:
+        for name, backend, language in (
+            ("revision", session_backend(revision="rev2"), "de"),
+            ("settings", session_backend(settings={"beam_size": 1}), "de"),
+            ("language", session_backend(), "en"),
+        ):
+            with self.subTest(changed=name):
+                self.run_session(session_backend())
+
+                run = transcribe_session(self.paths, MANIFEST_3, backend, language)
+
+                self.assertEqual(self.statuses(run), ["transcribed"] * 3)
+                self.assertEqual(backend.load_calls, 1)
+
+    def test_no_configured_language_accepts_any_detected_one(self) -> None:
+        self.run_session(session_backend(language="en"))
+
+        run = transcribe_session(self.paths, MANIFEST_3, session_backend(), None)
+
+        self.assertEqual(self.statuses(run), ["reused"] * 3)
+
+    def test_force_transcribes_matching_results_again(self) -> None:
+        self.run_session(session_backend())
+        backend = session_backend()
+
+        run = self.run_session(backend, force=True)
+
+        self.assertEqual(self.statuses(run), ["transcribed"] * 3)
+        self.assertEqual(len(backend.requests), 3)
+
+    def test_failure_in_one_segment_does_not_stop_the_run(self) -> None:
+        run = self.run_session(session_backend(fail_on=2))
+
+        self.assertEqual(self.statuses(run), ["transcribed", "failed", "transcribed"])
+        self.assertFalse(run.complete)
+        failed = run.outcomes[1]
+        self.assertEqual((failed.error, failed.retryable), ("ResourceError", True))
+        self.assertEqual(load_reference(self.paths, 2).status, "failed")
+
+    def test_failed_segment_is_retried_and_finished_ones_reused(self) -> None:
+        self.run_session(session_backend(fail_on=2))
+        backend = session_backend()
+
+        run = self.run_session(backend)
+
+        self.assertEqual(self.statuses(run), ["reused", "transcribed", "reused"])
+        self.assertEqual([r.audio.name for r in backend.requests], ["segment-02.wav"])
+
+    def test_failure_after_a_mismatch_keeps_the_transcribed_result(self) -> None:
+        self.run_session(session_backend())
+        before = self.paths.reference(2).read_bytes()
+
+        run = self.run_session(session_backend(revision="rev2", fail_on=2))
+
+        self.assertEqual(run.outcomes[1].status, "failed")
+        self.assertEqual(self.paths.reference(2).read_bytes(), before)
+
+    def test_load_failure_leaves_every_segment_open(self) -> None:
+        backend = FailingLoad()
+        seen: list[SegmentOutcome] = []
+
+        run = self.run_session(backend, progress=seen.append)
+
+        self.assertEqual(self.statuses(run), ["open"] * 3)
+        self.assertEqual(list(run.outcomes), seen)
+        self.assertIsInstance(run.load_error, BackendUnavailableError)
+        self.assertFalse(backend.loaded)  # closed after the failed load
+        self.assertFalse(self.paths.asr_dir.exists())
+
+    def test_problems_found_before_loading(self) -> None:
+        def unavailable() -> FakeBackend:
+            backend = FailingIdentity()
+            with self.assertRaises(BackendUnavailableError):
+                self.run_session(backend)
+            return backend
+
+        def unknown_segment() -> FakeBackend:
+            backend = session_backend()
+            with self.assertRaisesRegex(TranscriptionError, "segment 4 not in"):
+                self.run_session(backend, indices={4})
+            return backend
+
+        def missing_audio() -> FakeBackend:
+            self.paths.segment_wav(3).unlink()
+            backend = session_backend()
+            with self.assertRaisesRegex(TranscriptionError, "segment 3 audio"):
+                self.run_session(backend)
+            return backend
+
+        def unreadable_result() -> FakeBackend:
+            self.paths.asr_dir.mkdir(exist_ok=True)
+            self.paths.reference(1).write_text("{}", encoding="utf-8")
+            backend = session_backend()
+            with self.assertRaises(ReferenceError):
+                self.run_session(backend)
+            return backend
+
+        for case in (unavailable, unknown_segment, unreadable_result, missing_audio):
+            with self.subTest(case=case.__name__):
+                self.assertEqual(case().load_calls, 0)
+
+    def test_indices_select_segments(self) -> None:
+        backend = session_backend()
+
+        run = self.run_session(backend, indices={2})
+
+        self.assertEqual([o.index for o in run.outcomes], [2])
+        self.assertFalse(self.paths.reference(1).exists())
+
+    def test_progress_gets_every_outcome_without_text(self) -> None:
+        self.run_session(session_backend(), indices={1})
+        seen: list[SegmentOutcome] = []
+
+        run = self.run_session(session_backend(fail_on=3), progress=seen.append)
+
+        self.assertEqual(
+            [(o.index, o.status) for o in seen],
+            [(1, "reused"), (2, "transcribed"), (3, "failed")],
+        )
+        self.assertNotIn(SECRET, repr(run))
 
 
 if __name__ == "__main__":

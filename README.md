@@ -96,21 +96,25 @@ Erprobt sind faster-whisper 1.2.1, ctranslate2 4.8, cuBLAS 12.9 und cuDNN 8.9.
 
 **Fehler.** Fehlt die Runtime, das Modell im Cache, eine GPU bei `asr.device: cuda` oder eine CUDA-Bibliothek, meldet das Backend `BackendUnavailableError` mit dem nächsten Schritt; Speichermangel kommt als `ResourceError`. Die Meldungen nennen Modell, Gerät und Audiodatei, nie Transkripttext oder Begriffe.
 
-**Lauf.** Ein Segment transkribieren heißt: Segment aus dem Manifest nehmen, Whisper laden, das WAV transkribieren und das Ergebnis als Referenztranskript speichern. Vorher müssen `transcript extract` und `transcript manifest` gelaufen sein, danach folgt `transcript diarize`.
+**Lauf.** `transcript transcribe` transkribiert alle Segmente einer Session aus dem Manifest. Whisper lädt dafür einmal, danach diarisiert der Befehl die Session (siehe [Diarisierung](#diarisierung)). Vorher müssen `transcript extract` und `transcript manifest` gelaufen sein.
 
 ```bash
-transcript transcribe beispielgruppe/042 --segment 1          # Segment 1 laut Manifest
-transcript transcribe beispielgruppe/042 --segment 1 --force  # vorhandenes Ergebnis neu rechnen
+transcript transcribe beispielgruppe/042                    # alle Segmente, danach Diarisierung
+transcript transcribe beispielgruppe/042 --num-speakers 4   # Personenzahl für die Diarisierung
+transcript transcribe beispielgruppe/042 --segment 2        # nur Segment 2 laut Manifest
+transcript transcribe beispielgruppe/042 --no-diarize       # nur Spracherkennung
+transcript transcribe beispielgruppe/042 --force            # auch passende Ergebnisse neu rechnen
 ```
 
-Es entstehen `work/<gruppe>/<ordinal>/asr/segment-NN.json` und `segment-NN.raw.json` (siehe [ASR-Backends](#asr-backends)). Die Sprache kommt aus `language` der Konfiguration. Begriffshinweise (Hotwords) übergibt der Befehl noch nicht; sie kommen mit der Wissensschnittstelle (TOOL-43). Die Konsole zeigt Laufzeit, Modell mit Revision, Zahl der Passagen und Wörter und die erkannte Sprache, nie Text.
+Es entstehen `work/<gruppe>/<ordinal>/asr/segment-NN.json` und `segment-NN.raw.json` (siehe [ASR-Backends](#asr-backends)). Die Sprache kommt aus `language` der Konfiguration. Begriffshinweise (Hotwords) übergibt der Befehl noch nicht; sie kommen mit der Wissensschnittstelle (TOOL-43). Die Konsole zeigt pro Segment, sobald es fertig ist, den Status mit Laufzeit, Zahl der Passagen und Wörter und der erkannten Sprache, am Ende eine Zusammenfassung mit Modell und Revision. Text erscheint nie.
 
-- **Vor dem Laden geprüft:** Ein Segment, das nicht im Manifest steht, ein fehlendes WAV oder ein schon transkribiertes Segment brechen ab, bevor das Modell lädt.
-- **`--force`:** Rechnet ein vorhandenes Ergebnis neu. Die Sprecher-Labels fallen dabei weg; `transcript diarize` setzt sie aus der gespeicherten Diarisierung ohne Modell wieder.
-- **Fehlschlag beim Transkribieren:** Steht als `status: failed` mit Fehlerklasse in der Datei und wird beim nächsten Aufruf ohne `--force` erneut versucht. Ein erfolgreiches Ergebnis ersetzt ein Fehlschlag nie.
-- **Fehlschlag beim Laden** (Modell, Runtime, GPU): schreibt nichts.
-
-Eine ganze Session mit Wiederaufnahme kommt mit TOOL-17.
+- **Wiederaufnahme:** Ein fertiges Segment bleibt stehen, wenn Backend, Modell, Revision und Einstellungen gleich sind und die erkannte Sprache zu `language` passt (`reused`). Ein abgebrochener Lauf macht beim nächsten Aufruf mit den offenen Segmenten weiter. Sind alle Segmente fertig, lädt Whisper gar nicht. Hat sich das Modell geändert, werden die betroffenen Segmente neu transkribiert.
+- **Vor dem Laden geprüft:** Fehlende Runtime, ein Modell, das nicht im Cache liegt, eine fehlende GPU, ein Segment, das nicht im Manifest steht, ein fehlendes WAV oder ein unlesbares Ergebnis brechen ab, bevor das Modell lädt. Ohne `--no-diarize` gilt das auch für pyannote.
+- **`--force`:** Rechnet auch passende Ergebnisse neu. Die Sprecher-Labels fallen dabei weg; die Diarisierung im selben Lauf setzt sie aus der gespeicherten Rohform ohne Modell wieder.
+- **Fehlschlag bei einem Segment:** Steht als `status: failed` mit Fehlerklasse in der Datei, der Lauf geht mit dem nächsten Segment weiter. Der nächste Aufruf versucht es ohne `--force` erneut. Ein erfolgreiches Ergebnis ersetzt ein Fehlschlag nie.
+- **Fehlschlag beim Laden** (Modell, Runtime, GPU): schreibt nichts, alle offenen Segmente bleiben `open`.
+- **Exit-Code:** 0, wenn alle Segmente `transcribed` oder `reused` sind; 1, wenn eines `failed` oder `open` ist; 2, wenn der Lauf gar nicht starten konnte.
+- **Seit TOOL-17:** `--segment` ist optional. Ein zweiter Aufruf für ein fertiges Segment verwendet es wieder, statt mit „already transcribed“ abzubrechen.
 
 **Smoke-Test** mit dem echten Modell. ffmpeg spricht dafür mit `flite` einen erfundenen englischen Satz, der Test transkribiert ihn und speichert das Ergebnis im Referenzformat:
 
@@ -121,7 +125,7 @@ TRANSCRIPT_WHISPER_SMOKE=1 TRANSCRIPT_WHISPER_DEVICE=cpu python -m unittest disc
 
 ## Diarisierung
 
-Wer wann spricht, bestimmt pyannote `speaker-diarization-community-1` (`transcript.diarization.pyannote.PyannoteDiarizer`, Wahl und Messwerte in [TOOL-20](docs/spikes/TOOL-20-diarisierung.md)). Die Diarisierung läuft als eigener Schritt nach der Transkription, vollständig lokal und nur aus dem lokalen Modell-Cache.
+Wer wann spricht, bestimmt pyannote `speaker-diarization-community-1` (`transcript.diarization.pyannote.PyannoteDiarizer`, Wahl und Messwerte in [TOOL-20](docs/spikes/TOOL-20-diarisierung.md)). Die Diarisierung läuft nach der Transkription, automatisch am Ende von `transcript transcribe` oder als eigener Befehl, vollständig lokal und nur aus dem lokalen Modell-Cache.
 
 **Installation.** Ebenfalls ein optionales Extra; es bringt torch mit und macht die venv um einige GB größer. Es verträgt sich mit dem Whisper-Extra in derselben venv: torch nutzt CUDA 13 und cuDNN 9, faster-whisper CUDA 12 und cuDNN 8, in getrennten Paketen.
 
@@ -152,7 +156,7 @@ Pro Segment entsteht `work/<gruppe>/<ordinal>/diarization/segment-NN.json` mit d
 
 **Labels gelten pro Segment.** `SPEAKER_00` der ersten Aufnahme ist nicht automatisch dieselbe Person wie `SPEAKER_00` der zweiten. Die Zuordnung zu Personen kommt mit TOOL-68.
 
-**Hardware.** Auf 5 h unter 4 GB VRAM, bis 13,8 GB RAM und etwa 4 Minuten auf der GPU des Testrechners. Nicht gleichzeitig mit Whisper laufen lassen; als eigener Befehl ist das ohnehin so. Ohne GPU läuft es auf der CPU, deutlich langsamer.
+**Hardware.** Auf 5 h unter 4 GB VRAM, bis 13,8 GB RAM und etwa 4 Minuten auf der GPU des Testrechners. Nicht gleichzeitig mit Whisper laufen lassen; `transcript transcribe` gibt Whisper vorher frei. Ohne GPU läuft es auf der CPU, deutlich langsamer.
 
 **Lizenzen.** pyannote.audio steht unter MIT. Das Modell [`pyannote/speaker-diarization-community-1`](https://huggingface.co/pyannote/speaker-diarization-community-1) von pyannoteAI steht unter [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); es wird nur lokal genutzt, nicht weitergegeben.
 

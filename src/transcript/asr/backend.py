@@ -1,7 +1,8 @@
 """The interface every local ASR backend implements, and the types it exchanges.
 
 Generic pipeline code talks to a backend only through these types, so it never
-imports a model library. Adapters import their runtime inside `load()`.
+imports a model library. Adapters import their runtime inside `load()` and
+`identity()`.
 
 A missing capability is not an error: the matching result fields stay empty or
 `None`. Only a step that cannot work without a capability calls
@@ -109,6 +110,30 @@ class BackendInfo:
     runtime_version: str | None = None  # version of the backend library
 
 
+@dataclass(frozen=True)
+class BackendIdentity:
+    """What decides a backend's results, known before `load`.
+
+    Resume compares it with a stored result to decide whether that result can be
+    reused without loading the model.
+    """
+
+    info: BackendInfo  # with model_version and runtime_version where known
+    settings: Mapping[str, Any] = field(default_factory=dict)  # as in results
+
+    def matches(self, info: BackendInfo, settings: Mapping[str, Any]) -> bool:
+        """Whether a result made with `info` and `settings` came from this identity.
+
+        The runtime version is left out: it is provenance, while model, revision
+        and settings decide the result.
+        """
+        return (self.info.backend_id, self.info.model, self.info.model_version) == (
+            info.backend_id,
+            info.model,
+            info.model_version,
+        ) and dict(self.settings) == dict(settings)
+
+
 def hub_revision(model_path: Path) -> str | None:
     """The revision of a Hugging Face cache snapshot (`…/snapshots/<sha>`), else None."""
     return model_path.name if model_path.parent.name == "snapshots" else None
@@ -211,6 +236,13 @@ class Backend(Protocol):
     @property
     def capabilities(self) -> Capabilities: ...
 
+    def identity(self) -> BackendIdentity:
+        """Model, revision and settings without loading the model; fast.
+
+        Raises `BackendUnavailableError` when `load` could not succeed for want
+        of runtime, model or device.
+        """
+
     def load(self) -> None:
         """Load model and runtime; may take minutes and occupy the GPU."""
 
@@ -229,6 +261,11 @@ def opened(backend: Backend) -> Iterator[Backend]:
         yield backend
     finally:
         _guarded(backend, backend.close)
+
+
+def identity(backend: Backend) -> BackendIdentity:
+    """The backend's identity before `load`; every failure arrives as a `BackendError`."""
+    return _guarded(backend, backend.identity)
 
 
 def transcribe(backend: Backend, request: TranscriptionRequest) -> BackendResult:

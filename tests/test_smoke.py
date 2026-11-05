@@ -12,16 +12,16 @@ from unittest import mock
 from media import mp4_with_audio, needs_media, sine, synth, video
 from test_diarization import FakeDiarizer
 from test_reference import KEY, MANIFEST, SECRET, SEGMENT, minimal
-from test_transcription import MANIFEST_1, RESULT
+from test_transcription import MANIFEST_3, FailingLoad, session_backend
 
 import transcript
 from transcript import __main__ as transcript_main
 from transcript import audio_tools
 from transcript.__main__ import main
-from transcript.asr import BackendUnavailableError, ResourceError
+from transcript.asr import BackendUnavailableError
 from transcript.asr.fake import FakeBackend
 from transcript.audio_tools import AudioToolError, AudioTools, ToolInfo
-from transcript.reference import Passage, Word, load_reference, update_reference
+from transcript.reference import Passage, Word, update_reference
 from transcript.session import SessionKey, SessionPaths
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -295,14 +295,21 @@ class TranscribeCommandTest(unittest.TestCase):
         )
         self.paths = SessionPaths(KEY, self.root)
         self.paths.audio_dir.mkdir(parents=True)
-        self.paths.segment_wav(1).write_bytes(b"audio")
-        self.backend = FakeBackend(RESULT)
+        for segment in MANIFEST_3.segments:
+            self.paths.segment_wav(segment.index).write_bytes(b"audio")
+        self.backend = session_backend()
+        self.diarizers: list[FakeDiarizer] = []
         for patcher in (
             mock.patch.object(
-                transcript_main.manifest, "load_manifest", return_value=MANIFEST_1
+                transcript_main.manifest, "load_manifest", return_value=MANIFEST_3
             ),
             mock.patch.object(
                 transcript_main.WhisperBackend, "from_config", side_effect=self.created
+            ),
+            mock.patch.object(
+                transcript_main.PyannoteDiarizer,
+                "from_config",
+                side_effect=self.diarizer,
             ),
         ):
             patcher.start()
@@ -312,64 +319,113 @@ class TranscribeCommandTest(unittest.TestCase):
         self.assertEqual(config.asr_device, "cpu")
         return self.backend
 
-    def transcribe(self, *extra: str, segment: str = "1") -> tuple[int, str, str]:
-        return run(
-            "transcribe",
-            str(KEY),
-            "--config",
-            str(self.config),
-            "--segment",
-            segment,
-            *extra,
-        )
+    def diarizer(self, config: Any) -> FakeDiarizer:
+        backend = self.backend
 
-    def test_prints_counts_and_provenance_but_no_text(self) -> None:
-        code, stdout, stderr = self.transcribe()
+        class AfterAsr(FakeDiarizer):
+            def load(self) -> None:
+                assert not backend.loaded, "diarizer loaded next to Whisper"
+                super().load()
+
+        self.diarizers.append(AfterAsr())
+        return self.diarizers[-1]
+
+    def transcribe(self, *extra: str) -> tuple[int, str, str]:
+        return run("transcribe", str(KEY), "--config", str(self.config), *extra)
+
+    def test_whole_session_prints_counts_per_segment_but_no_text(self) -> None:
+        code, stdout, stderr = self.transcribe("--no-diarize")
 
         self.assertEqual(code, 0, stderr)
+        self.assertIn("beispielgruppe/042: 3 segment(s)", stdout)
         self.assertRegex(
             stdout,
-            r"beispielgruppe/042: segment 1 transcribed in \d+\.\d s with fake fake "
-            r"\(rev1\): 1 passage\(s\), 2 word\(s\), 1 with confidence, language de",
+            r"  2\. transcribed in \d+\.\d s: 1 passage\(s\), 0 word\(s\), "
+            r"0 with confidence, language de",
         )
-        self.assertIn(f"wrote {self.paths.reference(1)}", stdout)
-        self.assertEqual(self.backend.requests[0].language, "de")
+        self.assertIn(
+            "beispielgruppe/042: 3 transcribed, 0 reused, 0 failed, 0 open "
+            "with fake fake (rev1)",
+            stdout,
+        )
+        self.assertIn(f"wrote {self.paths.asr_dir}", stdout)
+        self.assertEqual(self.backend.load_calls, 1)
         self.assertEqual(self.backend.requests[0].keywords, ())
+        self.assertEqual(self.diarizers, [])
         self.assertNotIn(SECRET, stdout + stderr)
 
-    def test_second_run_needs_force(self) -> None:
-        self.transcribe()
+    def test_second_run_reuses_without_loading(self) -> None:
+        self.transcribe("--no-diarize")
+        self.backend = session_backend()
 
-        code, stdout, stderr = self.transcribe()
-        self.assertEqual((code, stdout), (2, ""))
-        self.assertIn("already transcribed; use --force", stderr)
+        code, stdout, _ = self.transcribe("--no-diarize")
 
-        code, _, stderr = self.transcribe("--force")
-        self.assertEqual(code, 0, stderr)
-
-    def test_unknown_segment_is_reported(self) -> None:
-        code, _, stderr = self.transcribe(segment="2")
-
-        self.assertEqual(code, 2)
-        self.assertIn("error: segment 2 not in the manifest", stderr)
+        self.assertEqual(code, 0)
+        self.assertIn("  1. reused: 1 passage(s)", stdout)
+        self.assertIn("0 transcribed, 3 reused", stdout)
         self.assertEqual(self.backend.load_calls, 0)
 
-    def test_backend_errors_are_reported_without_traceback(self) -> None:
-        self.backend = FakeBackend(error=ResourceError("fake: out of memory"))
+        _, stdout, _ = self.transcribe("--no-diarize", "--force")
+        self.assertIn("3 transcribed, 0 reused", stdout)
 
-        code, stdout, stderr = self.transcribe()
+    def test_segment_option_selects_one_segment(self) -> None:
+        code, stdout, _ = self.transcribe("--no-diarize", "--segment", "2")
 
-        self.assertEqual((code, stdout), (2, ""))
-        self.assertEqual(stderr, "error: fake: out of memory\n")
-        self.assertEqual(load_reference(self.paths, 1).status, "failed")
+        self.assertEqual(code, 0)
+        self.assertIn("1 transcribed, 0 reused", stdout)
+        self.assertEqual(
+            [request.audio.name for request in self.backend.requests],
+            ["segment-02.wav"],
+        )
 
-    def test_segment_is_required(self) -> None:
-        with (
-            self.assertRaises(SystemExit) as caught,
-            contextlib.redirect_stderr(io.StringIO()),
+    def test_failed_segment_gives_exit_1_and_the_run_goes_on(self) -> None:
+        self.backend = session_backend(fail_on=2)
+
+        code, stdout, _ = self.transcribe("--no-diarize")
+
+        self.assertEqual(code, 1)
+        self.assertIn("  2. failed: ResourceError (retryable)", stdout)
+        self.assertIn("2 transcribed, 0 reused, 1 failed, 0 open", stdout)
+
+    def test_load_failure_leaves_segments_open_with_exit_1(self) -> None:
+        self.backend = FailingLoad()
+
+        code, stdout, stderr = self.transcribe("--no-diarize")
+
+        self.assertEqual(code, 1)
+        self.assertIn("  3. open", stdout)
+        self.assertIn("0 transcribed, 0 reused, 0 failed, 3 open", stdout)
+        self.assertEqual(stderr, "error: fake: model not in the local cache\n")
+
+    def test_problems_before_the_run_give_exit_2(self) -> None:
+        code, _, stderr = self.transcribe("--no-diarize", "--segment", "4")
+        self.assertEqual(code, 2)
+        self.assertIn("error: segment 4 not in the manifest", stderr)
+
+        with mock.patch.object(
+            FakeDiarizer,
+            "identity",
+            side_effect=BackendUnavailableError("pyannote: runtime missing"),
         ):
-            run("transcribe", str(KEY), "--config", str(self.config))
-        self.assertEqual(caught.exception.code, 2)
+            code, stdout, stderr = self.transcribe()
+        self.assertEqual((code, stdout), (2, ""))
+        self.assertEqual(stderr, "error: pyannote: runtime missing\n")
+        self.assertEqual(self.backend.load_calls, 0)
+
+    def test_diarization_follows_once_whisper_is_closed(self) -> None:
+        code, stdout, stderr = self.transcribe("--num-speakers", "2")
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("beispielgruppe/042: diarization", stdout)
+        self.assertRegex(stdout, r"  3\. diarized in \d+\.\d s: 2 label\(s\)")
+        self.assertIn(
+            f"wrote {self.paths.asr_dir} and {self.paths.diarization_dir}", stdout
+        )
+        diarizer = self.diarizers[0]
+        self.assertEqual(diarizer.load_calls, 1)
+        self.assertEqual([call[2] for call in diarizer.diarized], [2, 2, 2])
+        for secret in (SECRET, "SPEAKER_"):
+            self.assertNotIn(secret, stdout + stderr)
 
 
 class DiarizeCommandTest(unittest.TestCase):
