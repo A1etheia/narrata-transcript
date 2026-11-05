@@ -90,7 +90,7 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 | TOOL-15 | Einzelsegment transkribieren | 0.5 | 04.01.2027 | 04.01.2027 | erledigt: `src/transcript/transcription.py`, `transcript transcribe --segment N`, README „Spracherkennung“; ein Fehlschlag ersetzt nie ein erfolgreiches Ergebnis |
 | TOOL-17 | Ganze Session, Resume | 1 | 05.01.2027 | 05.01.2027 | erledigt: `transcription.transcribe_session`, `transcript transcribe <session>` mit Wiederaufnahme und Diarisierung, README „Lauf“ |
 | TOOL-18 | Fehlerkategorien, Retry, Force | 1 | 07.01.2027 | 07.01.2027 | erledigt: `src/transcript/retry.py`, `asr.retries`/`diarization.retries`, README „Lauf“; Diarisierung markiert Segmente `failed` statt abzubrechen |
-| TOOL-19 | Absolute Zeitstempel im Format | 0.5 | 11.01.2027 | 11.01.2027 | aus TOOL-12: für das Format `timecode.format_ms` und `manifest.Segment` nutzen; aus TOOL-16: absolute Zeiten werden nicht gespeichert, sondern über `Segment.to_absolute_ms` berechnet; Zeiten knapp hinter dem WAV-Ende hier behandeln |
+| TOOL-19 | Absolute Zeitstempel im Format | 0.5 | 11.01.2027 | 11.01.2027 | erledigt: `src/transcript/session_time.py`, `docs/referenzformat.md` „Session-Zeit“; Spannen mit Granularität, Zeiten bis 1 s hinter dem WAV-Ende als `clamped` begrenzt |
 | TOOL-67 | Narrata-Kanal + Datei-Fallback | 1 | 11.01.2027 | 12.01.2027 | braucht IOA-1215; aus TOOL-6: `.env.example` anlegen, sobald das Narrata-Token die erste Variable ist; aus TOOL-12: Rohdatei unter `work/<session>/narrata/transcription-context.json`, `transcript.narrata.read_session` liest daraus den Block `session`; Response-Form gegen die IOA-1215-Doku prüfen |
 | TOOL-38 | Teilnehmerwissen | 0.5 | 12.01.2027 | 12.01.2027 |  |
 | TOOL-39 | Glossarbegriffe | 0.5 | 14.01.2027 | 14.01.2027 |  |
@@ -115,7 +115,7 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 | TOOL-49 | Arbeitsfassung | 1 | 04.02.2027 | 08.02.2027 |  |
 | TOOL-50 | Markierungskonvention | 0.5 | 08.02.2027 | 08.02.2027 |  |
 | TOOL-53 | Abschlussbericht | 0.5 | 09.02.2027 | 09.02.2027 | vor TOOL-69: liefert `stats` für den Export |
-| TOOL-69 | JSON-Export Contract v1 | 1 | 09.02.2027 | 11.02.2027 | gegen IOA-1214-Validator |
+| TOOL-69 | JSON-Export Contract v1 | 1 | 09.02.2027 | 11.02.2027 | gegen IOA-1214-Validator; aus TOOL-19: Passagenzeiten über `session_time.passage_span` bilden und prüfen, ob Contract v1 die Granularität und `clamped` aufnehmen soll |
 | TOOL-51 | TXT-Rendering | 0.5 | 11.02.2027 | 11.02.2027 |  |
 | TOOL-52 | DOCX-Rendering | 0.5 | 15.02.2027 | 15.02.2027 |  |
 | IOA-1218 | Storage + idempotenter Import | 2 | 15.02.2027 | 18.02.2027 | erst gegen Fixture, dann gegen echten TOOL-69-Export |
