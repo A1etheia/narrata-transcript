@@ -14,6 +14,7 @@ from transcript import (
     __version__,
     audio,
     audio_tools,
+    diagnosis,
     diarization,
     knowledge,
     manifest,
@@ -38,6 +39,7 @@ _DEFAULT_CONFIG = Path("config/config.yaml")
 _EXAMPLE_CONFIG = Path("config/example.yaml")
 _DOTENV = Path(".env")
 _SHORT_ID = 12  # characters of a snapshot id; enough within one session
+_SHOWN_FINDINGS = 10  # the rest is in the diagnosis report
 _SNAPSHOT_BEHIND = (
     "warning: the knowledge snapshot predates the stored Narrata context; "
     "transcript snapshot --refresh uses it"
@@ -288,12 +290,16 @@ def _tier_summary(glossary: narrata.NarrataGlossary) -> str:
 
 
 def _snapshot(raw_key: str, config_path: Path, refresh: bool) -> int:
-    """Only counts and the short id reach the console, never names (TOOL-66)."""
+    """Only counts, ids and positions reach the console, never names (TOOL-66)."""
     try:
         key = SessionKey.parse(raw_key)
         config = _load_config(config_path)
-        paths = config.session_paths(key)
-        exists = paths.knowledge_snapshot.is_file()
+    except (ValueError, ConfigError, DataFileError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    paths = config.session_paths(key)
+    exists = paths.knowledge_snapshot.is_file()
+    try:
         if exists and not refresh:
             snapshot = knowledge.load_snapshot(paths)
             how = "reused"
@@ -302,13 +308,11 @@ def _snapshot(raw_key: str, config_path: Path, refresh: bool) -> int:
             snapshot = knowledge.build_snapshot(paths, config.keyword_budget)
             how = _built(previous, snapshot.snapshot_id, exists)
         changed = knowledge.drift(snapshot, paths, config.keyword_budget)
-    except knowledge.SnapshotError as error:
+    except DataFileError as error:
         print(f"error: {error}", file=sys.stderr)
-        if exists and not refresh:
+        if isinstance(error, knowledge.SnapshotError) and exists and not refresh:
             print("hint: transcript snapshot --refresh builds it anew", file=sys.stderr)
-        return 2
-    except (ValueError, ConfigError, DataFileError) as error:
-        print(f"error: {error}", file=sys.stderr)
+        _report_unusable(paths, error)
         return 2
 
     glossary = snapshot.glossary
@@ -341,7 +345,33 @@ def _snapshot(raw_key: str, config_path: Path, refresh: bool) -> int:
             "transcript snapshot --refresh uses it",
             file=sys.stderr,
         )
+    findings = diagnosis.diagnose(snapshot.participants, glossary)
+    diagnosis.write_report(paths.knowledge_diagnosis, findings, snapshot)
+    _print_diagnosis(findings, paths.knowledge_diagnosis)
     return 0
+
+
+def _report_unusable(paths: SessionPaths, error: DataFileError) -> None:
+    """Replace the report, so no earlier one claims the knowledge is fine."""
+    finding = diagnosis.unusable(error)
+    try:
+        diagnosis.write_report(paths.knowledge_diagnosis, [finding])
+    except OSError as cause:
+        print(f"warning: diagnosis report not written ({cause})", file=sys.stderr)
+
+
+def _print_diagnosis(findings: Sequence[diagnosis.Finding], report: Path) -> None:
+    errors, warnings = diagnosis.counts(findings)
+    by_code = collections.Counter(f.code for f in findings)
+    print(
+        f"  diagnosis: {errors} error(s), {warnings} warning(s)"
+        + "".join(f", {count} {code}" for code, count in by_code.items())
+    )
+    for finding in findings[:_SHOWN_FINDINGS]:
+        print(f"    {diagnosis.describe(finding)}")
+    if len(findings) > _SHOWN_FINDINGS:
+        print(f"    … {len(findings) - _SHOWN_FINDINGS} more")
+    print(f"wrote {report}")
 
 
 def _previous_id(paths: SessionPaths) -> str | None:

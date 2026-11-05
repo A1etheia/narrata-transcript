@@ -123,7 +123,7 @@ def build_snapshot(
     session = narrata.parse_session(data, paths)
     participants = narrata.parse_participants(data, context)
     glossary = narrata.parse_glossary(data, context, session.play_session_id)
-    keywords = {_key(entry) for entry in select_keywords(glossary.entries, budget)}
+    keywords = {entry.ref for entry in select_keywords(glossary.entries, budget)}
     moment = now or datetime.datetime.now().astimezone()
     content: dict[str, Any] = {
         "format_version": SNAPSHOT_FORMAT_VERSION,
@@ -136,7 +136,7 @@ def build_snapshot(
         },
         "keyword_budget": dict(budget),
         "participants": [_participant_json(p) for p in participants],
-        "glossary": [_entry_json(e, _key(e) in keywords) for e in glossary.entries],
+        "glossary": [_entry_json(e, e.ref in keywords) for e in glossary.entries],
         "glossary_meta": {
             "archive_total": glossary.archive_total,
             "archive_returned": glossary.archive_returned,
@@ -219,10 +219,6 @@ def drift(snapshot: Snapshot, paths: SessionPaths, budget: Mapping[str, int]) ->
         context_changed=changed,
         budget_changed=dict(budget) != dict(snapshot.keyword_budget),
     )
-
-
-def _key(entry: GlossaryEntry) -> tuple[str, int | str]:
-    return (entry.type, entry.id)
 
 
 def _snapshot_id(data: Mapping[str, Any]) -> str:

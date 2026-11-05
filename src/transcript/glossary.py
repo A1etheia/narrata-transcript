@@ -7,7 +7,7 @@ entries share returns all of them: the glossary never decides which one is meant
 
 import re
 import unicodedata
-from collections.abc import Iterable
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Literal
 
@@ -52,12 +52,11 @@ class GlossaryIndex:
         self._matches: dict[str, list[Match]] = {}
         for entry in glossary.entries:
             seen: set[str] = set()  # one match per entry and key, the strongest kind
-            for kind, terms in _terms(entry):
-                for term in terms:
-                    key = normalize(term)
-                    if key and key not in seen:
-                        seen.add(key)
-                        self._matches.setdefault(key, []).append(Match(entry, kind))
+            for kind, _, term in entry_terms(entry):
+                key = normalize(term)
+                if key and key not in seen:
+                    seen.add(key)
+                    self._matches.setdefault(key, []).append(Match(entry, kind))
 
     def lookup(self, term: str) -> tuple[Match, ...]:
         """Every entry `term` names, in glossary order; empty if none."""
@@ -82,9 +81,13 @@ def keyword_terms(glossary: NarrataGlossary) -> tuple[str, ...]:
     return tuple(terms)
 
 
-def _terms(entry: GlossaryEntry) -> Iterable[tuple[MatchKind, tuple[str, ...]]]:
-    return (
-        ("name", (entry.name,)),
-        ("alias", entry.aliases),
-        ("asr_variant", entry.asr_variants),
-    )
+def entry_terms(entry: GlossaryEntry) -> Iterator[tuple[MatchKind, str, str]]:
+    """(kind, field, term) for every term of `entry`, strongest kind first.
+
+    `field` locates the term within the entry, e.g. `aliases[1]`.
+    """
+    yield "name", "name", entry.name
+    for position, alias in enumerate(entry.aliases):
+        yield "alias", f"aliases[{position}]", alias
+    for position, variant in enumerate(entry.asr_variants):
+        yield "asr_variant", f"asr_variants[{position}]", variant
