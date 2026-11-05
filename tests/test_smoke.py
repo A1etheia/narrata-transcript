@@ -10,7 +10,18 @@ from unittest import mock
 
 from media import mp4_with_audio, needs_media, sine, synth, video
 from test_diarization import FakeDiarizer
-from test_narrata import CHARACTER, NAME, context, encoded, participant
+from test_narrata import (
+    ALIAS,
+    CHARACTER,
+    NAME,
+    PLACE,
+    SUMMARY,
+    VARIANT,
+    context,
+    encoded,
+    glossary_entry,
+    participant,
+)
 from test_narrata_client import TOKEN, start_fake_narrata
 from test_reference import KEY, MANIFEST, SECRET, SEGMENT, minimal
 from test_transcription import MANIFEST_3, FailingLoad, session_backend
@@ -336,9 +347,10 @@ class ContextCommandTest(unittest.TestCase):
         self.assertIn(
             "beispielgruppe/042: play session 4711, 2026-10-30, contract 1.1", stdout
         )
+        self.assertIn("  1 participant(s) (0 gm, 0 former), 0 character(s)\n", stdout)
         self.assertIn(
-            "  1 participant(s) (0 gm, 0 former), 0 character(s), "
-            "0 glossary entries, archive tier 0 of 0",
+            "  0 glossary entries (0 pc, 0 session, 0 recent, 0 archive), "
+            "archive tier 0 of 0, 0 asr ambiguities",
             stdout,
         )
         self.assertIn(f"wrote {self.paths.narrata_context}", stdout)
@@ -400,6 +412,48 @@ class ContextCommandTest(unittest.TestCase):
         self.assertEqual((code, stdout), (2, ""))
         self.assertIn("participants[0].role missing or invalid", stderr)
         self.assertNotIn(NAME, stderr)
+        self.assertEqual(self.paths.narrata_context.read_bytes(), good)
+
+    def test_glossary_is_counted_without_names(self) -> None:
+        data = context()
+        data["glossary"] = [
+            glossary_entry(type="person", id=18, name=CHARACTER, relevance="pc"),
+            glossary_entry(),
+            glossary_entry(id=6, name="Nebelsee", relevance="archive"),
+        ]
+        data["glossary_meta"] = {"archive_total": 40, "archive_returned": 1}
+        data["asr_ambiguities"] = [
+            {
+                "variant": VARIANT,
+                "entries": [{"type": "place", "id": 5}, {"type": "place", "id": 6}],
+            }
+        ]
+        self.narrata.body = encoded(data)
+
+        code, stdout, stderr = self.context()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "  3 glossary entries (1 pc, 1 session, 0 recent, 1 archive), "
+            "archive tier 1 of 40, 1 asr ambiguities",
+            stdout,
+        )
+        for value in (CHARACTER, PLACE, ALIAS, VARIANT, SUMMARY, "Nebelsee"):
+            self.assertNotIn(value, stdout + stderr)
+
+    def test_invalid_glossary_keeps_the_stored_file(self) -> None:
+        code, _, stderr = self.context()
+        self.assertEqual(code, 0, stderr)
+        good = self.paths.narrata_context.read_bytes()
+        data = context()
+        data["glossary"] = [glossary_entry(relevance=PLACE)]
+        self.narrata.body = encoded(data)
+
+        code, stdout, stderr = self.context()
+
+        self.assertEqual((code, stdout), (2, ""))
+        self.assertIn("glossary[0].relevance missing or not a known value", stderr)
+        self.assertNotIn(PLACE, stderr)
         self.assertEqual(self.paths.narrata_context.read_bytes(), good)
 
     def test_rejected_token_is_reported_without_its_value(self) -> None:
