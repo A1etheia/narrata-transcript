@@ -75,9 +75,17 @@ class GlossaryIndexTest(unittest.TestCase):
         place = entry("Grauwasser", "Grauwassr", variants=("Grau Wasser",))
         index = GlossaryIndex(glossary(place))
 
-        self.assertEqual(index.lookup("grauwasser"), (Match(place, "name"),))
-        self.assertEqual(index.lookup("GRAUWASSR"), (Match(place, "alias"),))
-        self.assertEqual(index.lookup(" grau  wasser "), (Match(place, "asr_variant"),))
+        self.assertEqual(
+            index.lookup("grauwasser"), (Match(place, "name", "name", "Grauwasser"),)
+        )
+        self.assertEqual(
+            index.lookup("GRAUWASSR"),
+            (Match(place, "alias", "aliases[0]", "Grauwassr"),),
+        )
+        self.assertEqual(
+            index.lookup(" grau  wasser "),
+            (Match(place, "asr_variant", "asr_variants[0]", "Grau Wasser"),),
+        )
 
     def test_unicode_and_fantasy_names_are_found(self) -> None:
         composed = entry("Mühlbräu", entry_id=1)
@@ -87,13 +95,15 @@ class GlossaryIndexTest(unittest.TestCase):
 
         self.assertEqual(
             index.lookup(unicodedata.normalize("NFD", "MÜHLBRÄU")),
-            (Match(composed, "name"),),
+            (Match(composed, "name", "name", "Mühlbräu"),),
         )
         self.assertEqual(
             index.lookup(unicodedata.normalize("NFD", "KA'RAN-DÛL")),
-            (Match(fantasy, "alias"),),
+            (Match(fantasy, "alias", "aliases[0]", "Ka'ran-Dûl"),),
         )
-        self.assertEqual(index.lookup("雪の門"), (Match(kanji, "name"),))
+        self.assertEqual(
+            index.lookup("雪の門"), (Match(kanji, "name", "name", "雪の門"),)
+        )
 
     def test_shared_term_returns_every_entry_in_glossary_order(self) -> None:
         first = entry("Brakk", entry_id=1, relevance="pc")
@@ -103,7 +113,11 @@ class GlossaryIndexTest(unittest.TestCase):
 
         self.assertEqual(
             index.lookup("Brakk"),
-            (Match(first, "name"), Match(second, "alias"), Match(third, "asr_variant")),
+            (
+                Match(first, "name", "name", "Brakk"),
+                Match(second, "alias", "aliases[0]", "brakk"),
+                Match(third, "asr_variant", "asr_variants[0]", "Brakk"),
+            ),
         )
 
     def test_one_entry_matches_once_with_its_strongest_kind(self) -> None:
@@ -111,7 +125,7 @@ class GlossaryIndexTest(unittest.TestCase):
 
         self.assertEqual(
             GlossaryIndex(glossary(place)).lookup("Grauwasser"),
-            (Match(place, "name"),),
+            (Match(place, "name", "name", "Grauwasser"),),
         )
 
     def test_unknown_and_blank_terms_find_nothing(self) -> None:
@@ -125,7 +139,7 @@ class GlossaryIndexTest(unittest.TestCase):
 class KeywordTermsTest(unittest.TestCase):
     def test_names_and_aliases_in_glossary_order_without_variants(self) -> None:
         terms = keyword_terms(
-            glossary(
+            (
                 entry("Ærwyn", entry_id=3),
                 entry("Brakk", "Brakki", entry_id=1),
                 entry("Grauwasser", variants=("Grau Wasser",), entry_id=2),
@@ -137,7 +151,7 @@ class KeywordTermsTest(unittest.TestCase):
     def test_repeats_keep_the_first_spelling(self) -> None:
         decomposed = unicodedata.normalize("NFD", "MÜHLBRÄU")
         terms = keyword_terms(
-            glossary(
+            (
                 entry("Mühlbräu", "mühlbräu", entry_id=1),
                 entry(decomposed, " ", entry_id=2),
             )
@@ -147,15 +161,13 @@ class KeywordTermsTest(unittest.TestCase):
 
     def test_terms_are_tidied_but_keep_letters_and_case(self) -> None:
         decomposed = unicodedata.normalize("NFD", "Mühl Bräu")
-        terms = keyword_terms(
-            glossary(entry(f"  {decomposed}\t", "Grau­Wasser", entry_id=1))
-        )
+        terms = keyword_terms([entry(f"  {decomposed}\t", "Grau­Wasser", entry_id=1)])
 
         self.assertEqual(terms, ("Mühl Bräu", "GrauWasser"))
         self.assertEqual(terms[0], unicodedata.normalize("NFC", terms[0]))
 
     def test_empty_glossary_gives_no_terms(self) -> None:
-        self.assertEqual(keyword_terms(glossary()), ())
+        self.assertEqual(keyword_terms(()), ())
 
 
 if __name__ == "__main__":
