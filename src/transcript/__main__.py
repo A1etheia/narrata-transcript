@@ -1,20 +1,22 @@
-"""Command-line entry point: `config`, `doctor`, `extract`, `manifest`, `transcribe`,
-`diarize`."""
+"""Command-line entry point: `config`, `doctor`, `extract`, `context`, `manifest`,
+`transcribe`, `diarize`."""
 
 import argparse
 import collections
 import contextlib
 import logging
+import os
 import sys
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-from transcript import __version__, audio, audio_tools, diarization, manifest
+from transcript import __version__, audio, audio_tools, diarization, manifest, narrata
 from transcript.asr import BackendError
 from transcript.asr.whisper import WhisperBackend
 from transcript.config import Config, ConfigError, format_config, load_config
 from transcript.diarization.pyannote import PyannoteDiarizer
-from transcript.jsonfile import DataFileError
+from transcript.jsonfile import DataFileError, read_object
+from transcript.narrata_client import NarrataClientError, fetch_context, read_token
 from transcript.session import SessionKey, SessionPaths
 from transcript.timecode import format_ms
 from transcript.transcription import (
@@ -26,6 +28,7 @@ from transcript.transcription import (
 
 _DEFAULT_CONFIG = Path("config/config.yaml")
 _EXAMPLE_CONFIG = Path("config/example.yaml")
+_DOTENV = Path(".env")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -52,6 +55,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=int,
         default=0,
         help="audio stream to use, counted from 0 (default: 0, the first)",
+    )
+    context_command = commands.add_parser(
+        "context",
+        help="Fetch a session's transcription context from Narrata and store it.",
+    )
+    context_command.add_argument("session", help="session key <group>/<ordinal>")
+    context_command.add_argument(
+        "--from-file",
+        type=Path,
+        metavar="PATH",
+        help="take a saved transcription-context response instead of asking Narrata",
     )
     manifest_command = commands.add_parser(
         "manifest", help="Write the session manifest from audio and Narrata context."
@@ -104,6 +118,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     for command in (
         config_command,
         extract_command,
+        context_command,
         manifest_command,
         transcribe_command,
         diarize_command,
@@ -123,6 +138,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     with _log_to_stderr():  # pipeline steps log progress and failed attempts
         if args.command == "extract":
             return _extract(args.session, args.config, args.stream)
+        if args.command == "context":
+            return _context(args.session, args.config, args.from_file)
         if args.command == "manifest":
             return _manifest(args.session, args.config, args.consent)
         if args.command == "transcribe":
@@ -181,6 +198,62 @@ def _extract(raw_key: str, config_path: Path, stream: int) -> int:
         )
     print(f"wrote {paths.audio_dir} and {paths.audio_metadata.name}")
     return 0
+
+
+def _context(raw_key: str, config_path: Path, from_file: Path | None) -> int:
+    """Only counts reach the console: participants and glossary hold real names."""
+    try:
+        key = SessionKey.parse(raw_key)
+        config = _load_config(config_path)
+        paths = config.session_paths(key)
+        if from_file is None:
+            raw = _fetch(key, config, config_path)
+        else:
+            raw = _read_bytes(from_file)
+        session = narrata.store_context(paths, raw)
+        data = read_object(paths.narrata_context, "Narrata context")
+    except (ValueError, ConfigError, DataFileError, NarrataClientError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+
+    meta = data.get("glossary_meta")
+    meta = meta if isinstance(meta, dict) else {}
+    print(
+        f"{key}: play session {session.play_session_id}, "
+        f"{session.session_date.isoformat()}, "
+        f"contract {data['contract_version']}"
+    )
+    print(
+        f"  {_count(data.get('participants'))} participant(s), "
+        f"{_count(data.get('glossary'))} glossary entries, "
+        f"archive tier {meta.get('archive_returned', '?')} "
+        f"of {meta.get('archive_total', '?')}"
+    )
+    print(f"wrote {paths.narrata_context}")
+    return 0
+
+
+def _fetch(key: SessionKey, config: Config, config_path: Path) -> bytes:
+    if config.narrata_url is None:
+        raise ConfigError(f"{config_path}: narrata.url is not set")
+    group_id = config.narrata_groups.get(key.group)
+    if group_id is None:
+        raise ConfigError(
+            f"{config_path}: narrata.groups has no group id for {key.group}"
+        )
+    token = read_token(os.environ, _DOTENV)
+    return fetch_context(config.narrata_url, group_id, key.ordinal, token)
+
+
+def _read_bytes(path: Path) -> bytes:
+    try:
+        return path.read_bytes()
+    except OSError as error:
+        raise DataFileError(f"{path}: cannot read file ({error.strerror})") from None
+
+
+def _count(value: object) -> str:
+    return str(len(value)) if isinstance(value, list) else "no"
 
 
 def _manifest(raw_key: str, config_path: Path, consent: bool) -> int:

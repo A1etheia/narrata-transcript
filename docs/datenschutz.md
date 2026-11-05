@@ -10,6 +10,7 @@ Dieses Dokument enthält keine Klarnamen und keine Sitzungsdaten.
 | --- | --- | --- |
 | Rohaudio, Audiosegmente | `input/`, `work/` | Nein, nie |
 | ASR-Ergebnisse, Sprecher-Turns, Review-Dateien, Sprecherzuordnung | `work/` | Nein |
+| Transkriptionskontext aus Narrata (Teilnehmende, Glossar; Klarnamen) | `work/<gruppe>/<ordinal>/narrata/` | Nein, kommt nur herein |
 | Wissens-Snapshot (kann Klarnamen enthalten) | `work/` | Nein |
 | Strukturierter Transkript-Export | `output/` | Ja, nach Narrata |
 
@@ -38,6 +39,9 @@ Dieses Dokument enthält keine Klarnamen und keine Sitzungsdaten.
 
 **Modelle und Telemetrie.** Modelle kommen einmalig per Download in den lokalen Cache; danach läuft die Pipeline ohne Netz. Bibliotheken, die von sich aus Daten nach außen melden, werden abgeschaltet: pyannote.audio 4 schickt sonst Laufmetadaten (Audiodauer, Sprecherzahl) an seinen Hersteller.
 *Grund:* Auch Metadaten über eine Sitzung gehören nicht zu Dritten, und „vollständig lokal“ soll ohne Ausnahmen gelten.
+
+**Abruf aus Narrata (TOOL-67).** Die einzige Verbindung im Lauf ist `transcript context`. Der Befehl holt den Transkriptionskontext einer Sitzung lesend vom eigenen Narrata und läuft nur, wenn man ihn ausdrücklich aufruft. Dabei geht nichts aus der Aufnahme hinaus, mitgeschickt werden nur Gruppen-ID, Ordinal und der Token. Der Token steht in `.env`, nie in Konfiguration, Log oder Fehlermeldung, und reist nur über `https` (`http` nur zu `localhost`). Die Konsole zeigt vom Ergebnis nur Zähler. Ohne Netz übernimmt `--from-file` eine gespeicherte Antwort.
+*Grund:* Teilnehmende und Glossar stehen bereits in Narrata. Eine zweite, von Hand gepflegte Liste würde veralten und Klarnamen an einem weiteren Ort führen.
 
 **Test-Fixtures.** Fixtures sind synthetisch oder vollständig anonymisiert.
 *Grund:* Sie liegen im Repo, und das Repo ist derzeit öffentlich erreichbar.
