@@ -23,7 +23,7 @@ write_reference(paths, reference, result.raw)
 reference = load_reference(paths, segment.index)   # ohne Backend
 ```
 
-Schlägt ein Segment fehl, hält `failed_reference(error, backend, manifest, segment)` das fest. Beides zusammen, samt Laufzeitmessung und den Regeln für vorhandene Ergebnisse, erledigt `transcript.transcription.transcribe_segment`, auf der Kommandozeile `transcript transcribe <session> --segment N`.
+Schlägt ein Segment fehl, hält `failed_reference(error, backend, manifest, segment)` das fest. Beides zusammen, samt Laufzeitmessung und den Regeln für vorhandene Ergebnisse, erledigt `transcript.transcription.transcribe_session` für alle Segmente einer Session, auf der Kommandozeile `transcript transcribe <session>`. Ein vorhandenes `transcribed` wird wiederverwendet, solange `asr.backend_id`, `model`, `model_version` und `settings` zum Backend passen und `asr.language` zur konfigurierten Sprache; `runtime_version` zählt nicht mit.
 
 ## Normalform
 
