@@ -85,6 +85,25 @@ Der Snapshot friert das Wissen einer Sitzung für alle weiteren Läufe ein: Teil
 
 Die Konsole zeigt die kurze Kennung, Erstellzeitpunkt, Contract-Version und Zähler: Einträge je Stufe, Keywords je Typ gegen das Budget, Mehrdeutigkeiten. Namen erscheinen nie. Der Snapshot enthält Klarnamen und bleibt wie alles unter `work/` außerhalb des Repos.
 
+**Diagnose.** Nach jedem Lauf prüft der Befehl das Wissen und schreibt das Ergebnis nach `work/<gruppe>/<ordinal>/narrata/diagnosis.json` (`format_version: 1`). Die Datei wird bei jedem Lauf ersetzt, auch wenn der Lauf abbricht.
+
+- **Fehler.** Technisch unbrauchbare Daten (doppelte IDs, leere Pflichtfelder, unbekannte Typen, Mehrdeutigkeiten ohne gültiges Ziel, fehlende Herkunft im Snapshot) erkennt schon das Lesen. Der Snapshot wird dann weder gebaut noch genutzt. Der Befehl endet mit Exit-Code 2, und der Bericht enthält einen `error` (`unusable_knowledge`) mit der Meldung samt Datei und Feld.
+- **Warnungen.** Mehrdeutige, aber nutzbare Einträge bleiben, wie Narrata sie liefert. Sie werden nur gemeldet, über den Exit-Code entscheiden sie nicht:
+
+| Code | Bedeutung |
+| --- | --- |
+| `empty_term` | Alias oder Hörfehler ist leer |
+| `shared_term` | mehrere Einträge teilen Name oder Alias |
+| `ambiguous_asr_variant` | mehrere Einträge teilen einen Hörfehler, Narrata weist ihn in `asr_ambiguities` aus |
+| `unreported_asr_variant` | wie oben, aber nicht in `asr_ambiguities` (Narrata vergleicht nur ohne Groß-/Kleinschreibung, hier auch Unicode-Form und Leerraum) |
+| `stale_ambiguity` | ein Eintrag in `asr_ambiguities` trägt den Hörfehler gar nicht |
+| `variant_shadows_term` | ein Hörfehler ist Name oder Alias eines anderen Eintrags |
+| `unknown_character` | die Spielfigur einer aktiven teilnehmenden Person fehlt im Glossar |
+| `character_not_pc` | ihr Glossar-Eintrag steht nicht in der Stufe `pc` |
+| `orphan_pc` | ein `pc`-Eintrag gehört zu keiner aktiven teilnehmenden Person |
+
+Jeder Befund nennt Feldpfade (`glossary[3].aliases[1]`, `participants[0].characters[0]`), Typ und Narrata-ID der Einträge, im Bericht außerdem Snapshot-Datei und Kontextdatei als Quelle. Namen stehen weder im Bericht noch auf der Konsole. Die Konsole zeigt die Zähler je Code und höchstens zehn Befunde, die übrigen stehen in der Datei.
+
 ## Session-Manifest
 
 ```bash
@@ -275,7 +294,7 @@ Beispiel-Session `beispielgruppe/042`:
 input/beispielgruppe/042/      Originalaufnahme, unveränderlich
 work/beispielgruppe/042/
   manifest.json                Gruppe, Ordinal, play_session_id, Sitzungsdatum, Zustimmung, Segmente mit absoluten Zeiten
-  narrata/                     transcription-context.json (Rohantwort von Narrata), snapshot.json (Wissens-Snapshot)
+  narrata/                     transcription-context.json (Rohantwort von Narrata), snapshot.json (Wissens-Snapshot), diagnosis.json (Diagnose)
   audio/                       segment-NN.wav (Arbeitsformat, eine pro Aufnahme), audio.json (Audio-Metadaten)
   asr/                         segment-NN.json (Referenztranskript), segment-NN.raw.json (Backend-Rohantwort)
   diarization/                 segment-NN.json (Sprecher-Turns von pyannote)

@@ -516,7 +516,9 @@ class SnapshotCommandTest(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def save_context(self, archive_total: int) -> None:
+    def save_context(self, archive_total: int, shared_terms: bool = False) -> None:
+        """`shared_terms` gives every entry the same alias and misrecognition."""
+        own = {} if shared_terms else {"aliases": [], "asr_variants": []}
         data = context(
             participants=[
                 participant(
@@ -525,9 +527,9 @@ class SnapshotCommandTest(unittest.TestCase):
             ]
         )
         data["glossary"] = [
-            glossary_entry(type="person", id=7, name=CHARACTER, relevance="pc"),
+            glossary_entry(type="person", id=7, name=CHARACTER, relevance="pc", **own),
             glossary_entry(id=5, relevance="session"),
-            glossary_entry(id=6, name="Nebelau", relevance="archive"),
+            glossary_entry(id=6, name="Nebelau", relevance="archive", **own),
         ]
         data["glossary_meta"] = {
             "archive_total": archive_total,
@@ -575,8 +577,68 @@ class SnapshotCommandTest(unittest.TestCase):
 
         self.assertEqual(code, 0, stderr)
         self.assertIn(f"snapshot {first} reused", stdout)
-        self.assertNotIn("wrote", stdout)
+        self.assertNotIn(f"wrote {self.paths.knowledge_snapshot}", stdout)
         self.assertEqual(self.short_id(), first)
+
+    def test_consistent_knowledge_reports_no_findings(self) -> None:
+        code, stdout, stderr = self.snapshot()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("  diagnosis: 0 error(s), 0 warning(s)\n", stdout)
+        self.assertIn(f"wrote {self.paths.knowledge_diagnosis}", stdout)
+        report = self.report()
+        self.assertEqual(report["snapshot_id"][:12], self.short_id())
+        self.assertEqual(
+            report["source"],
+            {"snapshot": "snapshot.json", "context": "transcription-context.json"},
+        )
+        self.assertEqual((report["errors"], report["warnings"]), (0, 0))
+
+    def test_warnings_are_shown_and_stored_by_position_and_id(self) -> None:
+        self.save_context(archive_total=3, shared_terms=True)
+        self.run_command("context", "--from-file", str(self.saved))
+
+        code, stdout, stderr = self.snapshot()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "  diagnosis: 0 error(s), 2 warning(s), 1 shared_term, "
+            "1 unreported_asr_variant\n",
+            stdout,
+        )
+        self.assertIn(
+            "    warning shared_term: glossary[0].aliases[0], glossary[1].aliases[0], "
+            "glossary[2].aliases[0] (person 7, place 5, place 6)\n",
+            stdout,
+        )
+        report = self.report()
+        self.assertEqual((report["errors"], report["warnings"]), (0, 2))
+        self.assertEqual(
+            report["findings"][0]["entries"],
+            [
+                {"type": "person", "id": 7},
+                {"type": "place", "id": 5},
+                {"type": "place", "id": 6},
+            ],
+        )
+        self.assert_no_names(self.paths.knowledge_diagnosis.read_text("utf-8"))
+
+    def test_unusable_knowledge_replaces_the_report_with_the_error(self) -> None:
+        self.snapshot()
+        self.paths.knowledge_snapshot.write_text("{", encoding="utf-8")
+
+        code, _, _ = self.snapshot()
+
+        self.assertEqual(code, 2)
+        report = self.report()
+        self.assertIsNone(report["snapshot_id"])
+        self.assertEqual((report["errors"], report["warnings"]), (1, 0))
+        (finding,) = report["findings"]
+        self.assertEqual(finding["code"], "unusable_knowledge")
+        self.assertIn(str(self.paths.knowledge_snapshot), finding["message"])
+
+    def report(self) -> dict[str, Any]:
+        return jsonfile.read_object(self.paths.knowledge_diagnosis, "diagnosis")
 
     def test_new_context_is_flagged_but_used_only_after_refresh(self) -> None:
         self.snapshot()

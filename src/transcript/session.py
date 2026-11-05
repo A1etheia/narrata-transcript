@@ -122,5 +122,10 @@ class SessionPaths:
         return self.work_dir / "narrata" / "snapshot.json"
 
     @property
+    def knowledge_diagnosis(self) -> Path:
+        """Findings of the last `transcript snapshot` run (TOOL-42)."""
+        return self.work_dir / "narrata" / "diagnosis.json"
+
+    @property
     def debug_log(self) -> Path:
         return self.work_dir / "debug.log"

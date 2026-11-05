@@ -2,7 +2,8 @@ import unittest
 
 from test_glossary import entry, glossary
 
-from transcript.diagnosis import Finding, diagnose
+from transcript.diagnosis import Finding, describe, diagnose, unusable
+from transcript.jsonfile import DataFileError
 from transcript.narrata import Ambiguity, Character, GlossaryEntry, Participant
 
 # Every name below is made up.
@@ -154,6 +155,31 @@ class CharacterTest(unittest.TestCase):
         self.assertEqual(codes(findings), ["orphan_pc", "orphan_pc"])
         self.assertEqual(
             [f.entries for f in findings], [(("person", 18),), (("place", 19),)]
+        )
+
+
+class DescribeTest(unittest.TestCase):
+    def test_warning_line_names_positions_and_ids(self) -> None:
+        finding = Finding(
+            "warning",
+            "shared_term",
+            ("glossary[0].name", "glossary[3].aliases[1]"),
+            (("place", 5), ("person", "x9")),
+        )
+
+        self.assertEqual(
+            describe(finding),
+            "warning shared_term: glossary[0].name, glossary[3].aliases[1] "
+            "(place 5, person x9)",
+        )
+
+    def test_error_line_carries_the_parser_message(self) -> None:
+        finding = unusable(DataFileError("snapshot.json: glossary[2].id missing"))
+
+        self.assertEqual(finding.severity, "error")
+        self.assertEqual(
+            describe(finding),
+            "error unusable_knowledge: snapshot.json: glossary[2].id missing",
         )
 
 

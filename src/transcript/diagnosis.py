@@ -10,15 +10,22 @@ A finding names entries by type, Narrata id and field path, never by a name, so
 the console and the report hold no real names (TOOL-66).
 """
 
+import datetime
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from pathlib import Path
+from typing import Any, Literal
 
 from transcript.glossary import entry_terms, normalize
+from transcript.jsonfile import DataFileError, write_atomic
+from transcript.knowledge import Snapshot
 from transcript.narrata import EntryRef, NarrataGlossary, Participant
+
+REPORT_FORMAT_VERSION = 1
 
 Severity = Literal["error", "warning"]
 Code = Literal[
+    "unusable_knowledge",  # the one error: the snapshot could not be built or read
     "empty_term",
     "shared_term",
     "ambiguous_asr_variant",
@@ -33,12 +40,21 @@ Code = Literal[
 
 @dataclass(frozen=True)
 class Finding:
-    """One problem; `where` holds the field paths involved, `entries` the entries."""
+    """One problem; `where` holds the field paths involved, `entries` the entries.
+
+    Only an error carries a `message`: the parser's, which names file and field.
+    """
 
     severity: Severity
     code: Code
     where: tuple[str, ...]
     entries: tuple[EntryRef, ...] = ()
+    message: str | None = None
+
+
+def unusable(error: DataFileError) -> Finding:
+    """The finding for knowledge the parsers rejected."""
+    return Finding("error", "unusable_knowledge", (), message=str(error))
 
 
 @dataclass(frozen=True)
@@ -163,3 +179,57 @@ def _from_terms(code: Code, terms: Sequence[_Term]) -> Finding:
 def _finding(code: Code, where: Iterable[str], entries: Iterable[EntryRef]) -> Finding:
     """Every code is a warning: the parsers turn what is unusable into errors."""
     return Finding("warning", code, tuple(where), tuple(entries))
+
+
+def write_report(
+    path: Path,
+    findings: Sequence[Finding],
+    snapshot: Snapshot | None = None,
+    now: datetime.datetime | None = None,
+) -> None:
+    """Replace the report; `snapshot` is None when it could not be built or read."""
+    moment = now or datetime.datetime.now().astimezone()
+    snapshot_id, snapshot_file, context_file = (
+        (snapshot.snapshot_id, snapshot.path.name, snapshot.source.file)
+        if snapshot
+        else (None, None, None)
+    )
+    errors, warnings = counts(findings)
+    write_atomic(
+        path,
+        {
+            "format_version": REPORT_FORMAT_VERSION,
+            "created_at": moment.isoformat(timespec="seconds"),
+            "snapshot_id": snapshot_id,
+            "source": {"snapshot": snapshot_file, "context": context_file},
+            "errors": errors,
+            "warnings": warnings,
+            "findings": [_finding_json(f) for f in findings],
+        },
+    )
+
+
+def counts(findings: Sequence[Finding]) -> tuple[int, int]:
+    """(errors, warnings) among `findings`."""
+    errors = sum(f.severity == "error" for f in findings)
+    return errors, len(findings) - errors
+
+
+def describe(finding: Finding) -> str:
+    """One console line: severity, code, positions and ids, never a name."""
+    if finding.message is not None:
+        return f"{finding.severity} {finding.code}: {finding.message}"
+    entries = ", ".join(f"{kind} {entry_id}" for kind, entry_id in finding.entries)
+    return f"{finding.severity} {finding.code}: {', '.join(finding.where)} ({entries})"
+
+
+def _finding_json(finding: Finding) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "severity": finding.severity,
+        "code": finding.code,
+        "where": list(finding.where),
+        "entries": [{"type": t, "id": i} for t, i in finding.entries],
+    }
+    if finding.message is not None:
+        data["message"] = finding.message
+    return data
