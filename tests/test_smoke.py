@@ -1,7 +1,6 @@
 import contextlib
 import dataclasses
 import io
-import json
 import os
 import tempfile
 import unittest
@@ -11,12 +10,15 @@ from unittest import mock
 
 from media import mp4_with_audio, needs_media, sine, synth, video
 from test_diarization import FakeDiarizer
+from test_narrata import NAME, context, encoded
+from test_narrata_client import TOKEN, start_fake_narrata
 from test_reference import KEY, MANIFEST, SECRET, SEGMENT, minimal
 from test_transcription import MANIFEST_3, FailingLoad, session_backend
 
 import transcript
 from transcript import __main__ as transcript_main
-from transcript import audio_tools, retry
+from transcript import audio_tools, jsonfile, retry
+from transcript import manifest as manifest_module
 from transcript.__main__ import main
 from transcript.asr import AudioInputError, BackendUnavailableError, ResourceError
 from transcript.asr.fake import FakeBackend
@@ -25,6 +27,7 @@ from transcript.reference import Passage, Word, update_reference
 from transcript.session import SessionKey, SessionPaths
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+REAL_LOAD_MANIFEST = manifest_module.load_manifest  # before any test patches it
 
 
 def run(*argv: str) -> tuple[int, str, str]:
@@ -231,20 +234,18 @@ class ManifestCommandTest(unittest.TestCase):
         return run("manifest", "beispielgruppe/1", "--config", str(self.config), *extra)
 
     def write_context(self) -> None:
-        self.paths.narrata_context.parent.mkdir(parents=True)
-        self.paths.narrata_context.write_text(
-            json.dumps(
-                {
-                    "contract_version": "1.0",
-                    "session": {
-                        "play_session_id": 4711,
-                        "ordinal": 1,
-                        "session_date": "2026-10-30",
-                    },
-                }
-            ),
-            encoding="utf-8",
+        """Store the context the way a user does: `transcript context --from-file`."""
+        saved = self.root / "saved-context.json"
+        saved.write_bytes(encoded(context(ordinal=1)))
+        code, _, stderr = run(
+            "context",
+            "beispielgruppe/1",
+            "--from-file",
+            str(saved),
+            "--config",
+            str(self.config),
         )
+        self.assertEqual(code, 0, stderr)
 
     @needs_media
     def test_two_recordings_get_a_gapless_timeline(self) -> None:
@@ -294,6 +295,104 @@ class ManifestCommandTest(unittest.TestCase):
 
         self.assertEqual(code, 0, stderr)
         self.assertIn("warning: no consent note", stderr)
+
+
+class ContextCommandTest(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.narrata = start_fake_narrata(self)
+        self.narrata.body = encoded(context())
+        self.config = self.root / "config.yaml"
+        self.write_config(self.narrata.url)
+        self.paths = SessionPaths(KEY, self.root)
+        for patcher in (
+            mock.patch.dict(os.environ, {"NARRATA_TOKEN": TOKEN}),
+            mock.patch.object(transcript_main, "_DOTENV", self.root / ".env"),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def write_config(self, url: str | None) -> None:
+        self.config.write_text(
+            f"language: de\npaths:\n  root: {self.root}\nnarrata:\n"
+            + ("" if url is None else f"  url: '{url}'\n")
+            + "  groups:\n    beispielgruppe: 12\n",
+            encoding="utf-8",
+        )
+
+    def context(self, *extra: str) -> tuple[int, str, str]:
+        return run("context", str(KEY), "--config", str(self.config), *extra)
+
+    def test_fetched_context_is_stored_and_summarized_without_names(self) -> None:
+        code, stdout, stderr = self.context()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(self.paths.narrata_context.read_bytes(), self.narrata.body)
+        [(path, headers)] = self.narrata.requests
+        self.assertEqual(path, "/api/groups/12/play-sessions/42/transcription-context")
+        self.assertEqual(headers["Authorization"], f"Bearer {TOKEN}")
+        self.assertIn(
+            "beispielgruppe/042: play session 4711, 2026-10-30, contract 1.1", stdout
+        )
+        self.assertIn(
+            "  1 participant(s), 0 glossary entries, archive tier 0 of 0", stdout
+        )
+        self.assertIn(f"wrote {self.paths.narrata_context}", stdout)
+        self.assertNotIn(NAME, stdout + stderr)
+        self.assertNotIn(TOKEN, stdout + stderr)
+
+    def test_saved_response_takes_the_same_path_without_narrata(self) -> None:
+        saved = self.root / "saved.json"
+        saved.write_bytes(self.narrata.body)
+        self.write_config(None)  # no narrata.url: the file needs no connection
+
+        code, stdout, stderr = self.context("--from-file", str(saved))
+
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(self.paths.narrata_context.read_bytes(), saved.read_bytes())
+        self.assertIn("1 participant(s)", stdout)
+        self.assertEqual(self.narrata.requests, [])
+
+    def test_unsupported_version_is_not_stored(self) -> None:
+        self.narrata.body = encoded(context("2.0"))
+
+        code, stdout, stderr = self.context()
+
+        self.assertEqual((code, stdout), (2, ""))
+        self.assertIn("contract_version 2.0 is not supported", stderr)
+        self.assertFalse(self.paths.narrata_context.exists())
+
+    def test_rejected_token_is_reported_without_its_value(self) -> None:
+        self.narrata.status = 401
+
+        code, _, stderr = self.context()
+
+        self.assertEqual(code, 2)
+        self.assertIn("NARRATA_TOKEN is missing or expired", stderr)
+        self.assertNotIn(TOKEN, stderr)
+        self.assertNotIn("Traceback", stderr)
+
+    def test_missing_settings_name_their_source(self) -> None:
+        with mock.patch.dict(os.environ, {"NARRATA_TOKEN": ""}):
+            code, _, stderr = self.context()
+        self.assertEqual(code, 2)
+        self.assertIn("NARRATA_TOKEN is not set", stderr)
+
+        code, _, stderr = run("context", "andere-runde/1", "--config", str(self.config))
+        self.assertEqual(code, 2)
+        self.assertIn("narrata.groups has no group id for andere-runde", stderr)
+
+        self.write_config(None)
+        code, _, stderr = self.context()
+        self.assertEqual(code, 2)
+        self.assertIn("narrata.url is not set", stderr)
+
+        code, _, stderr = self.context("--from-file", str(self.root / "missing.json"))
+        self.assertEqual(code, 2)
+        self.assertIn("missing.json: cannot read file", stderr)
+        self.assertEqual(self.narrata.requests, [])
 
 
 class TranscribeCommandTest(unittest.TestCase):
@@ -367,6 +466,28 @@ class TranscribeCommandTest(unittest.TestCase):
         self.assertEqual(self.backend.requests[0].keywords, ())
         self.assertEqual(self.diarizers, [])
         self.assertNotIn(SECRET, stdout + stderr)
+
+    def test_unsupported_contract_version_stops_before_the_asr(self) -> None:
+        jsonfile.write_atomic(self.paths.manifest, manifest_module._to_json(MANIFEST_3))
+        jsonfile.write_atomic(
+            self.paths.narrata_context,
+            {"contract_version": "2.0", "session": {"ordinal": KEY.ordinal}},
+        )
+
+        # MANIFEST_3 is a made-up timeline with gaps; only the context check counts.
+        with (
+            mock.patch.object(
+                transcript_main.manifest, "load_manifest", REAL_LOAD_MANIFEST
+            ),
+            mock.patch.object(manifest_module, "_check_timeline"),
+        ):
+            code, stdout, stderr = self.transcribe()
+
+        self.assertEqual(code, 2)
+        self.assertIn("contract_version 2.0 is not supported", stderr)
+        self.assertEqual(stdout, "")
+        self.assertEqual(self.backend.load_calls, 0)
+        self.assertEqual(self.diarizers, [])
 
     def test_second_run_reuses_without_loading(self) -> None:
         self.transcribe("--no-diarize")

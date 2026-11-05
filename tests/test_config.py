@@ -65,6 +65,8 @@ class LoadConfigTest(unittest.TestCase):
             diarization_model="/models/pyannote",
             diarization_device="cpu",
             diarization_retries=5,
+            narrata_url="https://narrata.example",
+            narrata_groups={"beispielgruppe": 12},
         )
 
         self.assertEqual(self.load(format_config(config)), config)
@@ -183,6 +185,53 @@ class LoadConfigTest(unittest.TestCase):
             with self.subTest(text=text):
                 self.assert_rejected(
                     MINIMAL + f"diarization:\n  {text}\n",
+                    f"invalid value for {key}",
+                )
+
+    def test_narrata_defaults_to_no_url_and_no_groups(self) -> None:
+        config = self.load(MINIMAL)
+
+        self.assertEqual((config.narrata_url, config.narrata_groups), (None, {}))
+
+    def test_narrata_values_are_read(self) -> None:
+        for url in (
+            "https://narrata.example",
+            "https://narrata.example:8443/narrata/",
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+            "http://[::1]:8000",
+        ):
+            with self.subTest(url=url):
+                config = self.load(
+                    MINIMAL + f"narrata:\n  url: '{url}'\n"
+                    "  groups:\n    beispielgruppe: 12\n    zweite-runde: 3\n"
+                )
+
+                self.assertEqual(config.narrata_url, url)
+                self.assertEqual(
+                    config.narrata_groups, {"beispielgruppe": 12, "zweite-runde": 3}
+                )
+
+    def test_narrata_values_are_validated(self) -> None:
+        for text, key in (
+            ("url: ''", "narrata.url"),
+            ("url: 3", "narrata.url"),
+            ("url: narrata.example", "narrata.url"),
+            ("url: 'http://narrata.example'", "narrata.url"),
+            ("url: 'ftp://narrata.example'", "narrata.url"),
+            ("url: 'https://user:pw@narrata.example'", "narrata.url"),
+            ("url: 'https://narrata.example/?n=3'", "narrata.url"),
+            ("url: 'https://narrata.example:port'", "narrata.url"),
+            ("groups: [beispielgruppe]", "narrata.groups"),
+            ("groups:\n    Beispiel Gruppe: 12", "narrata.groups"),
+            ("groups:\n    3: 12", "narrata.groups"),
+            ("groups:\n    beispielgruppe: 0", "narrata.groups.beispielgruppe"),
+            ("groups:\n    beispielgruppe: '12'", "narrata.groups.beispielgruppe"),
+            ("groups:\n    beispielgruppe: true", "narrata.groups.beispielgruppe"),
+        ):
+            with self.subTest(text=text):
+                self.assert_rejected(
+                    MINIMAL + f"narrata:\n  {text}\n",
                     f"invalid value for {key}",
                 )
 

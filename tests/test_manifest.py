@@ -83,7 +83,7 @@ class ManifestTestCase(unittest.TestCase):
         self.write_json(
             self.paths.narrata_context,
             {
-                "contract_version": "1.0",
+                "contract_version": "1.1",
                 "session": values,
                 "participants": [{"display_name": "Erika Beispiel"}],
             },
@@ -267,6 +267,15 @@ class LoadManifestTest(ManifestTestCase):
             load_manifest(self.paths)
 
         self.assertIn("was reassigned in Narrata", str(caught.exception))
+
+    def test_unsupported_contract_version_is_rejected_on_read(self) -> None:
+        data = json.loads(self.paths.narrata_context.read_text(encoding="utf-8"))
+        self.write_json(self.paths.narrata_context, {**data, "contract_version": "2.0"})
+
+        with self.assertRaises(DataFileError) as caught:
+            load_manifest(self.paths)
+
+        self.assertIn("contract_version 2.0 is not supported", str(caught.exception))
 
     def test_context_is_optional_on_read(self) -> None:
         self.paths.narrata_context.unlink()

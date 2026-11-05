@@ -2,7 +2,8 @@
 
 import math
 import re
-from dataclasses import dataclass
+import urllib.parse
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ _TOP_LEVEL_KEYS = {
     "audio",
     "asr",
     "diarization",
+    "narrata",
     "debug",
 }
 _PATHS_KEYS = {"root"}
@@ -26,6 +28,10 @@ _AUDIO_KEYS = {"sample_rate", "channels"}
 _AUDIO_CHANNELS = (1, 2)
 _ASR_KEYS = {"model", "device", "compute_type", "beam_size", "retries"}
 _DIARIZATION_KEYS = {"model", "device", "retries"}
+_NARRATA_KEYS = {"url", "groups"}
+# The bearer token must not cross a network unencrypted; plain http is only for a
+# Narrata on this machine.
+_LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 _DEVICES = ("auto", "cpu", "cuda")  # for every model-backed step
 MAX_RETRIES = 5  # per segment; the cap rules out endless retry loops
 
@@ -52,6 +58,9 @@ class Config:
     diarization_model: str = "pyannote/speaker-diarization-community-1"
     diarization_device: str = "auto"  # one of _DEVICES; auto prefers cuda
     diarization_retries: int = 2
+    narrata_url: str | None = None  # base URL of the Narrata API host
+    # Narrata group id per group slug; the endpoint addresses groups by id
+    narrata_groups: dict[str, int] = field(default_factory=dict)
 
     def session_paths(self, key: SessionKey) -> SessionPaths:
         return SessionPaths(key, self.root)
@@ -120,6 +129,16 @@ def load_config(path: Path) -> Config:
         path, diarization, "diarization", Config.diarization_retries
     )
 
+    narrata = _section(path, data, "narrata", _NARRATA_KEYS)
+    narrata_url = narrata.get("url")
+    if narrata_url is not None and not _is_narrata_url(narrata_url):
+        raise _invalid(
+            path,
+            "narrata.url",
+            "must be an https URL without query, or http on localhost",
+        )
+    narrata_groups = _narrata_groups(path, narrata.get("groups"))
+
     return Config(
         language=language,
         root=Path(root),
@@ -136,6 +155,8 @@ def load_config(path: Path) -> Config:
         diarization_model=diarization_model,
         diarization_device=diarization_device,
         diarization_retries=diarization_retries,
+        narrata_url=narrata_url,
+        narrata_groups=narrata_groups,
     )
 
 
@@ -164,6 +185,10 @@ def format_config(config: Config) -> str:
                 "model": config.diarization_model,
                 "device": config.diarization_device,
                 "retries": config.diarization_retries,
+            },
+            "narrata": {
+                "url": config.narrata_url,
+                "groups": dict(config.narrata_groups),
             },
             "debug": config.debug,
         },
@@ -261,6 +286,40 @@ def _choice(
             path, f"{section_name}.{key}", f"must be one of {', '.join(options)}"
         )
     return value
+
+
+def _is_narrata_url(value: Any) -> bool:
+    if not _is_text(value):
+        return False
+    try:
+        url = urllib.parse.urlsplit(value)
+        host, _ = url.hostname, url.port  # .port raises on a malformed port
+    except ValueError:
+        return False
+    if not host or url.username or url.password or url.query or url.fragment:
+        return False
+    return url.scheme == "https" or (url.scheme == "http" and host in _LOCAL_HOSTS)
+
+
+def _narrata_groups(path: Path, value: Any) -> dict[str, int]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise _invalid(path, "narrata.groups", "must map group slugs to group ids")
+    groups = {}
+    for slug, group_id in value.items():
+        try:
+            SessionKey(slug, 1)  # validates the slug as a session key does
+        except (TypeError, ValueError):
+            raise _invalid(
+                path, "narrata.groups", f"{slug!r} is not a group slug"
+            ) from None
+        if not _is_number(group_id, int) or group_id < 1:
+            raise _invalid(
+                path, f"narrata.groups.{slug}", "must be a positive whole number"
+            )
+        groups[slug] = group_id
+    return groups
 
 
 def _is_text(value: Any) -> bool:

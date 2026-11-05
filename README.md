@@ -2,7 +2,7 @@
 
 Lokale Pipeline, die Aufnahmen von Rollenspielsitzungen in strukturierte Transkripte für [Narrata](https://github.com/A1etheia/ios-archiv) überführen soll.
 
-**Aktueller Stand: Audio-Vorbereitung.** Das Paket lässt sich installieren, `transcript config` zeigt die Konfiguration, `transcript doctor` prüft ffmpeg und ffprobe, und `transcript extract` prüft die Aufnahmen einer Session und extrahiert ihre Audiospur, eine Datei pro Aufnahme, und `transcript manifest` schreibt das Session-Manifest mit absoluter Zeitachse. Session-Schlüssel und Verzeichnislayout sind festgelegt. Die Schnittstelle für ASR-Backends steht, mit einem Fake-Backend für Tests, ebenso das interne Referenztranskript-Format, in dem Ergebnisse gespeichert werden. Das V0.1-Backend (Whisper large-v3-turbo über faster-whisper) transkribiert ein Segment vollständig lokal; ein Befehl, der Segmente einer Session transkribiert, und der Export existieren noch nicht.
+**Aktueller Stand: Audio-Vorbereitung.** Das Paket lässt sich installieren, `transcript config` zeigt die Konfiguration, `transcript doctor` prüft ffmpeg und ffprobe, und `transcript extract` prüft die Aufnahmen einer Session und extrahiert ihre Audiospur, eine Datei pro Aufnahme, `transcript context` holt den Transkriptionskontext aus Narrata, und `transcript manifest` schreibt das Session-Manifest mit absoluter Zeitachse. Session-Schlüssel und Verzeichnislayout sind festgelegt. Die Schnittstelle für ASR-Backends steht, mit einem Fake-Backend für Tests, ebenso das interne Referenztranskript-Format, in dem Ergebnisse gespeichert werden. Das V0.1-Backend (Whisper large-v3-turbo über faster-whisper) transkribiert ein Segment vollständig lokal; ein Befehl, der Segmente einer Session transkribiert, und der Export existieren noch nicht.
 
 ## Zielarchitektur
 
@@ -47,6 +47,21 @@ Ergebnis ist pro Aufnahme ein `work/<gruppe>/<ordinal>/audio/segment-NN.wav` im 
 
 Abgelehnt werden mit Exit-Code 2 und einer Meldung, die die Datei nennt: Dateien, die ffprobe nicht lesen kann (beschädigt oder kein Medienformat), andere Container, Dateien ohne Audiostream oder ohne Dauer und Extraktionen, deren Dauer um mehr als 0,5 s von der Angabe der Aufnahme abweicht. Das Log auf stderr enthält Werkzeugversionen, Container, Codec und Dauern, keine Dateinamen.
 
+## Narrata-Kontext
+
+```bash
+transcript context beispielgruppe/042                          # von Narrata holen
+transcript context beispielgruppe/042 --from-file kontext.json # gespeicherte Antwort übernehmen
+```
+
+Der Befehl holt den Transkriptionskontext einer Sitzung vom Narrata-Endpoint `GET /api/groups/{gruppe}/play-sessions/{ordinal}/transcription-context` (IOA-1215, Contract in `ios-archiv` unter `docs/transcripts.md`, „Transkriptionskontext“). Der Kontext enthält Sitzungsdaten, Teilnehmende mit Spielfiguren und ein nach Relevanz gestuftes Glossar. Die Antwort wird unverändert unter `work/<gruppe>/<ordinal>/narrata/transcription-context.json` gespeichert, daraus lesen alle späteren Schritte. Die Konsole zeigt nur `play_session_id`, Datum, Contract-Version und Zähler, keine Namen.
+
+**Einrichtung.** In `config/config.yaml` stehen `narrata.url` (Basis-URL des Narrata-Hosts) und unter `narrata.groups` die Gruppen-ID je Gruppen-Slug, denn der Endpoint adressiert Gruppen über die ID. Der Token gehört als `NARRATA_TOKEN` in `.env` (Vorlage `cp .env.example .env`) oder in die Umgebung, die Vorrang hat. Er muss einer aktiven Spielleitung der Gruppe gehören. Vorerst ist es der normale Narrata-Login-Token, der nach 24 h abläuft und vor dem Abruf frisch eingetragen werden muss. Ein langlebiger Pipeline-Token kommt mit IOA-1251.
+
+**Datei statt Netz.** `--from-file` übernimmt eine gespeicherte Antwort desselben Formats, ohne `narrata.url` und ohne Token. Beide Wege laufen durch dieselbe Prüfung.
+
+**Prüfung.** Akzeptiert wird jede `contract_version` `1.x`, das Ordinal muss zum Session-Schlüssel passen. Was die Prüfung nicht besteht, wird nicht gespeichert, eine vorhandene Datei bleibt dann unverändert. Auch `manifest` und `transcribe` prüfen die Version und brechen vor der Spracherkennung ab. Fehler enden mit Exit-Code 2 und nennen die Ursache: 401 heißt Token fehlt oder ist abgelaufen, 404 heißt Gruppe oder Sitzung unbekannt oder keine aktive Spielleitung. Umleitungen werden nicht verfolgt, damit der Token nicht an ein anderes Ziel geht. Ein erneuter Abruf ersetzt die Datei.
+
 ## Session-Manifest
 
 ```bash
@@ -55,7 +70,7 @@ transcript manifest beispielgruppe/042 --consent
 
 Das Manifest `work/<gruppe>/<ordinal>/manifest.json` (`format_version: 1`) ist die zentrale Metadatenquelle einer Session. Es enthält Gruppe und Ordinal, `play_session_id`, Sitzungsdatum, den Zustimmungsvermerk, das Arbeitsformat und alle Segmente in Reihenfolge. Zu jedem Segment gehören Datei, Frames, absoluter Start und Ende in Millisekunden, Dauer, Überlappung mit dem Vorgänger und die Originalaufnahme mit Name, Größe, SHA-256, Container und Stream. Spätere Schritte lesen nur das Manifest und analysieren das Audio nicht erneut.
 
-**Voraussetzungen.** `transcript extract` ist gelaufen, und die Antwort des Narrata-Endpoints `transcription-context` (IOA-1215) liegt unverändert unter `work/<gruppe>/<ordinal>/narrata/transcription-context.json`. Bis TOOL-67 sie abholt, wird sie von Hand dort abgelegt. Gelesen wird nur der Block `session` (`play_session_id`, `ordinal`, `session_date`). Teilnehmende und Glossar übernimmt das Manifest nicht. Passt das Ordinal nicht zum Schlüssel, bricht der Befehl ab.
+**Voraussetzungen.** `transcript extract` und `transcript context` sind gelaufen (siehe [Narrata-Kontext](#narrata-kontext)). Aus dem Transkriptionskontext liest das Manifest nur den Block `session` (`play_session_id`, `ordinal`, `session_date`). Teilnehmende und Glossar übernimmt das Manifest nicht. Passt das Ordinal nicht zum Schlüssel, bricht der Befehl ab.
 
 **Zeitachse.** Die Session-Zeit ist die Aufnahmezeit aller Segmente hintereinander, keine Uhrzeit, denn Pausen zwischen zwei Aufnahmen kennt niemand. Die Zeiten sind ganze Millisekunden, gerundet aus den kumulierten Frames. Ein Segment endet deshalb exakt dort, wo das nächste beginnt: Lücken und negative Werte gibt es nicht, auch nicht über viele Stunden. Die Überlappung ist ohne eigene Segmentierung 0 und steht trotzdem explizit im Manifest. Die Ausgabe zeigt die Bereiche als `HH:MM:SS.mmm`. Ein Ereignis bei `00:02:13.500` in einem Segment, das bei `01:19:45.000` beginnt, liegt bei `01:21:58.500`.
 
@@ -191,9 +206,11 @@ Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht 
 | `diarization.model` | nein | `pyannote/speaker-diarization-community-1` | Modellname auf Hugging Face oder ein lokales Verzeichnis mit `config.yaml`; nur aus dem lokalen Cache |
 | `diarization.device` | nein | `auto` | wie `asr.device` |
 | `diarization.retries` | nein | `2` | wie `asr.retries` |
+| `narrata.url` | nein | `null` | Basis-URL des Narrata-Hosts für `transcript context`; `https`, `http` nur für `localhost`, ohne Zugangsdaten und Query |
+| `narrata.groups` | nein | `{}` | Gruppen-ID in Narrata je Gruppen-Slug, z. B. `beispielgruppe: 12` |
 | `debug` | nein | `false` | schreibt Transkripttext nach `work/<gruppe>/<ordinal>/debug.log`, nie auf die Konsole |
 
-Einen eigenen Ausgabepfad gibt es nicht: `output/` liegt immer unter `paths.root`, damit echte Daten im Layout unter [Sessions](#sessions) bleiben. Secrets gehören nicht in diese Datei, sondern in `.env`.
+Einen eigenen Ausgabepfad gibt es nicht: `output/` liegt immer unter `paths.root`, damit echte Daten im Layout unter [Sessions](#sessions) bleiben. Secrets gehören nicht in diese Datei, sondern in `.env` (Vorlage `.env.example`, heute nur `NARRATA_TOKEN`).
 
 ## Smoke-Test
 
