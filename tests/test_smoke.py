@@ -855,6 +855,33 @@ class TranscribeCommandTest(unittest.TestCase):
         _, stdout, _ = self.transcribe("--no-diarize")
         self.assertIn("0 transcribed, 3 reused", stdout)
 
+    def test_snapshot_keywords_reach_the_backend_but_not_the_console(self) -> None:
+        data = context()
+        data["glossary"] = [glossary_entry()]
+        self.paths.narrata_context.parent.mkdir(parents=True, exist_ok=True)
+        self.paths.narrata_context.write_bytes(encoded(data))
+        snapshot = knowledge.build_snapshot(self.paths, DEFAULT_KEYWORD_BUDGET)
+        self.backend = session_backend(biasing=True)
+
+        code, stdout, stderr = self.transcribe("--no-diarize")
+
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(self.backend.requests[0].keywords, (PLACE, ALIAS))
+        self.assertIn(
+            f"beispielgruppe/042: 2 keyword(s) from snapshot "
+            f"{snapshot.snapshot_id[:12]}",
+            stdout,
+        )
+        self.assertEqual(
+            load_reference(self.paths, 1).asr.keywords_used, (PLACE, ALIAS)
+        )
+        for name in (PLACE, ALIAS, VARIANT):
+            self.assertNotIn(name, stdout + stderr)
+
+        self.backend = session_backend(biasing=True)
+        _, stdout, _ = self.transcribe("--no-diarize")
+        self.assertIn("0 transcribed, 3 reused", stdout)
+
     def test_unreadable_snapshot_stops_before_the_asr(self) -> None:
         self.paths.knowledge_snapshot.parent.mkdir(parents=True, exist_ok=True)
         self.paths.knowledge_snapshot.write_text("{", encoding="utf-8")
