@@ -51,10 +51,32 @@ Optional sind die Zeiten, die Confidence und der Sprecher, jeweils `null`. Ein B
 
 ## Regeln
 
-- **Zeiten sind ganze Millisekunden, lokal zum Segment-WAV.** Absolute Session-Zeiten werden nicht gespeichert, sondern über `Segment.to_absolute_ms` aus dem Manifest berechnet (TOOL-19). Dadurch bleiben sie richtig, wenn das Manifest neu gebaut wird. Es gilt `start_ms ≤ end_ms`, und kein Wert ist negativ.
+- **Zeiten sind ganze Millisekunden, lokal zum Segment-WAV.** Absolute Session-Zeiten werden nicht gespeichert, sondern beim Lesen aus dem Manifest berechnet, siehe [Session-Zeit](#session-zeit). Dadurch bleiben sie richtig, wenn das Manifest neu gebaut wird. Es gilt `start_ms ≤ end_ms`, und kein Wert ist negativ.
 - **Der Text wird nie korrigiert.** `text` steht so da, wie das Backend ihn geliefert hat, einschließlich führender Leerzeichen. `ReferenceTranscript.text` fügt die Passagen für die Anzeige zusammen. Gespeichert wird dieser Gesamttext nicht.
 - **Confidence-Skalen sind modellabhängig** (siehe [`asr-backends.md`](asr-backends.md)). Vergleichbar ist nur die Rangfolge innerhalb eines Modells. Welches Modell gelaufen ist, steht in `asr`.
 - **Rohform und Normalform sind getrennt.** `raw` steht nur in der Rohdatei. Die Normalform enthält nichts, was nur ein bestimmtes Backend versteht.
+
+## Session-Zeit
+
+`src/transcript/session_time.py` rechnet die lokalen Zeiten einer Passage oder eines Worts in Zeit der Gesamtaufnahme um (TOOL-19). Nachgelagerte Schritte brauchen dafür nur Manifest und Referenztranskript, nicht das Backend:
+
+```python
+from transcript.session_time import passage_span, segment_of, time_granularity, word_span
+
+segment = segment_of(manifest, reference)   # prüft Index, WAV-Name und Quell-Hash
+for passage in reference.passages:
+    span = passage_span(segment, passage)    # SessionSpan oder None
+    words = [word_span(segment, word) for word in passage.words]
+```
+
+Ein `SessionSpan` enthält `granularity` (`word` oder `passage`), die lokalen Werte `local_start_ms`/`local_end_ms`, die Session-Werte `start_ms`/`end_ms` und `clamped`. `timecode()` liefert `HH:MM:SS.mmm–HH:MM:SS.mmm` über `timecode.format_ms`. Die Stunden laufen über 99 hinaus, eine fehlende Grenze erscheint als `?`.
+
+- **Granularität:** `time_granularity(reference)` liefert die feinste Stufe, für die das Transkript tatsächlich Zeiten hat: `word`, `passage` oder `none`. Entscheidend sind die gespeicherten Daten, nicht `asr.capabilities`, denn ein Backend mit Wortzeiten kann für ein stilles Segment trotzdem keine liefern. Woher die Zeiten stammen, steht in `asr.backend_id` und `asr.capabilities`.
+- **Nur Passagenzeiten:** `passage_span` liefert einen Span, `word_span` liefert `None` für jedes Wort. Die Passagenzeit wird nicht auf die Wörter verteilt.
+- **Gar keine Zeiten** (z. B. Granite): Jeder Span ist `None`, `time_granularity` ist `none`. Nichts wird geschätzt oder von Nachbarn übernommen. Hat eine Einheit nur Start oder nur Ende, bleibt die andere Grenze `None`.
+- **WAV-Ende:** Backends runden und polstern das letzte Wort. Eine lokale Zeit bis `END_TOLERANCE_MS` (1000 ms) hinter dem Segmentende wird auf das Segmentende gesetzt, und der Span trägt dann `clamped: true`. Der lokale Wert bleibt unverändert. Alles darüber hinaus ist ein `ValueError`, denn dann passt das Transkript nicht zum WAV. `Segment.to_absolute_ms` selbst ist streng und nimmt nur 0 bis `duration_ms`.
+- **Überlappung:** Ein Segment mit `overlap_before_ms` beginnt vor dem Ende des vorigen. Ein Span ist nie negativ und endet nie nach `manifest.duration_ms`. Doppelte Passagen im Überlappungsbereich bleiben doppelt, Deduplizieren ist nicht Teil dieses Schritts.
+- **Fehlermeldungen** nennen Segmentnummer und Millisekunden, nie Text.
 
 ## Sprecher
 

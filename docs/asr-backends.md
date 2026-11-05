@@ -36,7 +36,7 @@ with opened(backend):                      # load() einmal, close() immer
 | `settings` | Inferenzparameter des Laufs |
 | `raw` | die unveränderte Antwort des Backends, JSON-fähig |
 
-Zeiten sind Sekunden, lokal zum Segment-WAV, so wie Backends sie liefern. In Session-Zeit rechnet sie `Segment.to_absolute_ms` um. `speaker` ist ein generisches Label des Backends, nie ein Name. Die Confidence-Skalen der Modelle unterscheiden sich (Mittel 0,86 bei Whisper, 0,22 bei Parakeet). Vergleichbar ist nur die Rangfolge innerhalb eines Modells.
+Zeiten sind Sekunden, lokal zum Segment-WAV, so wie Backends sie liefern. Der Adapter (`reference.from_backend_result`) macht daraus ganze Millisekunden, `session_time` rechnet sie in Session-Zeit um (siehe [`referenzformat.md`](referenzformat.md#session-zeit)). `speaker` ist ein generisches Label des Backends, nie ein Name. Die Confidence-Skalen der Modelle unterscheiden sich (Mittel 0,86 bei Whisper, 0,22 bei Parakeet). Vergleichbar ist nur die Rangfolge innerhalb eines Modells.
 
 ## Fähigkeiten
 

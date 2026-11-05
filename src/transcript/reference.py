@@ -4,8 +4,8 @@ A reference transcript holds what an ASR backend recognised in one segment WAV o
 the manifest, normalized so that later steps never need to know the backend. The
 backend's own answer is stored unchanged in a separate raw file next to it.
 
-Times are whole milliseconds local to the segment WAV; `Segment.to_absolute_ms`
-of the manifest turns them into session time. Speaker labels are generic
+Times are whole milliseconds local to the segment WAV; `session_time` turns them
+into session time. Speaker labels are generic
 (`SPEAKER_00`), never names. Everything optional may be `None` or empty.
 
 Error messages name the file, the field and the passage number, never text,
