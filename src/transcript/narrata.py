@@ -2,15 +2,16 @@
 
 The raw endpoint response lies at `SessionPaths.narrata_context`. `store_context`
 is its only writer, whether the bytes come from the endpoint or from a local file.
-This module reads the `session` and `participants` blocks; the glossary is left to
-later steps. Participants carry real names, so no message names a field's value.
+This module reads the `session`, `participants` and `glossary` blocks. Participants
+and glossary carry real names, so no message names a field's value.
 """
 
 import datetime
 import re
+from collections.abc import Hashable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar, get_args
 
 from transcript.jsonfile import (
     DataFileError,
@@ -22,6 +23,7 @@ from transcript.jsonfile import (
 from transcript.session import SessionPaths
 
 _WHAT = "Narrata context"  # names the file in messages
+_T = TypeVar("_T")
 
 # Mirrors TranscriptContract::SUPPORTED_MAJORS in ios-archiv: minor versions only
 # add fields, so every 1.x response is read the same way.
@@ -75,6 +77,49 @@ class NarrataParticipants:
     participants: tuple[Participant, ...]
 
 
+EntryType = Literal["place", "person", "artifact", "organisation", "event", "lore"]
+ENTRY_TYPES: tuple[EntryType, ...] = get_args(EntryType)
+Relevance = Literal["pc", "session", "recent", "archive"]
+RELEVANCE_TIERS: tuple[Relevance, ...] = get_args(Relevance)  # nearest first
+
+
+@dataclass(frozen=True)
+class GlossaryEntry:
+    """One world-archive entry; strings keep Narrata's spelling unchanged.
+
+    `asr_variants` are known misrecognitions of the name, kept by the GM.
+    """
+
+    type: EntryType
+    id: int | str
+    name: str
+    aliases: tuple[str, ...]
+    asr_variants: tuple[str, ...]
+    summary: str | None
+    relevance: Relevance
+
+
+@dataclass(frozen=True)
+class Ambiguity:
+    """A misrecognition two or more entries share; Narrata never resolves it."""
+
+    variant: str
+    entries: tuple[tuple[EntryType, int | str], ...]
+
+
+@dataclass(frozen=True)
+class NarrataGlossary:
+    """The glossary of one context file, in Narrata's tier order, with its origin."""
+
+    source: Path
+    contract_version: str
+    play_session_id: int | str
+    entries: tuple[GlossaryEntry, ...]
+    archive_total: int
+    archive_returned: int
+    ambiguities: tuple[Ambiguity, ...]
+
+
 def is_narrata_id(value: Any) -> bool:
     """Narrata ids are integers or non-empty strings; booleans are neither."""
     if isinstance(value, bool):
@@ -108,6 +153,7 @@ def store_context(paths: SessionPaths, raw: bytes) -> NarrataSession:
     data = parse_object(raw, path, _WHAT, NarrataContextError)
     session = _session(data, paths)
     _participants(data, path)
+    _glossary(data, path, session.play_session_id)
     write_bytes_atomic(path, raw)
     return session
 
@@ -127,6 +173,13 @@ def read_participants(paths: SessionPaths) -> NarrataParticipants:
         play_session_id=session.play_session_id,
         participants=_participants(data, paths.narrata_context),
     )
+
+
+def read_glossary(paths: SessionPaths) -> NarrataGlossary:
+    """Read `glossary`, `glossary_meta` and `asr_ambiguities` with their session."""
+    data = _read(paths)
+    session = _session(data, paths)
+    return _glossary(data, paths.narrata_context, session.play_session_id)
 
 
 def _read(paths: SessionPaths) -> dict[str, Any]:
@@ -184,8 +237,7 @@ def _participants(data: dict[str, Any], path: Path) -> tuple[Participant, ...]:
 
 
 def _participant(entry: Any, where: str, path: Path) -> Participant:
-    if not isinstance(entry, dict):
-        raise NarrataContextError(f"{path}: {where} is not an object")
+    entry = _object(entry, where, path)
     user_id = entry.get("user_id")
     if not is_narrata_id(user_id):
         raise _invalid(path, f"{where}.user_id")
@@ -198,11 +250,7 @@ def _participant(entry: Any, where: str, path: Path) -> Participant:
     is_former = entry.get("is_former")
     if not isinstance(is_former, bool):
         raise _invalid(path, f"{where}.is_former")
-    characters = entry.get("characters")
-    if characters is None:
-        characters = []
-    if not isinstance(characters, list):
-        raise _invalid(path, f"{where}.characters")
+    characters = _optional_list(entry, "characters", f"{where}.characters", path)
     return Participant(
         user_id=user_id,
         display_name=display_name,
@@ -216,29 +264,156 @@ def _participant(entry: Any, where: str, path: Path) -> Participant:
 
 
 def _character(entry: Any, where: str, path: Path) -> Character:
-    if not isinstance(entry, dict):
-        raise NarrataContextError(f"{path}: {where} is not an object")
+    entry = _object(entry, where, path)
     person_id = entry.get("person_id")
     if not is_narrata_id(person_id):
         raise _invalid(path, f"{where}.person_id")
     name = entry.get("name")
     if not _is_text(name):
         raise _invalid(path, f"{where}.name")
-    aliases = entry.get("aliases")
-    if aliases is None:
-        aliases = []
-    if not isinstance(aliases, list) or not all(isinstance(a, str) for a in aliases):
-        raise _invalid(path, f"{where}.aliases")
-    return Character(person_id, name, tuple(aliases))
+    return Character(person_id, name, _strings(entry, "aliases", where, path))
+
+
+def _glossary(
+    data: dict[str, Any], path: Path, play_session_id: int | str
+) -> NarrataGlossary:
+    """Check the glossary blocks; `asr_ambiguities` is absent before contract 1.1."""
+    raw_entries = field(data, "glossary", list, path, NarrataContextError)
+    entries = tuple(
+        _glossary_entry(entry, f"glossary[{index}]", path)
+        for index, entry in enumerate(raw_entries)
+    )
+    _check_unique(
+        [(f"glossary[{i}].id", (e.type, e.id)) for i, e in enumerate(entries)], path
+    )
+    meta = field(data, "glossary_meta", dict, path, NarrataContextError)
+    total = meta.get("archive_total")
+    returned = meta.get("archive_returned")
+    if not _is_count(total):
+        raise _invalid(path, "glossary_meta.archive_total")
+    if not _is_count(returned) or returned > total:
+        raise _invalid(path, "glossary_meta.archive_returned")
+    known = {(e.type, e.id) for e in entries}
+    raw_ambiguities = _optional_list(data, "asr_ambiguities", "asr_ambiguities", path)
+    return NarrataGlossary(
+        source=path,
+        contract_version=data["contract_version"],
+        play_session_id=play_session_id,
+        entries=entries,
+        archive_total=total,
+        archive_returned=returned,
+        ambiguities=tuple(
+            _ambiguity(entry, f"asr_ambiguities[{index}]", known, path)
+            for index, entry in enumerate(raw_ambiguities)
+        ),
+    )
+
+
+def _glossary_entry(entry: Any, where: str, path: Path) -> GlossaryEntry:
+    entry = _object(entry, where, path)
+    entry_type = _known(entry.get("type"), ENTRY_TYPES, f"{where}.type", path)
+    entry_id = entry.get("id")
+    if not is_narrata_id(entry_id):
+        raise _invalid(path, f"{where}.id")
+    name = entry.get("name")
+    if not _is_text(name):
+        raise _invalid(path, f"{where}.name")
+    summary = entry.get("summary")
+    if summary is not None and not isinstance(summary, str):
+        raise _invalid(path, f"{where}.summary")
+    return GlossaryEntry(
+        type=entry_type,
+        id=entry_id,
+        name=name,
+        aliases=_strings(entry, "aliases", where, path),
+        asr_variants=_strings(entry, "asr_variants", where, path),
+        summary=summary if _is_text(summary) else None,
+        relevance=_known(
+            entry.get("relevance"), RELEVANCE_TIERS, f"{where}.relevance", path
+        ),
+    )
+
+
+def _ambiguity(
+    entry: Any, where: str, known: set[tuple[EntryType, int | str]], path: Path
+) -> Ambiguity:
+    """A variant shared by two or more distinct entries the glossary delivers."""
+    entry = _object(entry, where, path)
+    variant = entry.get("variant")
+    if not _is_text(variant):
+        raise _invalid(path, f"{where}.variant")
+    refs = entry.get("entries")
+    if not isinstance(refs, list):
+        raise _invalid(path, f"{where}.entries")
+    keys: list[tuple[EntryType, int | str]] = []
+    for index, ref in enumerate(refs):
+        ref_where = f"{where}.entries[{index}]"
+        ref = _object(ref, ref_where, path)
+        key = (
+            _known(ref.get("type"), ENTRY_TYPES, f"{ref_where}.type", path),
+            ref.get("id"),
+        )
+        if not is_narrata_id(key[1]) or key not in known:
+            raise NarrataContextError(
+                f"{path}: {ref_where} names no entry of the glossary"
+            )
+        keys.append(key)
+    if len(set(keys)) != len(keys) or len(keys) < 2:
+        raise NarrataContextError(
+            f"{path}: {where}.entries must name two or more distinct entries"
+        )
+    return Ambiguity(variant, tuple(keys))
+
+
+def _object(value: Any, where: str, path: Path) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise NarrataContextError(f"{path}: {where} is not an object")
+    return value
+
+
+def _known(value: Any, allowed: tuple[_T, ...], where: str, path: Path) -> _T:
+    """`value` if the contract lists it; a newer Narrata may need a newer pipeline."""
+    if value not in allowed:
+        raise NarrataContextError(
+            f"{path}: {where} missing or not a known value; "
+            "if Narrata is newer, update narrata-transcript"
+        )
+    return value
+
+
+def _optional_list(
+    data: dict[str, Any], name: str, where: str, path: Path
+) -> list[Any]:
+    """`data[name]` as a list; absent or null is empty."""
+    values = data.get(name)
+    if values is None:
+        return []
+    if not isinstance(values, list):
+        raise _invalid(path, where)
+    return values
+
+
+def _strings(
+    entry: dict[str, Any], name: str, where: str, path: Path
+) -> tuple[str, ...]:
+    """An optional list of strings; absent or null is empty."""
+    values = _optional_list(entry, name, f"{where}.{name}", path)
+    if not all(isinstance(v, str) for v in values):
+        raise _invalid(path, f"{where}.{name}")
+    return tuple(values)
+
+
+def _is_count(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def _is_text(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def _check_unique(ids: list[tuple[str, int | str]], path: Path) -> None:
+def _check_unique(ids: list[tuple[str, Hashable]], path: Path) -> None:
     """Names the second occurrence by position only, never by its id."""
-    seen: set[int | str] = set()
+    seen: set[Hashable] = set()
     for where, value in ids:
         if value in seen:
             raise NarrataContextError(f"{path}: {where} repeats an earlier id")
