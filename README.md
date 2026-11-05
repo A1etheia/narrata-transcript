@@ -111,9 +111,12 @@ Es entstehen `work/<gruppe>/<ordinal>/asr/segment-NN.json` und `segment-NN.raw.j
 - **Wiederaufnahme:** Ein fertiges Segment bleibt stehen, wenn Backend, Modell, Revision und Einstellungen gleich sind und die erkannte Sprache zu `language` passt (`reused`). Ein abgebrochener Lauf macht beim nächsten Aufruf mit den offenen Segmenten weiter. Sind alle Segmente fertig, lädt Whisper gar nicht. Hat sich das Modell geändert, werden die betroffenen Segmente neu transkribiert.
 - **Vor dem Laden geprüft:** Fehlende Runtime, ein Modell, das nicht im Cache liegt, eine fehlende GPU, ein Segment, das nicht im Manifest steht, ein fehlendes WAV oder ein unlesbares Ergebnis brechen ab, bevor das Modell lädt. Ohne `--no-diarize` gilt das auch für pyannote.
 - **`--force`:** Rechnet auch passende Ergebnisse neu. Die Sprecher-Labels fallen dabei weg; die Diarisierung im selben Lauf setzt sie aus der gespeicherten Rohform ohne Modell wieder.
-- **Fehlschlag bei einem Segment:** Steht als `status: failed` mit Fehlerklasse in der Datei, der Lauf geht mit dem nächsten Segment weiter. Der nächste Aufruf versucht es ohne `--force` erneut. Ein erfolgreiches Ergebnis ersetzt ein Fehlschlag nie.
+- **Vorübergehender Fehler** (`ResourceError` bei Speichermangel, `BackendRuntimeError`): Das Segment wird mit dem schon geladenen Modell nach 5 s erneut versucht, höchstens `asr.retries`-mal (Default 2, höchstens 5). Gelingt ein Versuch, zählt das Segment als `transcribed`.
+- **Dauerhafter Fehler** (`AudioInputError`, `BackendUnavailableError`, `UnsupportedCapabilityError`): wird nicht wiederholt, ein zweiter Versuch käme zum selben Ergebnis.
+- **Protokoll:** Jeder fehlgeschlagene Versuch steht als `WARNING` auf stderr, mit Session, Segment, Backend, Versuch, Fehlerklasse und Meldung, etwa `beispielgruppe/042 segment 2: faster-whisper: attempt 1/3 failed: ResourceError: …; retrying in 5 s`. Die Meldungen nennen Backend, Aktion und Datei, nie Transkripttext; die Originalmeldung der Runtime erscheint nie.
+- **Fehlschlag bei einem Segment:** Sind die Versuche aufgebraucht oder ist der Fehler dauerhaft, steht das Segment als `status: failed` mit Fehlerklasse in der Datei. Die Konsole zeigt `failed after N attempt(s): <Klasse> (retryable|not retryable): <Meldung>`, und der Lauf geht mit dem nächsten Segment weiter. Der nächste Aufruf versucht es ohne `--force` erneut. Ein erfolgreiches Ergebnis ersetzt ein Fehlschlag nie.
 - **Fehlschlag beim Laden** (Modell, Runtime, GPU): schreibt nichts, alle offenen Segmente bleiben `open`.
-- **Exit-Code:** 0, wenn alle Segmente `transcribed` oder `reused` sind; 1, wenn eines `failed` oder `open` ist; 2, wenn der Lauf gar nicht starten konnte.
+- **Exit-Code:** 0, wenn alle Segmente `transcribed` oder `reused` und diarisiert sind; 1, wenn eines `failed` oder `open` ist, auch in der Diarisierung; 2, wenn der Lauf gar nicht starten konnte.
 - **Seit TOOL-17:** `--segment` ist optional. Ein zweiter Aufruf für ein fertiges Segment verwendet es wieder, statt mit „already transcribed“ abzubrechen.
 
 **Smoke-Test** mit dem echten Modell. ffmpeg spricht dafür mit `flite` einen erfundenen englischen Satz, der Test transkribiert ihn und speichert das Ergebnis im Referenzformat:
@@ -160,7 +163,7 @@ Pro Segment entsteht `work/<gruppe>/<ordinal>/diarization/segment-NN.json` mit d
 
 **Lizenzen.** pyannote.audio steht unter MIT. Das Modell [`pyannote/speaker-diarization-community-1`](https://huggingface.co/pyannote/speaker-diarization-community-1) von pyannoteAI steht unter [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); es wird nur lokal genutzt, nicht weitergegeben.
 
-**Fehler.** Fehlt die Runtime, das Modell im Cache oder eine GPU bei `diarization.device: cuda`, meldet der Befehl `BackendUnavailableError` mit dem nächsten Schritt; Speichermangel kommt als `ResourceError`. Die Meldungen nennen Modell, Gerät und Segmentdatei, nie Labels oder Text.
+**Fehler.** Fehlt die Runtime, das Modell im Cache oder eine GPU bei `diarization.device: cuda`, meldet der Befehl `BackendUnavailableError` mit dem nächsten Schritt und endet mit Exit-Code 2; Speichermangel kommt als `ResourceError`. Ein Fehler an einem Segment wird wie bei der [Spracherkennung](#spracherkennung) wiederholt (`diarization.retries`) und protokolliert. Schlägt es endgültig fehl, zeigt die Konsole `failed`, gespeicherte Turns und Labels des Segments bleiben unverändert, die übrigen Segmente laufen weiter, und der Befehl endet mit Exit-Code 1. Der nächste Aufruf versucht das Segment erneut. Die Meldungen nennen Modell, Gerät und Segmentdatei, nie Labels oder Text.
 
 **Smoke-Test** mit beiden echten Modellen: ffmpeg spricht mit zwei `flite`-Stimmen zwei erfundene Sätze, Whisper transkribiert, pyannote vergibt die Labels, ein zweiter Lauf verwendet sie wieder. `LD_LIBRARY_PATH` wie unter [Spracherkennung](#spracherkennung).
 
@@ -184,8 +187,10 @@ Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht 
 | `asr.device` | nein | `auto` | `auto` nimmt die GPU, wenn eine erreichbar ist, sonst die CPU; `cpu` oder `cuda` erzwingen das Gerät |
 | `asr.compute_type` | nein | `null` | `null`: `float16` auf der GPU, `int8` auf der CPU; sonst ein CTranslate2-Typ wie `int8_float16` |
 | `asr.beam_size` | nein | `5` | Strahlbreite der Suche; VAD, Wortzeiten und `condition_on_previous_text: false` sind fest |
+| `asr.retries` | nein | `2` | weitere Versuche pro Segment nach `ResourceError` oder `BackendRuntimeError`, `0` bis `5`; `0` schaltet die Wiederholung ab |
 | `diarization.model` | nein | `pyannote/speaker-diarization-community-1` | Modellname auf Hugging Face oder ein lokales Verzeichnis mit `config.yaml`; nur aus dem lokalen Cache |
 | `diarization.device` | nein | `auto` | wie `asr.device` |
+| `diarization.retries` | nein | `2` | wie `asr.retries` |
 | `debug` | nein | `false` | schreibt Transkripttext nach `work/<gruppe>/<ordinal>/debug.log`, nie auf die Konsole |
 
 Einen eigenen Ausgabepfad gibt es nicht: `output/` liegt immer unter `paths.root`, damit echte Daten im Layout unter [Sessions](#sessions) bleiben. Secrets gehören nicht in diese Datei, sondern in `.env`.
