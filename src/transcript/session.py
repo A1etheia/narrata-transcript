@@ -117,5 +117,10 @@ class SessionPaths:
         return self.work_dir / "narrata" / "transcription-context.json"
 
     @property
+    def knowledge_snapshot(self) -> Path:
+        """Frozen knowledge of the session, built from the context (TOOL-41)."""
+        return self.work_dir / "narrata" / "snapshot.json"
+
+    @property
     def debug_log(self) -> Path:
         return self.work_dir / "debug.log"
