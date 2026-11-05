@@ -18,7 +18,7 @@ from typing import Any
 from transcript import audio, jsonfile, narrata
 from transcript.jsonfile import DataFileError
 from transcript.session import SessionKey, SessionPaths
-from transcript.timecode import frames_to_ms, seconds_to_ms
+from transcript.timecode import frames_to_ms
 
 MANIFEST_FORMAT_VERSION = 1
 
@@ -51,12 +51,11 @@ class Segment:
     def duration_ms(self) -> int:
         return self.end_ms - self.start_ms
 
-    def to_absolute_ms(self, local_seconds: float) -> int:
+    def to_absolute_ms(self, local_ms: int) -> int:
         """Convert a time inside this segment to session time in milliseconds."""
-        local_ms = seconds_to_ms(local_seconds)
-        if local_ms > self.duration_ms:
+        if not 0 <= local_ms <= self.duration_ms:
             raise ValueError(
-                f"{local_seconds} s lies beyond segment {self.index} "
+                f"{local_ms} ms lies outside segment {self.index} "
                 f"({self.duration_ms} ms)"
             )
         return self.start_ms + local_ms

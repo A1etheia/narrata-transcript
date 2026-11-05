@@ -4,8 +4,8 @@ A reference transcript holds what an ASR backend recognised in one segment WAV o
 the manifest, normalized so that later steps never need to know the backend. The
 backend's own answer is stored unchanged in a separate raw file next to it.
 
-Times are whole milliseconds local to the segment WAV; `Segment.to_absolute_ms`
-of the manifest turns them into session time. Speaker labels are generic
+Times are whole milliseconds local to the segment WAV; `session_time` turns them
+into session time. Speaker labels are generic
 (`SPEAKER_00`), never names. Everything optional may be `None` or empty.
 
 Error messages name the file, the field and the passage number, never text,
@@ -222,7 +222,7 @@ def from_backend_result(
     return ReferenceTranscript(
         key=manifest.key,
         play_session_id=manifest.play_session_id,
-        segment=_segment_ref(segment),
+        segment=segment_ref(segment),
         status="transcribed",
         asr=_asr_info(
             result.info,
@@ -252,7 +252,7 @@ def failed_reference(
     return ReferenceTranscript(
         key=manifest.key,
         play_session_id=manifest.play_session_id,
-        segment=_segment_ref(segment),
+        segment=segment_ref(segment),
         status="failed",
         error=Failure(category=type(error).__name__, retryable=error.retryable),
         asr=_asr_info(backend.info, backend),
@@ -302,7 +302,8 @@ def _asr_info(info: BackendInfo, backend: Backend, **result: Any) -> AsrInfo:
     )
 
 
-def _segment_ref(segment: Segment) -> SegmentRef:
+def segment_ref(segment: Segment) -> SegmentRef:
+    """How a transcript names its manifest segment."""
     return SegmentRef(
         index=segment.index, file=segment.file, source_sha256=segment.source.sha256
     )
