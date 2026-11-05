@@ -53,6 +53,23 @@ narrata:
   url: null
   # Gruppen-ID je Gruppen-Slug aus dem Session-Schlüssel, etwa beispielgruppe: 12.
   groups: {}
+  # Stufe recent: Einträge aus den letzten n Sitzungen, diese eingeschlossen, 1 bis 20.
+  recent_sessions: 3
+  # Höchstzahl der Glossar-Einträge der Stufe archive, 0 bis 2000.
+  archive_limit: 500
+
+# Wissens-Snapshot (transcript snapshot).
+knowledge:
+  # Höchstzahl der Glossar-Einträge je Typ aus den Stufen session und recent, die
+  # ASR-Keyword-Kandidaten werden. Spielfiguren sind immer dabei und zählen nicht mit.
+  # Ein fehlender Typ behält seinen Default, 0 heißt keiner.
+  keyword_budget:
+    person: 15
+    place: 10
+    organisation: 5
+    artifact: 5
+    event: 3
+    lore: 3
 
 # Schreibt Transkripttext nach work/<gruppe>/<ordinal>/debug.log, nie auf die Konsole.
 debug: false

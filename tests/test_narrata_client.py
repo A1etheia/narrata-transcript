@@ -120,7 +120,13 @@ class FetchContextTest(unittest.TestCase):
         self.narrata = start_fake_narrata(self)
 
     def fetch(self, **kwargs: object) -> bytes:
-        options: dict = {"base_url": self.narrata.url, "timeout": 5, **kwargs}
+        options: dict = {
+            "base_url": self.narrata.url,
+            "timeout": 5,
+            "recent_sessions": 3,
+            "archive_limit": 500,
+            **kwargs,
+        }
         return fetch_context(group_id=12, ordinal=42, token=TOKEN, **options)
 
     def assert_fails(self, expected: str, **kwargs: object) -> str:
@@ -138,9 +144,11 @@ class FetchContextTest(unittest.TestCase):
 
     def test_url_follows_the_contract(self) -> None:
         self.assertEqual(
-            context_url("https://narrata.example/", 12, 42),
+            context_url(
+                "https://narrata.example/", 12, 42, recent_sessions=5, archive_limit=0
+            ),
             "https://narrata.example/api/groups/12/play-sessions/42"
-            "/transcription-context",
+            "/transcription-context?n=5&archive_limit=0",
         )
 
     def test_response_bytes_are_returned_unchanged(self) -> None:
@@ -150,7 +158,11 @@ class FetchContextTest(unittest.TestCase):
             self.assertEqual(self.fetch(), self.narrata.body)
 
         [(path, headers)] = self.narrata.requests
-        self.assertEqual(path, "/api/groups/12/play-sessions/42/transcription-context")
+        self.assertEqual(
+            path,
+            "/api/groups/12/play-sessions/42/transcription-context"
+            "?n=3&archive_limit=500",
+        )
         self.assertEqual(headers["Authorization"], f"Bearer {TOKEN}")
         self.assertEqual(headers["Accept"], "application/json")
 

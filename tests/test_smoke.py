@@ -329,7 +329,8 @@ class ContextCommandTest(unittest.TestCase):
         self.config.write_text(
             f"language: de\npaths:\n  root: {self.root}\nnarrata:\n"
             + ("" if url is None else f"  url: '{url}'\n")
-            + "  groups:\n    beispielgruppe: 12\n",
+            + "  groups:\n    beispielgruppe: 12\n"
+            + "  recent_sessions: 5\n  archive_limit: 40\n",
             encoding="utf-8",
         )
 
@@ -342,7 +343,11 @@ class ContextCommandTest(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assertEqual(self.paths.narrata_context.read_bytes(), self.narrata.body)
         [(path, headers)] = self.narrata.requests
-        self.assertEqual(path, "/api/groups/12/play-sessions/42/transcription-context")
+        self.assertEqual(
+            path,
+            "/api/groups/12/play-sessions/42/transcription-context"
+            "?n=5&archive_limit=40",
+        )
         self.assertEqual(headers["Authorization"], f"Bearer {TOKEN}")
         self.assertIn(
             "beispielgruppe/042: play session 4711, 2026-10-30, contract 1.1", stdout

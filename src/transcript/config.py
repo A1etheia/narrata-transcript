@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 
+from transcript.narrata import ENTRY_TYPES
 from transcript.session import SessionKey, SessionPaths
 
 _LANGUAGE_PATTERN = re.compile(r"[a-z]{2}")
@@ -20,6 +21,7 @@ _TOP_LEVEL_KEYS = {
     "asr",
     "diarization",
     "narrata",
+    "knowledge",
     "debug",
 }
 _PATHS_KEYS = {"root"}
@@ -28,7 +30,22 @@ _AUDIO_KEYS = {"sample_rate", "channels"}
 _AUDIO_CHANNELS = (1, 2)
 _ASR_KEYS = {"model", "device", "compute_type", "beam_size", "retries"}
 _DIARIZATION_KEYS = {"model", "device", "retries"}
-_NARRATA_KEYS = {"url", "groups"}
+_NARRATA_KEYS = {"url", "groups", "recent_sessions", "archive_limit"}
+# Bounds of the transcription-context query parameters, see ios-archiv
+# docs/transcripts.md: `n` (recent_sessions) and `archive_limit`.
+_RECENT_SESSIONS_RANGE = (1, 20)
+_ARCHIVE_LIMIT_RANGE = (0, 2000)
+_KNOWLEDGE_KEYS = {"keyword_budget"}
+# Most glossary entries per type that become ASR keyword candidates; player
+# characters are always candidates and do not count (TOOL-41).
+DEFAULT_KEYWORD_BUDGET: dict[str, int] = {
+    "person": 15,
+    "place": 10,
+    "organisation": 5,
+    "artifact": 5,
+    "event": 3,
+    "lore": 3,
+}
 # The bearer token must not cross a network unencrypted; plain http is only for a
 # Narrata on this machine.
 _LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
@@ -61,6 +78,11 @@ class Config:
     narrata_url: str | None = None  # base URL of the Narrata API host
     # Narrata group id per group slug; the endpoint addresses groups by id
     narrata_groups: dict[str, int] = field(default_factory=dict)
+    narrata_recent_sessions: int = 3  # sessions in the window of the `recent` tier
+    narrata_archive_limit: int = 500  # most entries of the `archive` tier
+    keyword_budget: dict[str, int] = field(
+        default_factory=lambda: dict(DEFAULT_KEYWORD_BUDGET)
+    )
 
     def session_paths(self, key: SessionKey) -> SessionPaths:
         return SessionPaths(key, self.root)
@@ -138,6 +160,25 @@ def load_config(path: Path) -> Config:
             "must be an https URL without query, or http on localhost",
         )
     narrata_groups = _narrata_groups(path, narrata.get("groups"))
+    recent_sessions = _bounded_int(
+        path,
+        narrata,
+        "narrata",
+        "recent_sessions",
+        Config.narrata_recent_sessions,
+        _RECENT_SESSIONS_RANGE,
+    )
+    archive_limit = _bounded_int(
+        path,
+        narrata,
+        "narrata",
+        "archive_limit",
+        Config.narrata_archive_limit,
+        _ARCHIVE_LIMIT_RANGE,
+    )
+
+    knowledge = _section(path, data, "knowledge", _KNOWLEDGE_KEYS)
+    keyword_budget = _keyword_budget(path, knowledge.get("keyword_budget"))
 
     return Config(
         language=language,
@@ -157,6 +198,9 @@ def load_config(path: Path) -> Config:
         diarization_retries=diarization_retries,
         narrata_url=narrata_url,
         narrata_groups=narrata_groups,
+        narrata_recent_sessions=recent_sessions,
+        narrata_archive_limit=archive_limit,
+        keyword_budget=keyword_budget,
     )
 
 
@@ -189,7 +233,10 @@ def format_config(config: Config) -> str:
             "narrata": {
                 "url": config.narrata_url,
                 "groups": dict(config.narrata_groups),
+                "recent_sessions": config.narrata_recent_sessions,
+                "archive_limit": config.narrata_archive_limit,
             },
+            "knowledge": {"keyword_budget": dict(config.keyword_budget)},
             "debug": config.debug,
         },
         sort_keys=False,
@@ -260,16 +307,48 @@ def _positive_number(
 def _retries(
     path: Path, section: dict[str, Any], section_name: str, default: int
 ) -> int:
-    value = section.get("retries")
+    return _bounded_int(
+        path, section, section_name, "retries", default, (0, MAX_RETRIES)
+    )
+
+
+def _bounded_int(
+    path: Path,
+    section: dict[str, Any],
+    section_name: str,
+    key: str,
+    default: int,
+    bounds: tuple[int, int],
+) -> int:
+    value = section.get(key)
     if value is None:
         return default
-    if not _is_number(value, int) or not 0 <= value <= MAX_RETRIES:
+    low, high = bounds
+    if not _is_number(value, int) or not low <= value <= high:
         raise _invalid(
             path,
-            f"{section_name}.retries",
-            f"must be a whole number from 0 to {MAX_RETRIES}",
+            f"{section_name}.{key}",
+            f"must be a whole number from {low} to {high}",
         )
     return value
+
+
+def _keyword_budget(path: Path, value: Any) -> dict[str, int]:
+    """The budget per entry type; a type left out keeps its default."""
+    if value is None:
+        return dict(DEFAULT_KEYWORD_BUDGET)
+    key = "knowledge.keyword_budget"
+    if not isinstance(value, dict):
+        raise _invalid(path, key, "must map entry types to whole numbers")
+    _reject_unknown_keys(path, value, set(ENTRY_TYPES), f"{key}.")
+    budget = dict(DEFAULT_KEYWORD_BUDGET)
+    for entry_type, limit in value.items():
+        if not _is_number(limit, int) or limit < 0:
+            raise _invalid(
+                path, f"{key}.{entry_type}", "must be a whole number from 0 up"
+            )
+        budget[entry_type] = limit
+    return budget
 
 
 def _choice(

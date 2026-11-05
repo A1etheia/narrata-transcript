@@ -248,7 +248,14 @@ def _fetch(key: SessionKey, config: Config, config_path: Path) -> bytes:
             f"{config_path}: narrata.groups has no group id for {key.group}"
         )
     token = read_token(os.environ, _DOTENV)
-    return fetch_context(config.narrata_url, group_id, key.ordinal, token)
+    return fetch_context(
+        config.narrata_url,
+        group_id,
+        key.ordinal,
+        token,
+        recent_sessions=config.narrata_recent_sessions,
+        archive_limit=config.narrata_archive_limit,
+    )
 
 
 def _read_bytes(path: Path) -> bytes:
