@@ -9,12 +9,14 @@ Messages never repeat a runtime message, which may quote hotwords.
 
 import dataclasses
 import gc
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 from transcript.asr.backend import (
     AudioInputError,
     BackendError,
+    BackendIdentity,
     BackendInfo,
     BackendResult,
     BackendRuntimeError,
@@ -72,7 +74,7 @@ class WhisperBackend:
         self._beam_size = beam_size
         self._model: Any = None
         self.info = BackendInfo(backend_id=BACKEND_ID, model=model)
-        self._settings: dict[str, Any] = {}  # filled by load
+        self._settings: Mapping[str, Any] = {}  # filled by load
 
     @classmethod
     def from_config(cls, config: Config) -> "WhisperBackend":
@@ -83,7 +85,30 @@ class WhisperBackend:
             beam_size=config.asr_beam_size,
         )
 
+    def identity(self) -> BackendIdentity:
+        """Revision from the model cache, device and settings; no model is built."""
+        _, _, identity = self._prepare()
+        return identity
+
     def load(self) -> None:
+        faster_whisper, model_path, identity = self._prepare()
+        device = identity.settings["device"]
+        try:
+            model = faster_whisper.WhisperModel(
+                str(model_path),
+                device=device,
+                compute_type=identity.settings["compute_type"],
+            )
+        except Exception as error:
+            raise self._error(error, f"cannot load model on {device}") from error
+
+        self._model = model
+        self.info = identity.info
+        self._settings = identity.settings
+
+    def _prepare(self) -> tuple[Any, Path, BackendIdentity]:
+        """The runtime module, the model directory and the identity, all without
+        building the model."""
         try:
             import ctranslate2
             import faster_whisper
@@ -101,27 +126,21 @@ class WhisperBackend:
             _MODEL_FILES,
             BACKEND_ID,
         )
-        compute_type = self._requested_compute_type or _DEFAULT_COMPUTE_TYPES[device]
-        try:
-            model = faster_whisper.WhisperModel(
-                str(model_path), device=device, compute_type=compute_type
-            )
-        except Exception as error:
-            raise self._error(error, f"cannot load model on {device}") from error
-
-        self._model = model
-        self.info = dataclasses.replace(
-            self.info,
+        info = BackendInfo(
+            backend_id=BACKEND_ID,
+            model=self._model_name,
             model_version=hub_revision(model_path),
             runtime_version=faster_whisper.__version__,
         )
-        self._settings = {
+        settings = {
             "model": self._model_name,
             "device": device,
-            "compute_type": compute_type,
+            "compute_type": self._requested_compute_type
+            or _DEFAULT_COMPUTE_TYPES[device],
             "beam_size": self._beam_size,
             **FIXED_SETTINGS,
         }
+        return faster_whisper, model_path, BackendIdentity(info, settings)
 
     def transcribe(self, request: TranscriptionRequest) -> BackendResult:
         if self._model is None:

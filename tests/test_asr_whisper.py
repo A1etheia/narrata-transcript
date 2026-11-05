@@ -276,6 +276,50 @@ class LoadTest(WhisperTestCase):
             WhisperBackend().load()
 
 
+class IdentityTest(WhisperTestCase):
+    def test_identity_matches_info_and_settings_after_load(self) -> None:
+        for cuda_devices in (1, 0):
+            self.runtime.cuda_devices = cuda_devices
+            with self.subTest(cuda_devices=cuda_devices):
+                backend = WhisperBackend(beam_size=3)
+                before = backend.identity()
+                result = self.run_backend(backend)
+
+                self.assertEqual(before.info, backend.info)
+                self.assertEqual(before.info.model_version, REVISION)
+                self.assertEqual(dict(before.settings), result.settings)
+
+    def test_identity_builds_no_model(self) -> None:
+        identity = WhisperBackend(device="cpu").identity()
+
+        self.assertEqual(self.runtime.models, [])
+        self.assertEqual(identity.settings["device"], "cpu")
+        self.assertEqual(identity.settings["compute_type"], "int8")
+        self.assertEqual(identity.info.runtime_version, "1.2.1")
+
+    def test_identity_reports_missing_prerequisites(self) -> None:
+        def no_runtime() -> None:
+            with mock.patch.dict("sys.modules", {"faster_whisper": None}):
+                WhisperBackend().identity()
+
+        def not_cached() -> None:
+            self.runtime.download_error = FileNotFoundError("cache miss")
+            WhisperBackend().identity()
+
+        def no_gpu() -> None:
+            self.runtime.cuda_devices = 0
+            WhisperBackend(device="cuda").identity()
+
+        for case in (no_runtime, not_cached, no_gpu):
+            self.runtime = FakeRuntime(self.root / case.__name__)
+            with (
+                self.subTest(case=case.__name__),
+                self.runtime.installed(),
+                self.assertRaises(BackendUnavailableError),
+            ):
+                case()
+
+
 class TranscribeTest(WhisperTestCase):
     def test_result_keeps_times_confidence_and_signals(self) -> None:
         result = self.run_backend(WhisperBackend())

@@ -3,6 +3,7 @@ import dataclasses
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 from transcript.asr import (
     AudioInputError,
@@ -14,6 +15,7 @@ from transcript.asr import (
     ResultSegment,
     ResultWord,
     TranscriptionRequest,
+    identity,
     opened,
     transcribe,
 )
@@ -156,6 +158,28 @@ class TranscribeTest(unittest.TestCase):
     def test_transcribe_before_load_fails(self) -> None:
         with self.assertRaises(BackendRuntimeError):
             transcribe(FakeBackend(), self.request())
+
+
+class FailingIdentity(FakeBackend):
+    def identity(self) -> Any:
+        raise ValueError("geheimer Pfad")
+
+
+class IdentityTest(unittest.TestCase):
+    def test_identity_reports_info_and_settings_without_load(self) -> None:
+        backend = FakeBackend(settings={"beam_size": 5})
+
+        found = identity(backend)
+
+        self.assertEqual(found.info, FAKE_INFO)
+        self.assertEqual(found.settings, {"beam_size": 5})
+        self.assertEqual(backend.load_calls, 0)
+
+    def test_foreign_exception_from_identity_loses_its_message(self) -> None:
+        with self.assertRaises(BackendRuntimeError) as caught:
+            identity(FailingIdentity())
+
+        self.assertEqual(str(caught.exception), "fake: ValueError")
 
 
 class ImportBoundaryTest(unittest.TestCase):

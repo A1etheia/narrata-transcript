@@ -1,8 +1,10 @@
 """A backend without a model, for tests of the steps that call a backend."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from typing import Any
 
 from transcript.asr.backend import (
+    BackendIdentity,
     BackendInfo,
     BackendResult,
     BackendRuntimeError,
@@ -21,7 +23,8 @@ class FakeBackend:
 
     Without an answer it returns one fixed segment and, like a real adapter,
     reports the request's keywords as used only when it declares
-    `keyword_biasing`. It records requests and load/close calls.
+    `keyword_biasing`. Its `identity()` and default answer share `info` and
+    `settings`. It records requests and load/close calls.
     """
 
     def __init__(
@@ -31,8 +34,10 @@ class FakeBackend:
         capabilities: Capabilities | None = None,
         error: Exception | None = None,
         info: BackendInfo = FAKE_INFO,
+        settings: Mapping[str, Any] | None = None,
     ) -> None:
         self.info = info
+        self.settings = dict(settings or {})
         self.capabilities = capabilities or Capabilities(segment_timestamps=True)
         self._answer = answer
         self._error = error
@@ -43,6 +48,9 @@ class FakeBackend:
     @property
     def loaded(self) -> bool:
         return self.load_calls > self.close_calls
+
+    def identity(self) -> BackendIdentity:
+        return BackendIdentity(self.info, self.settings)
 
     def load(self) -> None:
         self.load_calls += 1
@@ -59,7 +67,12 @@ class FakeBackend:
             return self._answer
         segment = ResultSegment(text="Fake-Transkript.", start=0.0, end=1.0)
         used = request.keywords if self.capabilities.keyword_biasing else ()
-        return BackendResult(info=self.info, segments=(segment,), keywords_used=used)
+        return BackendResult(
+            info=self.info,
+            segments=(segment,),
+            keywords_used=used,
+            settings=dict(self.settings),
+        )
 
     def close(self) -> None:
         if self.loaded:
