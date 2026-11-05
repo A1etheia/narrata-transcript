@@ -85,6 +85,7 @@ EntryType = Literal["place", "person", "artifact", "organisation", "event", "lor
 ENTRY_TYPES: tuple[EntryType, ...] = get_args(EntryType)
 Relevance = Literal["pc", "session", "recent", "archive"]
 RELEVANCE_TIERS: tuple[Relevance, ...] = get_args(Relevance)  # nearest first
+EntryRef = tuple[EntryType, int | str]  # unique within a glossary
 
 
 @dataclass(frozen=True)
@@ -102,13 +103,17 @@ class GlossaryEntry:
     summary: str | None
     relevance: Relevance
 
+    @property
+    def ref(self) -> EntryRef:
+        return (self.type, self.id)
+
 
 @dataclass(frozen=True)
 class Ambiguity:
     """A misrecognition two or more entries share; Narrata never resolves it."""
 
     variant: str
-    entries: tuple[tuple[EntryType, int | str], ...]
+    entries: tuple[EntryRef, ...]
 
 
 @dataclass(frozen=True)
@@ -348,9 +353,7 @@ def _glossary_entry(entry: Any, where: str, path: Path) -> GlossaryEntry:
     )
 
 
-def _ambiguity(
-    entry: Any, where: str, known: set[tuple[EntryType, int | str]], path: Path
-) -> Ambiguity:
+def _ambiguity(entry: Any, where: str, known: set[EntryRef], path: Path) -> Ambiguity:
     """A variant shared by two or more distinct entries the glossary delivers."""
     entry = _object(entry, where, path)
     variant = entry.get("variant")
@@ -359,7 +362,7 @@ def _ambiguity(
     refs = entry.get("entries")
     if not isinstance(refs, list):
         raise _invalid(path, f"{where}.entries")
-    keys: list[tuple[EntryType, int | str]] = []
+    keys: list[EntryRef] = []
     for index, ref in enumerate(refs):
         ref_where = f"{where}.entries[{index}]"
         ref = _object(ref, ref_where, path)

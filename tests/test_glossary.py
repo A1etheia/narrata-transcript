@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from transcript.glossary import GlossaryIndex, Match, keyword_terms, normalize
-from transcript.narrata import GlossaryEntry, NarrataGlossary, Relevance
+from transcript.narrata import Ambiguity, GlossaryEntry, NarrataGlossary, Relevance
 
 # Every name below is made up.
 
@@ -14,9 +14,10 @@ def entry(
     variants: tuple[str, ...] = (),
     entry_id: int = 1,
     relevance: Relevance = "session",
+    entry_type: str = "place",
 ) -> GlossaryEntry:
     return GlossaryEntry(
-        type="place",
+        type=entry_type,  # type: ignore[arg-type]
         id=entry_id,
         name=name,
         aliases=aliases,
@@ -26,7 +27,9 @@ def entry(
     )
 
 
-def glossary(*entries: GlossaryEntry) -> NarrataGlossary:
+def glossary(
+    *entries: GlossaryEntry, ambiguities: tuple[Ambiguity, ...] = ()
+) -> NarrataGlossary:
     return NarrataGlossary(
         source=Path("ctx.json"),
         contract_version="1.1",
@@ -34,7 +37,7 @@ def glossary(*entries: GlossaryEntry) -> NarrataGlossary:
         entries=entries,
         archive_total=0,
         archive_returned=0,
-        ambiguities=(),
+        ambiguities=ambiguities,
     )
 
 
