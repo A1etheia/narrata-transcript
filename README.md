@@ -60,11 +60,30 @@ Der Befehl holt den Transkriptionskontext einer Sitzung vom Narrata-Endpoint `GE
 
 **Datei statt Netz.** `--from-file` übernimmt eine gespeicherte Antwort desselben Formats, ohne `narrata.url` und ohne Token. Beide Wege laufen durch dieselbe Prüfung.
 
-**Prüfung.** Akzeptiert wird jede `contract_version` `1.x`, das Ordinal muss zum Session-Schlüssel passen. Auch die Teilnehmenden werden geprüft: Jeder Eintrag braucht `user_id`, `display_name`, `role` (`gm` oder `player`) und `is_former`, IDs dürfen sich nicht wiederholen. Spielfiguren (`characters`) und ihre Aliase dürfen fehlen, etwa bei einer Spielleitung ohne Figur. Fehlermeldungen nennen nur Position und Feld (`participants[2].role`), nie einen Namen. Was die Prüfung nicht besteht, wird nicht gespeichert, eine vorhandene Datei bleibt dann unverändert. Auch `manifest` und `transcribe` prüfen die Version und brechen vor der Spracherkennung ab. Fehler enden mit Exit-Code 2 und nennen die Ursache: 401 heißt Token fehlt oder ist abgelaufen, 404 heißt Gruppe oder Sitzung unbekannt oder keine aktive Spielleitung. Umleitungen werden nicht verfolgt, damit der Token nicht an ein anderes Ziel geht. Ein erneuter Abruf ersetzt die Datei.
+**Prüfung.** Akzeptiert wird jede `contract_version` `1.x`, das Ordinal muss zum Session-Schlüssel passen. Auch die Teilnehmenden werden geprüft: Jeder Eintrag braucht `user_id`, `display_name`, `role` (`gm` oder `player`) und `is_former`, IDs dürfen sich nicht wiederholen. Spielfiguren (`characters`) und ihre Aliase dürfen fehlen, etwa bei einer Spielleitung ohne Figur. Fehlermeldungen nennen nur Position und Feld (`participants[2].role`), nie einen Namen. Was die Prüfung nicht besteht, wird nicht gespeichert, eine vorhandene Datei bleibt dann unverändert. Auch `manifest` und `transcribe` prüfen die Version und brechen vor der Spracherkennung ab. Fehler enden mit Exit-Code 2 und nennen die Ursache: 401 heißt Token fehlt oder ist abgelaufen, 404 heißt Gruppe oder Sitzung unbekannt oder keine aktive Spielleitung. Umleitungen werden nicht verfolgt, damit der Token nicht an ein anderes Ziel geht. Ein erneuter Abruf ersetzt die Datei, ein vorhandener [Wissens-Snapshot](#wissens-snapshot) bleibt dabei unverändert. Weicht der neue Kontext von ihm ab, warnt der Befehl.
+
+**Abrufparameter.** Jeder Abruf sendet `n` (`narrata.recent_sessions`, Default 3) und `archive_limit` (`narrata.archive_limit`, Default 500) ausdrücklich mit, das Ergebnis hängt also nicht an Server-Defaults.
 
 **Teilnehmende.** Spätere Schritte (Wissens-Snapshot TOOL-41, Sprecherzuordnung TOOL-68) lesen die Teilnehmenden über `transcript.narrata.read_participants`: Narrata-User-ID, Anzeigename, Rolle, `is_former` und die Spielfiguren mit Archiv-ID, Name und Aliasen, in der Reihenfolge aus Narrata und mit Datei, Contract-Version und `play_session_id` als Herkunft. Ehemalige Mitglieder sind enthalten. Wer an der Sitzung anwesend war, führt Narrata noch nicht (IOA-1271), die Anwesenheit ist deshalb unbekannt (`present = None`). Die Konsole zeigt nur Zähler: Teilnehmende, davon Spielleitung und ehemalig, und Spielfiguren.
 
-**Glossar.** Eigennamen und Begriffe kommen aus dem Welt-Archiv in Narrata, eine eigene Glossardatei gibt es nicht. `transcript.narrata.read_glossary` liest jeden Eintrag mit Typ (`place`, `person`, `artifact`, `organisation`, `event`, `lore`), Archiv-ID, Name, Aliassen, bekannten ASR-Hörfehlern (`asr_variants`), Kurzbeschreibung und Relevanzstufe (`pc`, `session`, `recent`, `archive`), in der Reihenfolge aus Narrata und mit Datei, Contract-Version und `play_session_id` als Herkunft. Dazu kommen die Archiv-Kappung (`glossary_meta`) und die Hörfehler, die mehrere Einträge teilen (`asr_ambiguities`, ab Contract 1.1). Die Prüfung beim Speichern verlangt Typ, ID, Name und Relevanz, eindeutige Paare aus Typ und ID und Mehrdeutigkeiten, die auf mindestens zwei ausgelieferte Einträge zeigen. Ein unbekannter Typ oder eine unbekannte Stufe bricht mit dem Hinweis ab, narrata-transcript zu aktualisieren. `transcript.glossary.GlossaryIndex` findet Einträge über Name, Alias oder Hörfehler, unabhängig von Groß-/Kleinschreibung, Unicode-Normalform und Leerraum. Teilen sich mehrere Einträge einen Begriff, kommen alle zurück, eine Auswahl trifft erst das Review. `transcript.glossary.keyword_terms` liefert Namen und Aliasse als Kandidaten für ASR-Hinweise, ohne Hörfehler und ohne Dubletten. Welche Stufen und wie viele Begriffe ein Lauf nutzt, regeln TOOL-41 und TOOL-44. Die Konsole zeigt Einträge je Stufe, die Archiv-Kappung und die Zahl der Mehrdeutigkeiten, keine Namen.
+**Glossar.** Eigennamen und Begriffe kommen aus dem Welt-Archiv in Narrata, eine eigene Glossardatei gibt es nicht. `transcript.narrata.read_glossary` liest jeden Eintrag mit Typ (`place`, `person`, `artifact`, `organisation`, `event`, `lore`), Archiv-ID, Name, Aliassen, bekannten ASR-Hörfehlern (`asr_variants`), Kurzbeschreibung und Relevanzstufe (`pc`, `session`, `recent`, `archive`), in der Reihenfolge aus Narrata und mit Datei, Contract-Version und `play_session_id` als Herkunft. Dazu kommen die Archiv-Kappung (`glossary_meta`) und die Hörfehler, die mehrere Einträge teilen (`asr_ambiguities`, ab Contract 1.1). Die Prüfung beim Speichern verlangt Typ, ID, Name und Relevanz, eindeutige Paare aus Typ und ID und Mehrdeutigkeiten, die auf mindestens zwei ausgelieferte Einträge zeigen. Ein unbekannter Typ oder eine unbekannte Stufe bricht mit dem Hinweis ab, narrata-transcript zu aktualisieren. `transcript.glossary.GlossaryIndex` findet Einträge über Name, Alias oder Hörfehler, unabhängig von Groß-/Kleinschreibung, Unicode-Normalform und Leerraum. Teilen sich mehrere Einträge einen Begriff, kommen alle zurück, eine Auswahl trifft erst das Review. `transcript.glossary.keyword_terms` liefert Namen und Aliasse als Kandidaten für ASR-Hinweise, ohne Hörfehler und ohne Dubletten. Welche Einträge ein Lauf als Keywords nutzt, legt der [Wissens-Snapshot](#wissens-snapshot) fest, die Kappung auf das Token-Budget des Backends kommt mit TOOL-44. Die Konsole zeigt Einträge je Stufe, die Archiv-Kappung und die Zahl der Mehrdeutigkeiten, keine Namen.
+
+## Wissens-Snapshot
+
+```bash
+transcript snapshot beispielgruppe/042            # bauen oder vorhandenen wiederverwenden
+transcript snapshot beispielgruppe/042 --refresh  # bewusst neu bauen
+```
+
+Der Snapshot friert das Wissen einer Sitzung für alle weiteren Läufe ein: Teilnehmende mit Spielfiguren, das ganze Glossar, die Mehrdeutigkeiten (`asr_ambiguities`) und die Archiv-Kappung (`glossary_meta`). Er liegt unter `work/<gruppe>/<ordinal>/narrata/snapshot.json`, wird aus dem gespeicherten Narrata-Kontext gebaut und ist danach ohne diese Datei und ohne Narrata lesbar. Spätere Schritte lesen über `transcript.knowledge.load_snapshot`, nie die Rohdatei.
+
+**Relevanzregel.** Die Relevanz berechnet Narrata: Jeder Glossar-Eintrag trägt genau eine Stufe, die erste passende von `pc` (Spielfigur eines aktiven Teilnehmenden), `session` (mit der Sitzung oder ihren Abenteuern verknüpft), `recent` (in Tagebüchern der letzten `n` Sitzungen genannt) und `archive` (der Rest, gekappt). Die Regel steht in `ios-archiv` unter `docs/transcripts.md`, „Relevanz“. Der Snapshot übernimmt die Stufe als Relevanzgrund, die Pipeline rechnet sie nicht nach.
+
+**Keywords.** Keyword-Kandidaten für die Spracherkennung sind alle `pc`-Einträge, dann `session`- und `recent`-Einträge in Narratas Reihenfolge, bis `knowledge.keyword_budget` für ihren Typ erreicht ist. `archive`-Einträge werden nie Keyword, bleiben aber für den späteren Abgleich im Snapshot. Jeder Eintrag ist im Snapshot mit `keyword` markiert.
+
+**Kennung und Aktualisierung.** `snapshot_id` ist ein sha256 über den Inhalt ohne Erstellzeitpunkt: Gleiches Wissen mit gleichem Budget ergibt dieselbe Kennung, jede Änderung eine neue. Ohne `--refresh` wird ein vorhandener Snapshot nur wiederverwendet. Hat sich der gespeicherte Kontext oder das Budget seitdem geändert, warnt der Befehl, ändert aber nichts. `--refresh` baut neu und nennt die vorige Kennung, wenn sich das Wissen geändert hat. Ein beschädigter oder von Hand veränderter Snapshot wird abgelehnt, `--refresh` baut ihn neu.
+
+Die Konsole zeigt die kurze Kennung, Erstellzeitpunkt, Contract-Version und Zähler: Einträge je Stufe, Keywords je Typ gegen das Budget, Mehrdeutigkeiten. Namen erscheinen nie. Der Snapshot enthält Klarnamen und bleibt wie alles unter `work/` außerhalb des Repos.
 
 ## Session-Manifest
 
@@ -212,6 +231,9 @@ Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht 
 | `diarization.retries` | nein | `2` | wie `asr.retries` |
 | `narrata.url` | nein | `null` | Basis-URL des Narrata-Hosts für `transcript context`; `https`, `http` nur für `localhost`, ohne Zugangsdaten und Query |
 | `narrata.groups` | nein | `{}` | Gruppen-ID in Narrata je Gruppen-Slug, z. B. `beispielgruppe: 12` |
+| `narrata.recent_sessions` | nein | `3` | Fenster der Stufe `recent`: die letzten `n` Sitzungen, diese eingeschlossen, `1` bis `20` |
+| `narrata.archive_limit` | nein | `500` | Höchstzahl der Glossar-Einträge der Stufe `archive`, `0` bis `2000` |
+| `knowledge.keyword_budget` | nein | person 15, place 10, organisation 5, artifact 5, event 3, lore 3 | Höchstzahl der Keyword-Einträge je Typ aus den Stufen `session` und `recent`; Spielfiguren zählen nicht mit, ein fehlender Typ behält seinen Default, `0` heißt keiner |
 | `debug` | nein | `false` | schreibt Transkripttext nach `work/<gruppe>/<ordinal>/debug.log`, nie auf die Konsole |
 
 Einen eigenen Ausgabepfad gibt es nicht: `output/` liegt immer unter `paths.root`, damit echte Daten im Layout unter [Sessions](#sessions) bleiben. Secrets gehören nicht in diese Datei, sondern in `.env` (Vorlage `.env.example`, heute nur `NARRATA_TOKEN`).
@@ -253,9 +275,8 @@ Beispiel-Session `beispielgruppe/042`:
 input/beispielgruppe/042/      Originalaufnahme, unveränderlich
 work/beispielgruppe/042/
   manifest.json                Gruppe, Ordinal, play_session_id, Sitzungsdatum, Zustimmung, Segmente mit absoluten Zeiten
-  narrata/                     transcription-context.json (Rohantwort von Narrata)
+  narrata/                     transcription-context.json (Rohantwort von Narrata), snapshot.json (Wissens-Snapshot)
   audio/                       segment-NN.wav (Arbeitsformat, eine pro Aufnahme), audio.json (Audio-Metadaten)
-  snapshot/                    Wissens-Snapshot
   asr/                         segment-NN.json (Referenztranskript), segment-NN.raw.json (Backend-Rohantwort)
   diarization/                 segment-NN.json (Sprecher-Turns von pyannote)
   review/                      Review-Kandidaten, CSV

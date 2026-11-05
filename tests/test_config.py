@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from transcript.config import Config, ConfigError, format_config, load_config
+from transcript.narrata import ENTRY_TYPES
 from transcript.session import SessionKey
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -67,6 +68,16 @@ class LoadConfigTest(unittest.TestCase):
             diarization_retries=5,
             narrata_url="https://narrata.example",
             narrata_groups={"beispielgruppe": 12},
+            narrata_recent_sessions=20,
+            narrata_archive_limit=0,
+            keyword_budget={
+                "person": 0,
+                "place": 1,
+                "organisation": 2,
+                "artifact": 3,
+                "event": 4,
+                "lore": 5,
+            },
         )
 
         self.assertEqual(self.load(format_config(config)), config)
@@ -235,6 +246,95 @@ class LoadConfigTest(unittest.TestCase):
                     f"invalid value for {key}",
                 )
 
+    def test_narrata_query_defaults_match_the_server(self) -> None:
+        for text in ("", "narrata:\n  recent_sessions: null\n  archive_limit: null\n"):
+            with self.subTest(text=text):
+                config = self.load(MINIMAL + text)
+
+                self.assertEqual(
+                    (config.narrata_recent_sessions, config.narrata_archive_limit),
+                    (3, 500),
+                )
+
+    def test_narrata_query_values_are_read_within_bounds(self) -> None:
+        for recent, limit in ((1, 0), (20, 2000)):
+            with self.subTest(recent=recent, limit=limit):
+                config = self.load(
+                    MINIMAL
+                    + f"narrata:\n  recent_sessions: {recent}\n"
+                    + f"  archive_limit: {limit}\n"
+                )
+
+                self.assertEqual(
+                    (config.narrata_recent_sessions, config.narrata_archive_limit),
+                    (recent, limit),
+                )
+
+    def test_narrata_query_values_are_validated(self) -> None:
+        for text, key in (
+            ("recent_sessions: 0", "narrata.recent_sessions"),
+            ("recent_sessions: 21", "narrata.recent_sessions"),
+            ("recent_sessions: 2.5", "narrata.recent_sessions"),
+            ("recent_sessions: true", "narrata.recent_sessions"),
+            ("archive_limit: -1", "narrata.archive_limit"),
+            ("archive_limit: 2001", "narrata.archive_limit"),
+            ("archive_limit: '500'", "narrata.archive_limit"),
+        ):
+            with self.subTest(text=text):
+                self.assert_rejected(
+                    MINIMAL + f"narrata:\n  {text}\n",
+                    f"invalid value for {key}",
+                )
+
+    def test_keyword_budget_defaults_cover_every_entry_type(self) -> None:
+        budget = self.load(MINIMAL).keyword_budget
+
+        self.assertEqual(set(budget), set(ENTRY_TYPES))
+        self.assertEqual(
+            budget,
+            {
+                "person": 15,
+                "place": 10,
+                "organisation": 5,
+                "artifact": 5,
+                "event": 3,
+                "lore": 3,
+            },
+        )
+
+    def test_keyword_budget_keeps_defaults_for_types_left_out(self) -> None:
+        config = self.load(
+            MINIMAL + "knowledge:\n  keyword_budget:\n    person: 2\n    lore: 0\n"
+        )
+
+        self.assertEqual(config.keyword_budget["person"], 2)
+        self.assertEqual(config.keyword_budget["lore"], 0)
+        self.assertEqual(config.keyword_budget["place"], 10)
+
+    def test_keyword_budget_is_validated(self) -> None:
+        for text, expected in (
+            ("keyword_budget: 5", "invalid value for knowledge.keyword_budget"),
+            ("keyword_budget: true", "invalid value for knowledge.keyword_budget"),
+            (
+                "keyword_budget:\n    person: -1",
+                "invalid value for knowledge.keyword_budget.person",
+            ),
+            (
+                "keyword_budget:\n    place: 1.5",
+                "invalid value for knowledge.keyword_budget.place",
+            ),
+            (
+                "keyword_budget:\n    event: true",
+                "invalid value for knowledge.keyword_budget.event",
+            ),
+            (
+                "keyword_budget:\n    monster: 3",
+                "unknown key: knowledge.keyword_budget.monster",
+            ),
+        ):
+            with self.subTest(text=text):
+                self.assert_rejected(MINIMAL + f"knowledge:\n  {text}\n", expected)
+
     def test_session_paths_use_the_configured_root(self) -> None:
         paths = self.load(MINIMAL).session_paths(SessionKey("beispielgruppe", 42))
 
@@ -307,6 +407,7 @@ class LoadConfigTest(unittest.TestCase):
                 MINIMAL + "diarization:\n  num_speakers: 4\n",
                 "diarization.num_speakers",
             ),
+            (MINIMAL + "knowledge:\n  tiers: [pc]\n", "knowledge.tiers"),
         ):
             with self.subTest(key=key):
                 self.assert_rejected(text, f"unknown key: {key}")

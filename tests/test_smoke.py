@@ -28,13 +28,14 @@ from test_transcription import MANIFEST_3, FailingLoad, session_backend
 
 import transcript
 from transcript import __main__ as transcript_main
-from transcript import audio_tools, jsonfile, retry
+from transcript import audio_tools, jsonfile, knowledge, retry
 from transcript import manifest as manifest_module
 from transcript.__main__ import main
 from transcript.asr import AudioInputError, BackendUnavailableError, ResourceError
 from transcript.asr.fake import FakeBackend
 from transcript.audio_tools import AudioToolError, AudioTools, ToolInfo
-from transcript.reference import Passage, Word, update_reference
+from transcript.config import DEFAULT_KEYWORD_BUDGET
+from transcript.reference import Passage, Word, load_reference, update_reference
 from transcript.session import SessionKey, SessionPaths
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -329,7 +330,8 @@ class ContextCommandTest(unittest.TestCase):
         self.config.write_text(
             f"language: de\npaths:\n  root: {self.root}\nnarrata:\n"
             + ("" if url is None else f"  url: '{url}'\n")
-            + "  groups:\n    beispielgruppe: 12\n",
+            + "  groups:\n    beispielgruppe: 12\n"
+            + "  recent_sessions: 5\n  archive_limit: 40\n",
             encoding="utf-8",
         )
 
@@ -342,7 +344,11 @@ class ContextCommandTest(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assertEqual(self.paths.narrata_context.read_bytes(), self.narrata.body)
         [(path, headers)] = self.narrata.requests
-        self.assertEqual(path, "/api/groups/12/play-sessions/42/transcription-context")
+        self.assertEqual(
+            path,
+            "/api/groups/12/play-sessions/42/transcription-context"
+            "?n=5&archive_limit=40",
+        )
         self.assertEqual(headers["Authorization"], f"Bearer {TOKEN}")
         self.assertIn(
             "beispielgruppe/042: play session 4711, 2026-10-30, contract 1.1", stdout
@@ -487,6 +493,178 @@ class ContextCommandTest(unittest.TestCase):
         self.assertEqual(self.narrata.requests, [])
 
 
+class SnapshotCommandTest(unittest.TestCase):
+    """Uses the same made-up names as test_narrata; none may reach the console."""
+
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.config = self.root / "config.yaml"
+        self.write_config(person_budget=2)
+        self.paths = SessionPaths(KEY, self.root)
+        self.saved = self.root / "saved.json"
+        self.save_context(archive_total=3)
+        self.assertEqual(
+            self.run_command("context", "--from-file", str(self.saved))[0], 0
+        )
+
+    def write_config(self, person_budget: int) -> None:
+        self.config.write_text(
+            f"language: de\npaths:\n  root: {self.root}\n"
+            f"knowledge:\n  keyword_budget:\n    person: {person_budget}\n",
+            encoding="utf-8",
+        )
+
+    def save_context(self, archive_total: int) -> None:
+        data = context(
+            participants=[
+                participant(
+                    characters=[{"person_id": 7, "name": CHARACTER, "aliases": []}]
+                )
+            ]
+        )
+        data["glossary"] = [
+            glossary_entry(type="person", id=7, name=CHARACTER, relevance="pc"),
+            glossary_entry(id=5, relevance="session"),
+            glossary_entry(id=6, name="Nebelau", relevance="archive"),
+        ]
+        data["glossary_meta"] = {
+            "archive_total": archive_total,
+            "archive_returned": 1,
+        }
+        self.saved.write_bytes(encoded(data))
+
+    def run_command(self, command: str, *extra: str) -> tuple[int, str, str]:
+        return run(command, str(KEY), "--config", str(self.config), *extra)
+
+    def snapshot(self, *extra: str) -> tuple[int, str, str]:
+        code, stdout, stderr = self.run_command("snapshot", *extra)
+        self.assert_no_names(stdout + stderr)
+        return code, stdout, stderr
+
+    def assert_no_names(self, text: str) -> None:
+        for name in (NAME, CHARACTER, PLACE, ALIAS, VARIANT, SUMMARY, "Nebelau"):
+            self.assertNotIn(name, text)
+
+    def short_id(self) -> str:
+        return jsonfile.read_object(self.paths.knowledge_snapshot, "snapshot")[
+            "snapshot_id"
+        ][:12]
+
+    def test_first_run_builds_and_the_next_reuses(self) -> None:
+        code, stdout, stderr = self.snapshot()
+
+        self.assertEqual(code, 0, stderr)
+        first = self.short_id()
+        self.assertIn(f"beispielgruppe/042: snapshot {first} built, created ", stdout)
+        self.assertIn(
+            "  1 participant(s), 3 glossary entries "
+            "(1 pc, 1 session, 0 recent, 1 archive), 0 asr ambiguities",
+            stdout,
+        )
+        self.assertIn(
+            "  2 keyword entries: 1 pc, 1/10 place, 0/2 person, 0/5 artifact, "
+            "0/5 organisation, 0/3 event, 0/3 lore\n",
+            stdout,
+        )
+        self.assertIn(f"wrote {self.paths.knowledge_snapshot}", stdout)
+        self.assertEqual(stderr, "")
+
+        code, stdout, stderr = self.snapshot()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(f"snapshot {first} reused", stdout)
+        self.assertNotIn("wrote", stdout)
+        self.assertEqual(self.short_id(), first)
+
+    def test_new_context_is_flagged_but_used_only_after_refresh(self) -> None:
+        self.snapshot()
+        first = self.short_id()
+        self.save_context(archive_total=4)
+
+        code, _, stderr = self.run_command("context", "--from-file", str(self.saved))
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("knowledge snapshot predates the stored Narrata context", stderr)
+        self.assert_no_names(stderr)
+        code, stdout, stderr = self.snapshot()
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(f"snapshot {first} reused", stdout)
+        self.assertIn("knowledge snapshot predates the stored Narrata context", stderr)
+
+        code, stdout, stderr = self.snapshot("--refresh")
+
+        self.assertEqual(code, 0, stderr)
+        self.assertNotEqual(self.short_id(), first)
+        self.assertIn(f"refreshed, was {first}", stdout)
+        self.assertEqual(stderr, "")
+
+    def test_refresh_of_unchanged_knowledge_keeps_the_id(self) -> None:
+        self.snapshot()
+        first = self.short_id()
+
+        code, stdout, stderr = self.snapshot("--refresh")
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(f"snapshot {first} refreshed, knowledge unchanged", stdout)
+
+    def test_changed_budget_is_flagged(self) -> None:
+        self.snapshot()
+        self.write_config(person_budget=5)
+
+        code, stdout, stderr = self.snapshot()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("0/2 person", stdout)  # the snapshot's budget, not the new one
+        self.assertIn("knowledge.keyword_budget changed since this snapshot", stderr)
+
+    def test_missing_context_points_to_the_context_command(self) -> None:
+        self.paths.narrata_context.unlink()
+
+        code, _, stderr = self.snapshot()
+
+        self.assertEqual(code, 2)
+        self.assertIn("run transcript context first", stderr)
+        self.assertFalse(self.paths.knowledge_snapshot.exists())
+
+    def test_context_still_succeeds_with_a_damaged_snapshot(self) -> None:
+        self.snapshot()
+        self.paths.knowledge_snapshot.write_text("{", encoding="utf-8")
+
+        code, stdout, stderr = self.run_command(
+            "context", "--from-file", str(self.saved)
+        )
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(f"wrote {self.paths.narrata_context}", stdout)
+        self.assertIn("warning: ", stderr)
+        self.assertIn("knowledge snapshot is unreadable", stderr)
+
+    def test_refresh_without_context_keeps_the_snapshot(self) -> None:
+        self.snapshot()
+        before = self.paths.knowledge_snapshot.read_bytes()
+        self.paths.narrata_context.unlink()
+
+        code, _, stderr = self.snapshot("--refresh")
+
+        self.assertEqual(code, 2)
+        self.assertIn("run transcript context first", stderr)
+        self.assertEqual(self.paths.knowledge_snapshot.read_bytes(), before)
+        self.assertEqual(self.snapshot()[0], 0)  # still readable without the context
+
+    def test_damaged_snapshot_suggests_refresh(self) -> None:
+        self.snapshot()
+        self.paths.knowledge_snapshot.write_text("{", encoding="utf-8")
+
+        code, _, stderr = self.snapshot()
+
+        self.assertEqual(code, 2)
+        self.assertIn("knowledge snapshot is unreadable", stderr)
+        self.assertIn("hint: transcript snapshot --refresh builds it anew", stderr)
+        self.assertEqual(self.snapshot("--refresh")[0], 0)
+
+
 class TranscribeCommandTest(unittest.TestCase):
     def setUp(self) -> None:
         directory = tempfile.TemporaryDirectory()
@@ -594,6 +772,36 @@ class TranscribeCommandTest(unittest.TestCase):
 
         _, stdout, _ = self.transcribe("--no-diarize", "--force")
         self.assertIn("3 transcribed, 0 reused", stdout)
+
+    def test_stored_snapshot_id_is_recorded_and_a_new_one_transcribes_again(
+        self,
+    ) -> None:
+        self.transcribe("--no-diarize")
+        self.paths.narrata_context.parent.mkdir(parents=True, exist_ok=True)
+        self.paths.narrata_context.write_bytes(encoded(context()))
+        snapshot = knowledge.build_snapshot(self.paths, DEFAULT_KEYWORD_BUDGET)
+        self.backend = session_backend()
+
+        code, stdout, stderr = self.transcribe("--no-diarize")
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("3 transcribed, 0 reused", stdout)
+        self.assertEqual(
+            load_reference(self.paths, 1).asr.knowledge_snapshot_id,
+            snapshot.snapshot_id,
+        )
+        _, stdout, _ = self.transcribe("--no-diarize")
+        self.assertIn("0 transcribed, 3 reused", stdout)
+
+    def test_unreadable_snapshot_stops_before_the_asr(self) -> None:
+        self.paths.knowledge_snapshot.parent.mkdir(parents=True, exist_ok=True)
+        self.paths.knowledge_snapshot.write_text("{", encoding="utf-8")
+
+        code, _, stderr = self.transcribe("--no-diarize")
+
+        self.assertEqual(code, 2)
+        self.assertIn("knowledge snapshot is unreadable", stderr)
+        self.assertEqual(self.backend.load_calls, 0)
 
     def test_segment_option_selects_one_segment(self) -> None:
         code, stdout, _ = self.transcribe("--no-diarize", "--segment", "2")

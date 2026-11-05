@@ -6,6 +6,7 @@ configuration file, and no message, log record or exception names its value.
 
 import http.client
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Mapping
 from pathlib import Path
@@ -66,20 +67,48 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 _OPENER = urllib.request.build_opener(_NoRedirect)
 
 
-def context_url(base_url: str, group_id: int, ordinal: int) -> str:
-    """The transcription-context endpoint of one play session (IOA-1215)."""
+def context_url(
+    base_url: str,
+    group_id: int,
+    ordinal: int,
+    *,
+    recent_sessions: int,
+    archive_limit: int,
+) -> str:
+    """The transcription-context endpoint of one play session (IOA-1215).
+
+    Both query parameters are always sent, so the result never depends on a
+    server default: `n` is the window of the `recent` tier, `archive_limit`
+    caps the `archive` tier.
+    """
+    query = urllib.parse.urlencode(
+        {"n": recent_sessions, "archive_limit": archive_limit}
+    )
     return (
         f"{base_url.rstrip('/')}/api/groups/{group_id}"
-        f"/play-sessions/{ordinal}/transcription-context"
+        f"/play-sessions/{ordinal}/transcription-context?{query}"
     )
 
 
 def fetch_context(
-    base_url: str, group_id: int, ordinal: int, token: str, timeout: float = TIMEOUT_S
+    base_url: str,
+    group_id: int,
+    ordinal: int,
+    token: str,
+    *,
+    recent_sessions: int,
+    archive_limit: int,
+    timeout: float = TIMEOUT_S,
 ) -> bytes:
     """The raw transcription-context response; `store_context` checks it."""
     request = urllib.request.Request(
-        context_url(base_url, group_id, ordinal),
+        context_url(
+            base_url,
+            group_id,
+            ordinal,
+            recent_sessions=recent_sessions,
+            archive_limit=archive_limit,
+        ),
         headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
     )
     try:

@@ -1,5 +1,5 @@
-"""Command-line entry point: `config`, `doctor`, `extract`, `context`, `manifest`,
-`transcribe`, `diarize`."""
+"""Command-line entry point: `config`, `doctor`, `extract`, `context`, `snapshot`,
+`manifest`, `transcribe`, `diarize`."""
 
 import argparse
 import collections
@@ -10,7 +10,15 @@ import sys
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-from transcript import __version__, audio, audio_tools, diarization, manifest, narrata
+from transcript import (
+    __version__,
+    audio,
+    audio_tools,
+    diarization,
+    knowledge,
+    manifest,
+    narrata,
+)
 from transcript.asr import BackendError
 from transcript.asr.whisper import WhisperBackend
 from transcript.config import Config, ConfigError, format_config, load_config
@@ -29,6 +37,11 @@ from transcript.transcription import (
 _DEFAULT_CONFIG = Path("config/config.yaml")
 _EXAMPLE_CONFIG = Path("config/example.yaml")
 _DOTENV = Path(".env")
+_SHORT_ID = 12  # characters of a snapshot id; enough within one session
+_SNAPSHOT_BEHIND = (
+    "warning: the knowledge snapshot predates the stored Narrata context; "
+    "transcript snapshot --refresh uses it"
+)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -66,6 +79,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=Path,
         metavar="PATH",
         help="take a saved transcription-context response instead of asking Narrata",
+    )
+    snapshot_command = commands.add_parser(
+        "snapshot",
+        help="Freeze a session's Narrata context as its knowledge snapshot.",
+    )
+    snapshot_command.add_argument("session", help="session key <group>/<ordinal>")
+    snapshot_command.add_argument(
+        "--refresh",
+        action="store_true",
+        help="build the snapshot again from the stored context and budget",
     )
     manifest_command = commands.add_parser(
         "manifest", help="Write the session manifest from audio and Narrata context."
@@ -119,6 +142,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         config_command,
         extract_command,
         context_command,
+        snapshot_command,
         manifest_command,
         transcribe_command,
         diarize_command,
@@ -140,6 +164,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _extract(args.session, args.config, args.stream)
         if args.command == "context":
             return _context(args.session, args.config, args.from_file)
+        if args.command == "snapshot":
+            return _snapshot(args.session, args.config, args.refresh)
         if args.command == "manifest":
             return _manifest(args.session, args.config, args.consent)
         if args.command == "transcribe":
@@ -217,7 +243,6 @@ def _context(raw_key: str, config_path: Path, from_file: Path | None) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 2
 
-    tiers = collections.Counter(entry.relevance for entry in glossary.entries)
     print(
         f"{key}: play session {session.play_session_id}, "
         f"{session.session_date.isoformat()}, "
@@ -230,13 +255,112 @@ def _context(raw_key: str, config_path: Path, from_file: Path | None) -> int:
         f"{sum(len(p.characters) for p in participants)} character(s)"
     )
     print(
-        f"  {len(glossary.entries)} glossary entries ("
-        + ", ".join(f"{tiers[tier]} {tier}" for tier in narrata.RELEVANCE_TIERS)
-        + f"), archive tier {glossary.archive_returned} of {glossary.archive_total}, "
+        f"  {_tier_summary(glossary)}, "
+        f"archive tier {glossary.archive_returned} of {glossary.archive_total}, "
         f"{len(glossary.ambiguities)} asr ambiguities"
     )
     print(f"wrote {paths.narrata_context}")
+    _warn_if_snapshot_differs(paths, config)
     return 0
+
+
+def _warn_if_snapshot_differs(paths: SessionPaths, config: Config) -> None:
+    """A stored snapshot stays as it is; say so when the new context differs."""
+    if not paths.knowledge_snapshot.is_file():
+        return
+    try:
+        snapshot = knowledge.load_snapshot(paths)
+        changed = knowledge.drift(snapshot, paths, config.keyword_budget)
+    except DataFileError as error:
+        print(f"warning: {error}", file=sys.stderr)
+        return
+    if changed.context_changed:
+        print(_SNAPSHOT_BEHIND, file=sys.stderr)
+
+
+def _tier_summary(glossary: narrata.NarrataGlossary) -> str:
+    tiers = collections.Counter(entry.relevance for entry in glossary.entries)
+    return (
+        f"{len(glossary.entries)} glossary entries ("
+        + ", ".join(f"{tiers[tier]} {tier}" for tier in narrata.RELEVANCE_TIERS)
+        + ")"
+    )
+
+
+def _snapshot(raw_key: str, config_path: Path, refresh: bool) -> int:
+    """Only counts and the short id reach the console, never names (TOOL-66)."""
+    try:
+        key = SessionKey.parse(raw_key)
+        config = _load_config(config_path)
+        paths = config.session_paths(key)
+        exists = paths.knowledge_snapshot.is_file()
+        if exists and not refresh:
+            snapshot = knowledge.load_snapshot(paths)
+            how = "reused"
+        else:
+            previous = _previous_id(paths) if exists else None
+            snapshot = knowledge.build_snapshot(paths, config.keyword_budget)
+            how = _built(previous, snapshot.snapshot_id, exists)
+        changed = knowledge.drift(snapshot, paths, config.keyword_budget)
+    except knowledge.SnapshotError as error:
+        print(f"error: {error}", file=sys.stderr)
+        if exists and not refresh:
+            print("hint: transcript snapshot --refresh builds it anew", file=sys.stderr)
+        return 2
+    except (ValueError, ConfigError, DataFileError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+
+    glossary = snapshot.glossary
+    pc = sum(entry.relevance == "pc" for entry in snapshot.keyword_entries)
+    budgeted = collections.Counter(
+        entry.type for entry in snapshot.keyword_entries if entry.relevance != "pc"
+    )
+    print(
+        f"{key}: snapshot {snapshot.snapshot_id[:_SHORT_ID]} {how}, "
+        f"created {snapshot.created_at}, contract {snapshot.source.contract_version}"
+    )
+    print(
+        f"  {len(snapshot.participants)} participant(s), {_tier_summary(glossary)}, "
+        f"{len(glossary.ambiguities)} asr ambiguities"
+    )
+    print(
+        f"  {len(snapshot.keyword_entries)} keyword entries: {pc} pc, "
+        + ", ".join(
+            f"{budgeted[t]}/{snapshot.keyword_budget.get(t, 0)} {t}"
+            for t in narrata.ENTRY_TYPES
+        )
+    )
+    if how != "reused":
+        print(f"wrote {paths.knowledge_snapshot}")
+    if changed.context_changed:
+        print(_SNAPSHOT_BEHIND, file=sys.stderr)
+    if changed.budget_changed:
+        print(
+            "warning: knowledge.keyword_budget changed since this snapshot; "
+            "transcript snapshot --refresh uses it",
+            file=sys.stderr,
+        )
+    return 0
+
+
+def _previous_id(paths: SessionPaths) -> str | None:
+    """The id of the snapshot about to be replaced; an unreadable one has none."""
+    try:
+        return knowledge.load_snapshot(paths).snapshot_id
+    except DataFileError:
+        return None
+
+
+def _built(previous: str | None, current: str, existed: bool) -> str:
+    """How a build relates to the snapshot it replaced, for the console."""
+    if not existed:
+        return "built"
+    if previous == current:
+        return "refreshed, knowledge unchanged"
+    if previous is None:
+        return "refreshed"
+    return f"refreshed, was {previous[:_SHORT_ID]}"
 
 
 def _fetch(key: SessionKey, config: Config, config_path: Path) -> bytes:
@@ -248,7 +372,14 @@ def _fetch(key: SessionKey, config: Config, config_path: Path) -> bytes:
             f"{config_path}: narrata.groups has no group id for {key.group}"
         )
     token = read_token(os.environ, _DOTENV)
-    return fetch_context(config.narrata_url, group_id, key.ordinal, token)
+    return fetch_context(
+        config.narrata_url,
+        group_id,
+        key.ordinal,
+        token,
+        recent_sessions=config.narrata_recent_sessions,
+        archive_limit=config.narrata_archive_limit,
+    )
 
 
 def _read_bytes(path: Path) -> bytes:
@@ -321,6 +452,7 @@ def _transcribe(
             indices=None if index is None else {index},
             progress=_print_outcome,
             retries=config.asr_retries,
+            knowledge_snapshot_id=_snapshot_id(paths),
         )
     except (
         ValueError,
@@ -360,6 +492,13 @@ def _transcribe(
         return 2
     _print_diarization(summaries, paths)
     return 0 if run.complete and not _any_failed(summaries) else 1
+
+
+def _snapshot_id(paths: SessionPaths) -> str | None:
+    """The id of the stored snapshot; `transcribe` never builds one itself."""
+    if not paths.knowledge_snapshot.is_file():
+        return None
+    return knowledge.load_snapshot(paths).snapshot_id
 
 
 def _print_outcome(outcome: SegmentOutcome) -> None:

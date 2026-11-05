@@ -4,6 +4,11 @@ The raw endpoint response lies at `SessionPaths.narrata_context`. `store_context
 is its only writer, whether the bytes come from the endpoint or from a local file.
 This module reads the `session`, `participants` and `glossary` blocks. Participants
 and glossary carry real names, so no message names a field's value.
+
+`parse_participants` and `parse_glossary` check one block of an already parsed
+object and name the given file in messages; the knowledge snapshot (TOOL-41) stores
+both blocks in the same shape and reads them through these functions.
+`parse_session` belongs to the context file alone.
 """
 
 import datetime
@@ -17,7 +22,6 @@ from transcript.jsonfile import (
     DataFileError,
     field,
     parse_object,
-    read_object,
     write_bytes_atomic,
 )
 from transcript.session import SessionPaths
@@ -151,48 +155,58 @@ def store_context(paths: SessionPaths, raw: bytes) -> NarrataSession:
     """
     path = paths.narrata_context
     data = parse_object(raw, path, _WHAT, NarrataContextError)
-    session = _session(data, paths)
-    _participants(data, path)
-    _glossary(data, path, session.play_session_id)
+    session = parse_session(data, paths)
+    parse_participants(data, path)
+    parse_glossary(data, path, session.play_session_id)
     write_bytes_atomic(path, raw)
     return session
 
 
 def read_session(paths: SessionPaths) -> NarrataSession:
     """Read the `session` block and check its ordinal against the session key."""
-    return _session(_read(paths), paths)
+    return parse_session(_read(paths), paths)
 
 
 def read_participants(paths: SessionPaths) -> NarrataParticipants:
     """Read the `participants` block together with the session it belongs to."""
     data = _read(paths)
-    session = _session(data, paths)
+    session = parse_session(data, paths)
     return NarrataParticipants(
         source=paths.narrata_context,
         contract_version=data["contract_version"],
         play_session_id=session.play_session_id,
-        participants=_participants(data, paths.narrata_context),
+        participants=parse_participants(data, paths.narrata_context),
     )
 
 
 def read_glossary(paths: SessionPaths) -> NarrataGlossary:
     """Read `glossary`, `glossary_meta` and `asr_ambiguities` with their session."""
     data = _read(paths)
-    session = _session(data, paths)
-    return _glossary(data, paths.narrata_context, session.play_session_id)
+    session = parse_session(data, paths)
+    return parse_glossary(data, paths.narrata_context, session.play_session_id)
 
 
-def _read(paths: SessionPaths) -> dict[str, Any]:
+def read_raw(paths: SessionPaths) -> tuple[bytes, dict[str, Any]]:
+    """The stored context as bytes and as parsed object, from one read."""
     path = paths.narrata_context
     if not path.is_file():
         raise NarrataContextError(
             f"{path}: Narrata transcription context not found; "
             "run transcript context first"
         )
-    return read_object(path, _WHAT, NarrataContextError)
+    try:
+        raw = path.read_bytes()
+    except OSError as cause:
+        raise NarrataContextError(f"{path}: {_WHAT} is unreadable ({cause})") from None
+    return raw, parse_object(raw, path, _WHAT, NarrataContextError)
 
 
-def _session(data: dict[str, Any], paths: SessionPaths) -> NarrataSession:
+def _read(paths: SessionPaths) -> dict[str, Any]:
+    return read_raw(paths)[1]
+
+
+def parse_session(data: dict[str, Any], paths: SessionPaths) -> NarrataSession:
+    """Check `contract_version` and `session`, whose ordinal must match the key."""
     path = paths.narrata_context
     check_contract(data, path)
     session = field(data, "session", dict, path, NarrataContextError)
@@ -214,7 +228,7 @@ def _session(data: dict[str, Any], paths: SessionPaths) -> NarrataSession:
     return NarrataSession(play_session_id, paths.key.ordinal, session_date)
 
 
-def _participants(data: dict[str, Any], path: Path) -> tuple[Participant, ...]:
+def parse_participants(data: dict[str, Any], path: Path) -> tuple[Participant, ...]:
     """Check `participants` against the contract; `characters`, `aliases` may be absent."""
     entries = field(data, "participants", list, path, NarrataContextError)
     participants = tuple(
@@ -274,7 +288,7 @@ def _character(entry: Any, where: str, path: Path) -> Character:
     return Character(person_id, name, _strings(entry, "aliases", where, path))
 
 
-def _glossary(
+def parse_glossary(
     data: dict[str, Any], path: Path, play_session_id: int | str
 ) -> NarrataGlossary:
     """Check the glossary blocks; `asr_ambiguities` is absent before contract 1.1."""
@@ -289,9 +303,9 @@ def _glossary(
     meta = field(data, "glossary_meta", dict, path, NarrataContextError)
     total = meta.get("archive_total")
     returned = meta.get("archive_returned")
-    if not _is_count(total):
+    if not is_count(total):
         raise _invalid(path, "glossary_meta.archive_total")
-    if not _is_count(returned) or returned > total:
+    if not is_count(returned) or returned > total:
         raise _invalid(path, "glossary_meta.archive_returned")
     known = {(e.type, e.id) for e in entries}
     raw_ambiguities = _optional_list(data, "asr_ambiguities", "asr_ambiguities", path)
@@ -403,7 +417,8 @@ def _strings(
     return tuple(values)
 
 
-def _is_count(value: Any) -> bool:
+def is_count(value: Any) -> bool:
+    """A whole number from 0 up; booleans are none."""
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 

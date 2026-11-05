@@ -284,6 +284,32 @@ class TranscribeSessionTest(unittest.TestCase):
                 self.assertEqual(self.statuses(run), ["transcribed"] * 3)
                 self.assertEqual(backend.load_calls, 1)
 
+    def test_same_snapshot_reuses_and_another_one_transcribes_again(self) -> None:
+        self.run_session(session_backend(), knowledge_snapshot_id="a" * 64)
+
+        same = self.run_session(session_backend(), knowledge_snapshot_id="a" * 64)
+        other = self.run_session(session_backend(), knowledge_snapshot_id="b" * 64)
+
+        self.assertEqual(self.statuses(same), ["reused"] * 3)
+        self.assertEqual(self.statuses(other), ["transcribed"] * 3)
+        self.assertEqual(
+            load_reference(self.paths, 1).asr.knowledge_snapshot_id, "b" * 64
+        )
+
+    def test_a_first_snapshot_transcribes_again(self) -> None:
+        self.run_session(session_backend())
+
+        run = self.run_session(session_backend(), knowledge_snapshot_id="a" * 64)
+
+        self.assertEqual(self.statuses(run), ["transcribed"] * 3)
+
+    def test_a_failed_segment_records_the_snapshot_id(self) -> None:
+        self.run_session(session_backend(fail_on=2), knowledge_snapshot_id="a" * 64)
+
+        reference = load_reference(self.paths, 2)
+        self.assertEqual(reference.status, "failed")
+        self.assertEqual(reference.asr.knowledge_snapshot_id, "a" * 64)
+
     def test_no_configured_language_accepts_any_detected_one(self) -> None:
         self.run_session(session_backend(language="en"))
 

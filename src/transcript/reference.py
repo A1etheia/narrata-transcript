@@ -34,7 +34,8 @@ from transcript.manifest import Manifest, Segment
 from transcript.session import SessionKey, SessionPaths, reference_raw_name
 from transcript.timecode import seconds_to_ms
 
-REFERENCE_FORMAT_VERSION = 1
+REFERENCE_FORMAT_VERSION = 2
+READABLE_FORMAT_VERSIONS = (1, REFERENCE_FORMAT_VERSION)  # 1 has no snapshot id
 STATUSES = ("transcribed", "failed")
 
 
@@ -96,6 +97,7 @@ class AsrInfo:
     language: str | None = None
     language_probability: float | None = None
     keywords_used: tuple[str, ...] = ()
+    knowledge_snapshot_id: str | None = None  # the knowledge the run was given
 
     @property
     def info(self) -> BackendInfo:
@@ -213,6 +215,7 @@ def from_backend_result(
     segment: Segment,
     elapsed_ms: int | None = None,
     now: datetime.datetime | None = None,
+    knowledge_snapshot_id: str | None = None,
 ) -> ReferenceTranscript:
     """Normalize a backend's answer for `segment`; `raw` stays out, see write_reference.
 
@@ -231,6 +234,7 @@ def from_backend_result(
             language=result.language,
             language_probability=result.language_probability,
             keywords_used=tuple(result.keywords_used),
+            knowledge_snapshot_id=knowledge_snapshot_id,
         ),
         processing=_processing(elapsed_ms, now),
         passages=tuple(
@@ -247,6 +251,7 @@ def failed_reference(
     segment: Segment,
     elapsed_ms: int | None = None,
     now: datetime.datetime | None = None,
+    knowledge_snapshot_id: str | None = None,
 ) -> ReferenceTranscript:
     """Record that `segment` failed; only the error class is kept, not its message."""
     return ReferenceTranscript(
@@ -255,7 +260,9 @@ def failed_reference(
         segment=segment_ref(segment),
         status="failed",
         error=Failure(category=type(error).__name__, retryable=error.retryable),
-        asr=_asr_info(backend.info, backend),
+        asr=_asr_info(
+            backend.info, backend, knowledge_snapshot_id=knowledge_snapshot_id
+        ),
         processing=_processing(elapsed_ms, now),
     )
 
@@ -348,7 +355,7 @@ def load_reference(paths: SessionPaths, index: int) -> ReferenceTranscript:
     """Read the reference transcript of segment `index` and check where it belongs."""
     path = paths.reference(index)
     data = _read_json(path, "reference transcript")
-    if data.get("format_version") != REFERENCE_FORMAT_VERSION:
+    if data.get("format_version") not in READABLE_FORMAT_VERSIONS:
         raise ReferenceError(
             f"{path}: unsupported format_version; transcribe the segment again"
         )
@@ -395,6 +402,7 @@ def to_json(reference: ReferenceTranscript) -> dict[str, Any]:
             "language": asr.language,
             "language_probability": asr.language_probability,
             "keywords_used": list(asr.keywords_used),
+            "knowledge_snapshot_id": asr.knowledge_snapshot_id,
         },
         "processing": {
             "pipeline_version": reference.processing.pipeline_version,
@@ -485,6 +493,9 @@ def from_json(data: dict[str, Any], path: Path) -> ReferenceTranscript:
                 language=_optional(asr, "language", str, path),
                 language_probability=_number(asr, "language_probability", path),
                 keywords_used=_strings(asr, "keywords_used", path),
+                knowledge_snapshot_id=_optional(
+                    asr, "knowledge_snapshot_id", str, path
+                ),
             ),
             processing=Processing(
                 pipeline_version=_field(processing, "pipeline_version", str, path),

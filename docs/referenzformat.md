@@ -8,7 +8,7 @@ Pro Segment gibt es zwei Dateien unter `work/<gruppe>/<ordinal>/asr/`:
 
 | Datei | Inhalt |
 | --- | --- |
-| `segment-NN.json` | Normalform, `format_version: 1` |
+| `segment-NN.json` | Normalform, `format_version: 2` |
 | `segment-NN.raw.json` | `{"backend_id": …, "raw": …}`: die Antwort des Backends, unverändert |
 
 `NN` ist der Segmentindex aus dem Manifest, wie bei `audio/segment-NN.wav`. Geschrieben wird zuerst die Rohform, dann die Normalform, beide atomar. Erst die Normalform markiert ein Segment als fertig. Bricht ein Lauf dazwischen ab, liegt höchstens eine Rohdatei ohne Normalform da, und das Segment gilt als nicht transkribiert.
@@ -23,13 +23,13 @@ write_reference(paths, reference, result.raw)
 reference = load_reference(paths, segment.index)   # ohne Backend
 ```
 
-Schlägt ein Segment fehl, hält `failed_reference(error, backend, manifest, segment)` das fest. Beides zusammen, samt Laufzeitmessung und den Regeln für vorhandene Ergebnisse, erledigt `transcript.transcription.transcribe_session` für alle Segmente einer Session, auf der Kommandozeile `transcript transcribe <session>`. Ein vorhandenes `transcribed` wird wiederverwendet, solange `asr.backend_id`, `model`, `model_version` und `settings` zum Backend passen und `asr.language` zur konfigurierten Sprache; `runtime_version` zählt nicht mit.
+Schlägt ein Segment fehl, hält `failed_reference(error, backend, manifest, segment)` das fest. Beides zusammen, samt Laufzeitmessung und den Regeln für vorhandene Ergebnisse, erledigt `transcript.transcription.transcribe_session` für alle Segmente einer Session, auf der Kommandozeile `transcript transcribe <session>`. Ein vorhandenes `transcribed` wird wiederverwendet, solange `asr.backend_id`, `model`, `model_version` und `settings` zum Backend passen, `asr.knowledge_snapshot_id` zum vorhandenen Wissens-Snapshot der Session und `asr.language` zur konfigurierten Sprache; `runtime_version` zählt nicht mit. Ein neu gebauter oder aktualisierter Snapshot mit anderer ID führt also zur Neutranskription, ebenso ein erster Snapshot für eine schon transkribierte Session. `transcribe` liest die ID nur, es baut keinen Snapshot.
 
 ## Normalform
 
 | Feld | Pflicht | Inhalt |
 | --- | --- | --- |
-| `format_version` | ja | `1` |
+| `format_version` | ja | `2` (gelesen werden `1` und `2`) |
 | `session` | ja | `group`, `ordinal`; muss zum Pfad passen |
 | `play_session_id` | ja | aus dem Manifest |
 | `segment` | ja | `index`, `file` (WAV-Name), `source_sha256` der Originalaufnahme |
@@ -41,7 +41,7 @@ Schlägt ein Segment fehl, hält `failed_reference(error, backend, manifest, seg
 | `raw_file` | ja | Name der Rohdatei |
 | `passages` | ja | Liste der Passagen, bei `failed` leer |
 
-**`asr`:** `backend_id`, `model`, `model_version`, `runtime_version`, `capabilities` (wie `Capabilities.to_dict()`), `settings` (Inferenzparameter), `language`, `language_probability`, `keywords_used` (die Begriffe, die tatsächlich gewirkt haben). Nur `backend_id` und `model` sind Pflicht, alles andere darf `null` oder leer sein.
+**`asr`:** `backend_id`, `model`, `model_version`, `runtime_version`, `capabilities` (wie `Capabilities.to_dict()`), `settings` (Inferenzparameter), `language`, `language_probability`, `keywords_used` (die Begriffe, die tatsächlich gewirkt haben), `knowledge_snapshot_id` (die `snapshot_id` des Wissens-Snapshots, mit dem der Lauf gestartet wurde, `null` ohne Snapshot). Nur `backend_id` und `model` sind Pflicht, alles andere darf `null` oder leer sein.
 
 **Passage:** ein Stück Sprache, so wie das Backend es abgegrenzt hat, bei Whisper ein Segment der Ausgabe. Felder: `index` (fortlaufend ab 1), `text` (wie erkannt), `start_ms`, `end_ms`, `speaker`, `signals` (Zahlen pro Passage, z. B. `avg_logprob`), `words`.
 
@@ -91,7 +91,7 @@ Sprecher kommen aus einer separaten Diarisierung mit pyannote (TOOL-76, Grundlag
 
 ## Versionierung
 
-`format_version` steht an erster Stelle. `load_reference` lehnt jede andere Version ab und verlangt, das Segment neu zu transkribieren. Eine Änderung, die alte Dateien unlesbar macht, erhöht die Version. Fehlermeldungen beim Laden nennen Datei, Feld und Passagennummer, nie Text, Keywords oder Labels.
+`format_version` steht an erster Stelle. Geschrieben wird immer `2`. `load_reference` liest `1` und `2`, bei `1` ist `knowledge_snapshot_id` `null`. Jede andere Version lehnt es ab und verlangt, das Segment neu zu transkribieren. Schreibt `transcript diarize` eine Datei der Version `1` neu, wird sie dabei zu `2`. Eine Änderung, die alte Dateien unlesbar macht, erhöht die Version. Fehlermeldungen beim Laden nennen Datei, Feld und Passagennummer, nie Text, Keywords oder Labels.
 
 ## Beispiel
 
@@ -99,7 +99,7 @@ Erfundener Inhalt, gekürzt auf eine Passage:
 
 ```json
 {
-  "format_version": 1,
+  "format_version": 2,
   "session": {"group": "beispielgruppe", "ordinal": 42},
   "play_session_id": 4711,
   "segment": {"index": 1, "file": "segment-01.wav", "source_sha256": "abab…"},
@@ -114,7 +114,8 @@ Erfundener Inhalt, gekürzt auf eine Passage:
     "settings": {"beam_size": 5},
     "language": "de",
     "language_probability": 1.0,
-    "keywords_used": ["Drachenhort"]
+    "keywords_used": ["Drachenhort"],
+    "knowledge_snapshot_id": "3f2a…"
   },
   "processing": {"pipeline_version": "0.0.1", "processed_at": "2026-11-04T20:00:00+01:00", "elapsed_ms": 812000},
   "diarization": {
