@@ -212,6 +212,7 @@ def _context(raw_key: str, config_path: Path, from_file: Path | None) -> int:
             raw = _read_bytes(from_file)
         session = narrata.store_context(paths, raw)
         data = read_object(paths.narrata_context, "Narrata context")
+        participants = narrata.read_participants(paths).participants
     except (ValueError, ConfigError, DataFileError, NarrataClientError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
@@ -224,7 +225,10 @@ def _context(raw_key: str, config_path: Path, from_file: Path | None) -> int:
         f"contract {data['contract_version']}"
     )
     print(
-        f"  {_count(data.get('participants'))} participant(s), "
+        f"  {len(participants)} participant(s) "
+        f"({sum(p.role == 'gm' for p in participants)} gm, "
+        f"{sum(p.is_former for p in participants)} former), "
+        f"{sum(len(p.characters) for p in participants)} character(s), "
         f"{_count(data.get('glossary'))} glossary entries, "
         f"archive tier {meta.get('archive_returned', '?')} "
         f"of {meta.get('archive_total', '?')}"

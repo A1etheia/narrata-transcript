@@ -449,7 +449,7 @@ def from_json(data: dict[str, Any], path: Path) -> ReferenceTranscript:
     asr = _field(data, "asr", dict, path)
     processing = _field(data, "processing", dict, path)
     play_session_id = data.get("play_session_id")
-    if not narrata.is_play_session_id(play_session_id):
+    if not narrata.is_narrata_id(play_session_id):
         raise ReferenceError(f"{path}: field 'play_session_id' missing or invalid")
     error = _optional(data, "error", dict, path)
     diarization = _optional(data, "diarization", dict, path)

@@ -7,8 +7,11 @@ from typing import Any
 from unittest import mock
 
 from transcript.narrata import (
+    Character,
     NarrataContextError,
+    Participant,
     check_contract,
+    read_participants,
     read_session,
     store_context,
 )
@@ -16,9 +19,26 @@ from transcript.session import SessionKey, SessionPaths
 
 PLAY_SESSION_ID = 4711  # made up; real ids never enter the repo
 NAME = "Erika Beispiel"  # made up; stands in for a participant's real name
+CHARACTER = "Brakk der Beispielhafte"  # made up, like every name below
 
 
-def context(version: Any = "1.1", **session: object) -> dict[str, Any]:
+def participant(**values: object) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "user_id": 3,
+        "display_name": NAME,
+        "role": "player",
+        "is_former": False,
+        "characters": [],
+    }
+    entry.update(values)
+    return entry
+
+
+def context(
+    version: Any = "1.1",
+    participants: list[Any] | None = None,
+    **session: object,
+) -> dict[str, Any]:
     values: dict[str, object] = {
         "play_session_id": PLAY_SESSION_ID,
         "ordinal": 42,
@@ -29,7 +49,7 @@ def context(version: Any = "1.1", **session: object) -> dict[str, Any]:
     values.update(session)
     data: dict[str, Any] = {
         "session": values,
-        "participants": [{"user_id": 3, "display_name": NAME, "characters": []}],
+        "participants": [participant()] if participants is None else participants,
         "glossary": [],
         "glossary_meta": {"archive_total": 0, "archive_returned": 0},
         "asr_ambiguities": [],
@@ -135,6 +155,141 @@ class StoreContextTest(unittest.TestCase):
             read_session(self.paths)
 
         self.assertIn("run transcript context first", str(caught.exception))
+
+
+class ParticipantsTest(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.paths = SessionPaths(
+            SessionKey("beispielgruppe", 42), Path(directory.name)
+        )
+
+    def load(self, participants: list[Any]) -> tuple[Participant, ...]:
+        store_context(self.paths, encoded(context(participants=participants)))
+        return read_participants(self.paths).participants
+
+    def test_several_participants_keep_narrata_order_and_ids(self) -> None:
+        loaded = self.load(
+            [
+                participant(user_id=7, display_name="Anna Muster", role="gm"),
+                participant(
+                    characters=[
+                        {"person_id": 18, "name": CHARACTER, "aliases": ["Brakk"]},
+                        {"person_id": 19, "name": "Ilse Erdacht", "aliases": []},
+                    ]
+                ),
+                participant(user_id="u-9", display_name="Max Muster", is_former=True),
+            ]
+        )
+
+        self.assertEqual([p.user_id for p in loaded], [7, 3, "u-9"])
+        self.assertEqual([p.role for p in loaded], ["gm", "player", "player"])
+        self.assertEqual([p.is_former for p in loaded], [False, False, True])
+        self.assertEqual(loaded[0].characters, ())
+        self.assertEqual(
+            loaded[1].characters,
+            (
+                Character(18, CHARACTER, ("Brakk",)),
+                Character(19, "Ilse Erdacht", ()),
+            ),
+        )
+        self.assertTrue(all(p.present is None for p in loaded))
+
+    def test_origin_is_kept(self) -> None:
+        store_context(self.paths, encoded(context()))
+
+        loaded = read_participants(self.paths)
+
+        self.assertEqual(loaded.source, self.paths.narrata_context)
+        self.assertEqual(loaded.contract_version, "1.1")
+        self.assertEqual(loaded.play_session_id, PLAY_SESSION_ID)
+
+    def test_missing_optional_parts_are_tolerated(self) -> None:
+        without_characters = participant(role="gm")
+        del without_characters["characters"]
+        loaded = self.load(
+            [
+                without_characters,
+                participant(user_id=4, characters=None),
+                participant(
+                    user_id=5,
+                    characters=[{"person_id": 18, "name": CHARACTER}],
+                ),
+                participant(
+                    user_id=6,
+                    characters=[{"person_id": 19, "name": CHARACTER, "aliases": None}],
+                ),
+                participant(user_id=8, avatar="later minor"),
+            ]
+        )
+
+        self.assertEqual([len(p.characters) for p in loaded], [0, 0, 1, 1, 0])
+        self.assertEqual(loaded[2].characters[0].aliases, ())
+        self.assertEqual(loaded[3].characters[0].aliases, ())
+
+    def test_empty_list_is_valid(self) -> None:
+        self.assertEqual(self.load([]), ())
+
+    def test_contract_violations_name_position_never_values(self) -> None:
+        character = {"person_id": 18, "name": CHARACTER, "aliases": []}
+        for participants, expected in (
+            ("none", "field 'participants' missing or invalid"),
+            ([NAME], "participants[0] is not an object"),
+            ([participant(user_id=True)], "participants[0].user_id"),
+            ([participant(user_id="")], "participants[0].user_id"),
+            ([participant(display_name=" ")], "participants[0].display_name"),
+            ([participant(role=NAME)], "participants[0].role"),
+            ([participant(is_former=None)], "participants[0].is_former"),
+            ([participant(characters={})], "participants[0].characters"),
+            ([participant(characters=[CHARACTER])], "characters[0] is not an object"),
+            (
+                [participant(characters=[{**character, "person_id": None}])],
+                "participants[0].characters[0].person_id",
+            ),
+            (
+                [participant(characters=[{**character, "name": ""}])],
+                "participants[0].characters[0].name",
+            ),
+            (
+                [participant(characters=[{**character, "aliases": [NAME, 1]}])],
+                "participants[0].characters[0].aliases",
+            ),
+            (
+                [participant(), participant()],
+                "participants[1].user_id repeats an earlier id",
+            ),
+            (
+                [
+                    participant(characters=[character]),
+                    participant(user_id=4, characters=[character]),
+                ],
+                "participants[1].characters[0].person_id repeats an earlier id",
+            ),
+        ):
+            with self.subTest(expected=expected):
+                data = context(participants=[])
+                data["participants"] = participants
+                with self.assertRaises(NarrataContextError) as caught:
+                    store_context(self.paths, encoded(data))
+
+                message = str(caught.exception)
+                self.assertIn(expected, message)
+                self.assertNotIn(NAME, message)
+                self.assertNotIn(CHARACTER, message)
+                self.assertFalse(self.paths.narrata_context.exists())
+
+    def test_hand_placed_file_is_checked_on_read(self) -> None:
+        self.paths.narrata_context.parent.mkdir(parents=True)
+        self.paths.narrata_context.write_bytes(
+            encoded(context(participants=[participant(role="sl")]))
+        )
+
+        self.assertEqual(read_session(self.paths).play_session_id, PLAY_SESSION_ID)
+        with self.assertRaises(NarrataContextError) as caught:
+            read_participants(self.paths)
+
+        self.assertIn("participants[0].role missing or invalid", str(caught.exception))
 
 
 if __name__ == "__main__":
