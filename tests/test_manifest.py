@@ -253,11 +253,12 @@ class LoadManifestTest(ManifestTestCase):
     def test_local_time_becomes_session_time(self) -> None:
         second = load_manifest(self.paths).segments[1]
 
-        self.assertEqual(second.to_absolute_ms(0.25), 1250)
-        self.assertEqual(second.to_absolute_ms(0.5), 1500)
-        for local in (-0.001, 0.502):
-            with self.subTest(local=local), self.assertRaises(ValueError):
+        self.assertEqual(second.to_absolute_ms(250), 1250)
+        self.assertEqual(second.to_absolute_ms(500), 1500)
+        for local in (-1, 501):
+            with self.subTest(local=local), self.assertRaises(ValueError) as caught:
                 second.to_absolute_ms(local)
+            self.assertIn(f"{local} ms lies outside segment 2", str(caught.exception))
 
     def test_reassigned_ordinal_is_detected_on_read(self) -> None:
         self.write_context(play_session_id=PLAY_SESSION_ID + 1)
