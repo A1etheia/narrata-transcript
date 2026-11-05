@@ -15,7 +15,7 @@ from transcript.asr import BackendError
 from transcript.asr.whisper import WhisperBackend
 from transcript.config import Config, ConfigError, format_config, load_config
 from transcript.diarization.pyannote import PyannoteDiarizer
-from transcript.jsonfile import DataFileError, read_object
+from transcript.jsonfile import DataFileError
 from transcript.narrata_client import NarrataClientError, fetch_context, read_token
 from transcript.session import SessionKey, SessionPaths
 from transcript.timecode import format_ms
@@ -211,27 +211,29 @@ def _context(raw_key: str, config_path: Path, from_file: Path | None) -> int:
         else:
             raw = _read_bytes(from_file)
         session = narrata.store_context(paths, raw)
-        data = read_object(paths.narrata_context, "Narrata context")
         participants = narrata.read_participants(paths).participants
+        glossary = narrata.read_glossary(paths)
     except (ValueError, ConfigError, DataFileError, NarrataClientError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
 
-    meta = data.get("glossary_meta")
-    meta = meta if isinstance(meta, dict) else {}
+    tiers = collections.Counter(entry.relevance for entry in glossary.entries)
     print(
         f"{key}: play session {session.play_session_id}, "
         f"{session.session_date.isoformat()}, "
-        f"contract {data['contract_version']}"
+        f"contract {glossary.contract_version}"
     )
     print(
         f"  {len(participants)} participant(s) "
         f"({sum(p.role == 'gm' for p in participants)} gm, "
         f"{sum(p.is_former for p in participants)} former), "
-        f"{sum(len(p.characters) for p in participants)} character(s), "
-        f"{_count(data.get('glossary'))} glossary entries, "
-        f"archive tier {meta.get('archive_returned', '?')} "
-        f"of {meta.get('archive_total', '?')}"
+        f"{sum(len(p.characters) for p in participants)} character(s)"
+    )
+    print(
+        f"  {len(glossary.entries)} glossary entries ("
+        + ", ".join(f"{tiers[tier]} {tier}" for tier in narrata.RELEVANCE_TIERS)
+        + f"), archive tier {glossary.archive_returned} of {glossary.archive_total}, "
+        f"{len(glossary.ambiguities)} asr ambiguities"
     )
     print(f"wrote {paths.narrata_context}")
     return 0
@@ -254,10 +256,6 @@ def _read_bytes(path: Path) -> bytes:
         return path.read_bytes()
     except OSError as error:
         raise DataFileError(f"{path}: cannot read file ({error.strerror})") from None
-
-
-def _count(value: object) -> str:
-    return str(len(value)) if isinstance(value, list) else "no"
 
 
 def _manifest(raw_key: str, config_path: Path, consent: bool) -> int:
