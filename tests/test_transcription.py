@@ -194,11 +194,14 @@ def session_backend(
     fail_on: int | None = None,
     language: str = "de",
     errors: dict[int, list[BackendError]] | None = None,
+    biasing: bool = False,
+    cut: int | None = None,
 ) -> FakeBackend:
     """A backend whose identity matches its results.
 
     `fail_on` segment always raises; segment `n` raises `errors[n]` in turn,
-    then answers. Each raised error carries `SECRET` in its `__cause__`.
+    then answers. Each raised error carries `SECRET` in its `__cause__`. With
+    `biasing` it uses the first `cut` keywords, all of them by default.
     """
     info = dataclasses.replace(FAKE_INFO, model_version=revision)
     pending = {index: list(queue) for index, queue in (errors or {}).items()}
@@ -214,9 +217,11 @@ def session_backend(
             segments=(ResultSegment(text=f" Zum {SECRET}.", start=0.0, end=1.0),),
             language=language,
             settings=settings,
+            keywords_used=request.keywords[:cut] if biasing else (),
         )
 
-    return FakeBackend(answer, info=info, settings=settings)
+    capabilities = Capabilities(segment_timestamps=True, keyword_biasing=biasing)
+    return FakeBackend(answer, info=info, settings=settings, capabilities=capabilities)
 
 
 class FailingIdentity(FakeBackend):
@@ -295,6 +300,49 @@ class TranscribeSessionTest(unittest.TestCase):
         self.assertEqual(
             load_reference(self.paths, 1).asr.knowledge_snapshot_id, "b" * 64
         )
+
+    def test_same_keywords_reuse_and_other_ones_transcribe_again(self) -> None:
+        keywords = ("Beispielfigur", "Beispielort")
+        self.run_session(session_backend(biasing=True), keywords=keywords)
+
+        same = self.run_session(session_backend(biasing=True), keywords=keywords)
+        other = self.run_session(
+            session_backend(biasing=True), keywords=("Beispielfigur", "Nebelau")
+        )
+
+        self.assertEqual(self.statuses(same), ["reused"] * 3)
+        self.assertEqual(self.statuses(other), ["transcribed"] * 3)
+
+    def test_a_result_without_hints_transcribes_again_once_there_are_some(
+        self,
+    ) -> None:
+        self.run_session(session_backend(biasing=True), knowledge_snapshot_id="a" * 64)
+
+        run = self.run_session(
+            session_backend(biasing=True),
+            keywords=("Beispielfigur",),
+            knowledge_snapshot_id="a" * 64,
+        )
+
+        self.assertEqual(self.statuses(run), ["transcribed"] * 3)
+        self.assertEqual(
+            load_reference(self.paths, 1).asr.keywords_used, ("Beispielfigur",)
+        )
+
+    def test_keywords_the_backend_cut_still_reuse(self) -> None:
+        keywords = ("Beispielfigur", "Beispielort", "Nebelau")
+        self.run_session(session_backend(biasing=True, cut=2), keywords=keywords)
+
+        run = self.run_session(session_backend(biasing=True, cut=2), keywords=keywords)
+
+        self.assertEqual(self.statuses(run), ["reused"] * 3)
+
+    def test_a_backend_without_biasing_reuses_despite_keywords(self) -> None:
+        self.run_session(session_backend())
+
+        run = self.run_session(session_backend(), keywords=("Beispielfigur",))
+
+        self.assertEqual(self.statuses(run), ["reused"] * 3)
 
     def test_a_first_snapshot_transcribes_again(self) -> None:
         self.run_session(session_backend())

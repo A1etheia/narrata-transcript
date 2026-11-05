@@ -75,7 +75,7 @@ transcript snapshot beispielgruppe/042            # bauen oder vorhandenen wiede
 transcript snapshot beispielgruppe/042 --refresh  # bewusst neu bauen
 ```
 
-Der Snapshot friert das Wissen einer Sitzung für alle weiteren Läufe ein: Teilnehmende mit Spielfiguren, das ganze Glossar, die Mehrdeutigkeiten (`asr_ambiguities`) und die Archiv-Kappung (`glossary_meta`). Er liegt unter `work/<gruppe>/<ordinal>/narrata/snapshot.json`, wird aus dem gespeicherten Narrata-Kontext gebaut und ist danach ohne diese Datei und ohne Narrata lesbar. Spätere Schritte lesen über `transcript.knowledge.load_snapshot`, nie die Rohdatei.
+Der Snapshot friert das Wissen einer Sitzung für alle weiteren Läufe ein: Teilnehmende mit Spielfiguren, das ganze Glossar, die Mehrdeutigkeiten (`asr_ambiguities`) und die Archiv-Kappung (`glossary_meta`). Er liegt unter `work/<gruppe>/<ordinal>/narrata/snapshot.json`, wird aus dem gespeicherten Narrata-Kontext gebaut und ist danach ohne diese Datei und ohne Narrata lesbar. Spätere Schritte lesen ihn über die [Wissensschnittstelle](#wissensschnittstelle), nie die Rohdatei.
 
 **Relevanzregel.** Die Relevanz berechnet Narrata: Jeder Glossar-Eintrag trägt genau eine Stufe, die erste passende von `pc` (Spielfigur eines aktiven Teilnehmenden), `session` (mit der Sitzung oder ihren Abenteuern verknüpft), `recent` (in Tagebüchern der letzten `n` Sitzungen genannt) und `archive` (der Rest, gekappt). Die Regel steht in `ios-archiv` unter `docs/transcripts.md`, „Relevanz“. Der Snapshot übernimmt die Stufe als Relevanzgrund, die Pipeline rechnet sie nicht nach.
 
@@ -103,6 +103,21 @@ Die Konsole zeigt die kurze Kennung, Erstellzeitpunkt, Contract-Version und Zäh
 | `orphan_pc` | ein `pc`-Eintrag gehört zu keiner aktiven teilnehmenden Person |
 
 Jeder Befund nennt Feldpfade (`glossary[3].aliases[1]`, `participants[0].characters[0]`), Typ und Narrata-ID der Einträge, im Bericht außerdem Snapshot-Datei und Kontextdatei als Quelle. Namen stehen weder im Bericht noch auf der Konsole. Die Konsole zeigt die Zähler je Code und höchstens zehn Befunde, die übrigen stehen in der Datei.
+
+## Wissensschnittstelle
+
+Pipeline-Schritte fragen das Wissen einer Sitzung über `transcript.domain.DomainContext` ab, nicht bei Narrata, in der Rohdatei oder im Snapshot-Format. `DomainContext.load(paths)` liest den [Wissens-Snapshot](#wissens-snapshot). Nur `from_snapshot` kennt dessen Aufbau, eine andere Wissensquelle braucht deshalb nur eine neue Factory.
+
+| Abfrage | Liefert |
+| --- | --- |
+| `lookup(begriff)` | jeden Eintrag, den der Begriff als Name, Alias oder Hörfehler nennt; bei geteilten Begriffen alle |
+| `entry((typ, id))` | einen Glossar-Eintrag per Archiv-ID |
+| `participant(user_id)`, `character(person_id)` | Teilnehmende und Spielfigur samt spielender Person |
+| `relevant_entries()`, `keyword_entries()` | Einträge der Stufen `pc`, `session`, `recent` bzw. die Keyword-Einträge des Snapshots |
+| `transcription_keywords()` | Namen und Aliasse der Keyword-Einträge als ASR-Hinweise, wichtigste zuerst, ohne Hörfehler |
+| `match_candidates()` | jeden Begriff jedes Eintrags samt Hörfehlern, als Grundlage für den Abgleich (TOOL-40) |
+
+Jeder Treffer (`TermHit`) nennt Eintrag mit Typ, Archiv-ID und Stufe, die Art (`name`, `alias`, `asr_variant`), das Feld (`aliases[1]`), die Schreibweise aus Narrata, ob der Eintrag Keyword ist, und die Herkunft (`Origin`: Snapshot-Kennung, Kontextdatei, Contract-Version, `play_session_id`). Abfragen ändern weder Wissen noch Transkripttext und entscheiden nie zwischen Einträgen, die sich einen Begriff teilen. Ob ein Backend die Hinweise nutzt, entscheidet seine Capability `keyword_biasing`. Backends ohne sie brauchen keine Domänenlogik.
 
 ## Session-Manifest
 
@@ -163,9 +178,9 @@ transcript transcribe beispielgruppe/042 --no-diarize       # nur Spracherkennun
 transcript transcribe beispielgruppe/042 --force            # auch passende Ergebnisse neu rechnen
 ```
 
-Es entstehen `work/<gruppe>/<ordinal>/asr/segment-NN.json` und `segment-NN.raw.json` (siehe [ASR-Backends](#asr-backends)). Die Sprache kommt aus `language` der Konfiguration. Begriffshinweise (Hotwords) übergibt der Befehl noch nicht; sie kommen mit der Wissensschnittstelle (TOOL-43). Die Konsole zeigt pro Segment, sobald es fertig ist, den Status mit Laufzeit, Zahl der Passagen und Wörter und der erkannten Sprache, am Ende eine Zusammenfassung mit Modell und Revision. Text erscheint nie.
+Es entstehen `work/<gruppe>/<ordinal>/asr/segment-NN.json` und `segment-NN.raw.json` (siehe [ASR-Backends](#asr-backends)). Die Sprache kommt aus `language` der Konfiguration. Liegt ein [Wissens-Snapshot](#wissens-snapshot) vor, übergibt der Befehl dessen Keywords über die [Wissensschnittstelle](#wissensschnittstelle) als Begriffshinweise (Hotwords) und nennt ihre Zahl und die kurze Snapshot-Kennung, nie die Begriffe. Ohne Snapshot läuft er ohne Hinweise. Die Konsole zeigt pro Segment, sobald es fertig ist, den Status mit Laufzeit, Zahl der Passagen und Wörter und der erkannten Sprache, am Ende eine Zusammenfassung mit Modell und Revision. Text erscheint nie.
 
-- **Wiederaufnahme:** Ein fertiges Segment bleibt stehen, wenn Backend, Modell, Revision und Einstellungen gleich sind und die erkannte Sprache zu `language` passt (`reused`). Ein abgebrochener Lauf macht beim nächsten Aufruf mit den offenen Segmenten weiter. Sind alle Segmente fertig, lädt Whisper gar nicht. Hat sich das Modell geändert, werden die betroffenen Segmente neu transkribiert.
+- **Wiederaufnahme:** Ein fertiges Segment bleibt stehen, wenn Backend, Modell, Revision, Einstellungen und Snapshot-Kennung gleich sind, die erkannte Sprache zu `language` passt und das Backend dieselben Keywords bekommen hat (`reused`). Gekappte Keywords zählen als dieselben, solange die genutzten in derselben Reihenfolge unter den aktuellen stehen. Ein Ergebnis ohne Hinweise wird neu transkribiert, sobald es Keywords gibt. Ein Backend ohne Keyword-Unterstützung ignoriert sie, für die Wiederaufnahme zählen sie dann nicht. Ein abgebrochener Lauf macht beim nächsten Aufruf mit den offenen Segmenten weiter. Sind alle Segmente fertig, lädt Whisper gar nicht. Hat sich das Modell geändert, werden die betroffenen Segmente neu transkribiert.
 - **Vor dem Laden geprüft:** Fehlende Runtime, ein Modell, das nicht im Cache liegt, eine fehlende GPU, ein Segment, das nicht im Manifest steht, ein fehlendes WAV oder ein unlesbares Ergebnis brechen ab, bevor das Modell lädt. Ohne `--no-diarize` gilt das auch für pyannote.
 - **`--force`:** Rechnet auch passende Ergebnisse neu. Die Sprecher-Labels fallen dabei weg; die Diarisierung im selben Lauf setzt sie aus der gespeicherten Rohform ohne Modell wieder.
 - **Vorübergehender Fehler** (`ResourceError` bei Speichermangel, `BackendRuntimeError`): Das Segment wird mit dem schon geladenen Modell nach 5 s erneut versucht, höchstens `asr.retries`-mal (Default 2, höchstens 5). Gelingt ein Versuch, zählt das Segment als `transcribed`.

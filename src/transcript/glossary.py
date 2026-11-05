@@ -7,7 +7,7 @@ entries share returns all of them: the glossary never decides which one is meant
 
 import re
 import unicodedata
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Literal
 
@@ -43,6 +43,8 @@ def tidy(term: str) -> str:
 class Match:
     entry: GlossaryEntry
     kind: MatchKind
+    field: str  # where the term sits in the entry, e.g. `aliases[1]`
+    term: str  # as the entry spells it
 
 
 class GlossaryIndex:
@@ -52,19 +54,21 @@ class GlossaryIndex:
         self._matches: dict[str, list[Match]] = {}
         for entry in glossary.entries:
             seen: set[str] = set()  # one match per entry and key, the strongest kind
-            for kind, _, term in entry_terms(entry):
+            for kind, field, term in entry_terms(entry):
                 key = normalize(term)
                 if key and key not in seen:
                     seen.add(key)
-                    self._matches.setdefault(key, []).append(Match(entry, kind))
+                    self._matches.setdefault(key, []).append(
+                        Match(entry, kind, field, term)
+                    )
 
     def lookup(self, term: str) -> tuple[Match, ...]:
         """Every entry `term` names, in glossary order; empty if none."""
         return tuple(self._matches.get(normalize(term), ()))
 
 
-def keyword_terms(glossary: NarrataGlossary) -> tuple[str, ...]:
-    """Names and aliases, tidied, in glossary order, without repeats.
+def keyword_terms(entries: Iterable[GlossaryEntry]) -> tuple[str, ...]:
+    """Names and aliases of `entries`, tidied, in their order, without repeats.
 
     Narrata delivers the glossary nearest tier first, so the order carries over.
     Misrecognitions are left out: biasing towards them would invite the error.
@@ -72,7 +76,7 @@ def keyword_terms(glossary: NarrataGlossary) -> tuple[str, ...]:
     """
     seen: set[str] = set()
     terms: list[str] = []
-    for entry in glossary.entries:
+    for entry in entries:
         for term in (entry.name, *entry.aliases):
             key = normalize(term)
             if key and key not in seen:

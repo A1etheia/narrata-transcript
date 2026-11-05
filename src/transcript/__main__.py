@@ -24,6 +24,7 @@ from transcript.asr import BackendError
 from transcript.asr.whisper import WhisperBackend
 from transcript.config import Config, ConfigError, format_config, load_config
 from transcript.diarization.pyannote import PyannoteDiarizer
+from transcript.domain import DomainContext
 from transcript.jsonfile import DataFileError
 from transcript.narrata_client import NarrataClientError, fetch_context, read_token
 from transcript.session import SessionKey, SessionPaths
@@ -472,17 +473,25 @@ def _transcribe(
         if diarizer is not None:
             diarizer.identity()  # a missing pyannote fails now, not after the ASR
         print(f"{key}: {len(session_manifest.segments)} segment(s)")
+        domain = _domain(paths)
+        keywords = domain.transcription_keywords() if domain else ()
+        snapshot_id = domain.origin.snapshot_id if domain else None
+        if snapshot_id is not None:
+            print(
+                f"{key}: {len(keywords)} keyword(s) "
+                f"from snapshot {snapshot_id[:_SHORT_ID]}"
+            )
         run = transcribe_session(
             paths,
             session_manifest,
             WhisperBackend.from_config(config),
             config.language,
-            keywords=(),  # hints from the knowledge interface come with TOOL-43
+            keywords=keywords,
             force=force,
             indices=None if index is None else {index},
             progress=_print_outcome,
             retries=config.asr_retries,
-            knowledge_snapshot_id=_snapshot_id(paths),
+            knowledge_snapshot_id=snapshot_id,
         )
     except (
         ValueError,
@@ -524,11 +533,11 @@ def _transcribe(
     return 0 if run.complete and not _any_failed(summaries) else 1
 
 
-def _snapshot_id(paths: SessionPaths) -> str | None:
-    """The id of the stored snapshot; `transcribe` never builds one itself."""
+def _domain(paths: SessionPaths) -> DomainContext | None:
+    """The stored snapshot's knowledge; `transcribe` never builds one itself."""
     if not paths.knowledge_snapshot.is_file():
         return None
-    return knowledge.load_snapshot(paths).snapshot_id
+    return DomainContext.load(paths)
 
 
 def _print_outcome(outcome: SegmentOutcome) -> None:
