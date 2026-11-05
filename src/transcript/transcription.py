@@ -38,7 +38,7 @@ from transcript.reference import (
     load_reference,
     write_reference,
 )
-from transcript.retry import FailureLog, attempt
+from transcript.retry import FailureLog, SegmentFailure, attempt
 from transcript.session import SessionPaths
 
 _logger = logging.getLogger(__name__)
@@ -55,8 +55,8 @@ class SegmentOutcome:
     """What a session run did with one segment: counts and error class, never text.
 
     `status` is one of `OUTCOME_STATUSES`: `transcribed` or `reused` (a stored
-    result counts), `failed` (the backend raised `error`) or `open` (not
-    reached, the backend did not load).
+    result counts), `failed` (see `failure`) or `open` (not reached, the
+    backend did not load).
     """
 
     index: int
@@ -66,10 +66,8 @@ class SegmentOutcome:
     words_with_confidence: int = 0
     language: str | None = None
     elapsed_ms: int | None = None  # of the successful backend call
-    error: str | None = None  # error class of a failure
-    message: str | None = None  # its message: backend, action, file, never text
-    retryable: bool | None = None
-    attempts: int = 0  # backend calls made in this run; 0 when not transcribed
+    failure: SegmentFailure | None = None  # set exactly when `failed`
+    attempts: int = 0  # backend calls made in this run
 
 
 @dataclass(frozen=True)
@@ -190,18 +188,15 @@ def _run(
     )
     done = attempt(lambda: transcribe(backend, request), retries, log, sleep)
     if done.error is not None:
-        error = done.error
         if not keep_existing:
             failure = failed_reference(
-                error, backend, manifest, segment, done.elapsed_ms
+                done.error, backend, manifest, segment, done.elapsed_ms
             )
             write_reference(paths, failure, None)
         return SegmentOutcome(
             segment.index,
             "failed",
-            error=type(error).__name__,
-            message=str(error),
-            retryable=error.retryable,
+            failure=SegmentFailure.of(done),
             attempts=done.attempts,
         )
     assert done.result is not None

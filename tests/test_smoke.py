@@ -384,7 +384,11 @@ class TranscribeCommandTest(unittest.TestCase):
         code, stdout, _ = self.transcribe("--no-diarize")
 
         self.assertEqual(code, 1)
-        self.assertIn("  2. failed: ResourceError (retryable)", stdout)
+        self.assertIn(
+            "  2. failed after 1 attempt(s): ResourceError (retryable): "
+            "fake: out of memory",
+            stdout,
+        )
         self.assertIn("2 transcribed, 0 reused, 1 failed, 0 open", stdout)
 
     def test_load_failure_leaves_segments_open_with_exit_1(self) -> None:

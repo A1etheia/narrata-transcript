@@ -285,8 +285,7 @@ def _print_outcome(outcome: SegmentOutcome) -> None:
     if outcome.status == "open":
         line = "open"
     elif outcome.status == "failed":
-        retry = "retryable" if outcome.retryable else "not retryable"
-        line = f"failed: {outcome.error} ({retry})"
+        line = str(outcome.failure)
     else:
         how = (
             "reused"
@@ -331,6 +330,9 @@ def _print_diarization(
     for summary in summaries:
         if summary.outcome == "skipped":
             print(f"  {summary.index}. skipped: {summary.reason}")
+            continue
+        if summary.outcome == "failed":
+            print(f"  {summary.index}. {summary.failure}")
             continue
         how = (
             "reused stored diarization"

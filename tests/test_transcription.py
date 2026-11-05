@@ -21,6 +21,7 @@ from transcript.asr import (
 from transcript.asr.fake import FAKE_INFO, FakeBackend
 from transcript.audio import sha256_file
 from transcript.reference import ReferenceError, load_reference
+from transcript.retry import SegmentFailure
 from transcript.session import SessionPaths
 from transcript.transcription import (
     SegmentOutcome,
@@ -305,7 +306,9 @@ class TranscribeSessionTest(unittest.TestCase):
         self.assertEqual(self.statuses(run), ["transcribed", "failed", "transcribed"])
         self.assertFalse(run.complete)
         failed = run.outcomes[1]
-        self.assertEqual((failed.error, failed.retryable), ("ResourceError", True))
+        self.assertEqual(
+            (failed.failure.error, failed.failure.retryable), ("ResourceError", True)
+        )
         self.assertEqual(load_reference(self.paths, 2).status, "failed")
 
     def test_failed_segment_is_retried_and_finished_ones_reused(self) -> None:
@@ -411,8 +414,11 @@ class TranscribeSessionTest(unittest.TestCase):
 
         self.assertEqual(self.statuses(run), ["transcribed", "failed", "transcribed"])
         failed = run.outcomes[1]
-        self.assertEqual((failed.error, failed.attempts), ("ResourceError", 3))
-        self.assertEqual(failed.message, "fake: out of memory")
+        self.assertEqual(
+            failed.failure,
+            SegmentFailure("ResourceError", "fake: out of memory", True, 3),
+        )
+        self.assertEqual(failed.attempts, 3)
         self.assertEqual(load_reference(self.paths, 2).status, "failed")
         self.assertEqual(len(logs.output), 3)
         self.assertIn("attempt 3/3 failed", logs.output[-1])
@@ -426,7 +432,7 @@ class TranscribeSessionTest(unittest.TestCase):
 
         failed = run.outcomes[0]
         self.assertEqual((failed.status, failed.attempts), ("failed", 1))
-        self.assertFalse(failed.retryable)
+        self.assertFalse(failed.failure.retryable)
         self.assertEqual(self.sleeps, [])
         self.assertIn("not retryable", logs.output[0])
 

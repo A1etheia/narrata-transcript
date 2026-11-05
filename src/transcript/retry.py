@@ -14,7 +14,7 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 from transcript.asr import BackendError
 
@@ -31,6 +31,30 @@ class Attempted(Generic[_T]):
     error: BackendError | None
     attempts: int  # calls made, counted from 1
     elapsed_ms: int  # of the last call
+
+
+@dataclass(frozen=True)
+class SegmentFailure:
+    """Why a segment failed in this run: the error class and its message, never text."""
+
+    error: str  # error class
+    message: str  # backend, action and file
+    retryable: bool
+    attempts: int
+
+    @classmethod
+    def of(cls, done: "Attempted[Any]") -> "SegmentFailure":
+        """The failure of an `attempt` that ended with an error."""
+        assert done.error is not None
+        error = done.error
+        return cls(type(error).__name__, str(error), error.retryable, done.attempts)
+
+    def __str__(self) -> str:
+        retry = "retryable" if self.retryable else "not retryable"
+        return (
+            f"failed after {self.attempts} attempt(s): "
+            f"{self.error} ({retry}): {self.message}"
+        )
 
 
 def attempt(
