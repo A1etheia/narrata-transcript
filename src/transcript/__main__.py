@@ -481,10 +481,16 @@ def _transcribe(
                 f"{key}: {len(keywords)} keyword(s) "
                 f"from snapshot {snapshot_id[:_SHORT_ID]}"
             )
+        backend = WhisperBackend.from_config(config)
+        biasing = backend.capabilities.keyword_biasing
+        if keywords and not biasing:
+            print(
+                f"{key}: keywords not passed: model {config.asr_model} takes no hotwords"
+            )
         run = transcribe_session(
             paths,
             session_manifest,
-            WhisperBackend.from_config(config),
+            backend,
             config.language,
             keywords=keywords,
             force=force,
@@ -511,6 +517,8 @@ def _transcribe(
         + ", ".join(f"{counts[status]} {status}" for status in OUTCOME_STATUSES)
         + f" with {info.backend_id} {info.model}{revision}"
     )
+    if keywords and biasing and run.keywords_used is not None:
+        print(f"{key}: {run.keywords_used} of {len(keywords)} keyword(s) passed")
     if run.load_error is not None:
         print(f"error: {run.load_error}", file=sys.stderr)
 

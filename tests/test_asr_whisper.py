@@ -19,7 +19,12 @@ from transcript.asr import (
     opened,
     transcribe,
 )
-from transcript.asr.whisper import HOTWORD_TOKENS, WhisperBackend, fit_hotwords
+from transcript.asr.whisper import (
+    HOTWORD_TOKENS,
+    WhisperBackend,
+    fit_hotwords,
+    takes_hotwords,
+)
 from transcript.config import Config
 from transcript.reference import from_backend_result, load_reference, write_reference
 from transcript.session import SessionPaths
@@ -374,6 +379,14 @@ class TranscribeTest(WhisperTestCase):
         )
         self.assertEqual(result.keywords_used, ("Drachenhort", "Beispielfigur"))
 
+    def test_a_model_without_hotwords_ignores_keywords(self) -> None:
+        backend = WhisperBackend("large-v3")
+        result = self.run_backend(backend, "Drachenhort", "Beispielfigur")
+
+        self.assertFalse(backend.capabilities.keyword_biasing)
+        self.assertIsNone(self.runtime.models[0].calls[0]["hotwords"])
+        self.assertEqual(result.keywords_used, ())
+
     def test_no_keywords_means_no_hotwords(self) -> None:
         result = self.run_backend(WhisperBackend())
 
@@ -439,6 +452,15 @@ class LifecycleTest(WhisperTestCase):
 
         with self.assertRaises(BackendUnavailableError):
             self.run_backend(WhisperBackend())
+
+
+class TakesHotwordsTest(unittest.TestCase):
+    def test_only_turbo_models_take_hotwords(self) -> None:
+        """TOOL-62: large-v3 falls apart with hotwords, turbo does not."""
+        for model in ("large-v3-turbo", "/models/whisper-Large-V3-Turbo"):
+            self.assertTrue(takes_hotwords(model), model)
+        for model in ("large-v3", "medium", "/models/turbo/large-v3"):
+            self.assertFalse(takes_hotwords(model), model)
 
 
 class FitHotwordsTest(unittest.TestCase):
