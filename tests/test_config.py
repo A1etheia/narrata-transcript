@@ -61,8 +61,10 @@ class LoadConfigTest(unittest.TestCase):
             asr_device="cuda",
             asr_compute_type="int8_float16",
             asr_beam_size=3,
+            asr_retries=0,
             diarization_model="/models/pyannote",
             diarization_device="cpu",
+            diarization_retries=5,
         )
 
         self.assertEqual(self.load(format_config(config)), config)
@@ -137,6 +139,21 @@ class LoadConfigTest(unittest.TestCase):
                 self.assert_rejected(
                     MINIMAL + f"asr:\n  {text}\n", f"invalid value for {key}"
                 )
+
+    def test_retries_default_to_two_and_are_read(self) -> None:
+        defaults = self.load(MINIMAL)
+        self.assertEqual((defaults.asr_retries, defaults.diarization_retries), (2, 2))
+        config = self.load(MINIMAL + "asr:\n  retries: 0\ndiarization:\n  retries: 5\n")
+        self.assertEqual((config.asr_retries, config.diarization_retries), (0, 5))
+
+    def test_retries_are_bounded(self) -> None:
+        for section in ("asr", "diarization"):
+            for value in ("-1", "6", "1.5", "true"):
+                with self.subTest(section=section, value=value):
+                    self.assert_rejected(
+                        MINIMAL + f"{section}:\n  retries: {value}\n",
+                        f"invalid value for {section}.retries",
+                    )
 
     def test_diarization_defaults_to_pyannote_community_on_any_device(self) -> None:
         config = self.load(MINIMAL)

@@ -33,6 +33,8 @@ asr:
   # null: float16 auf der GPU, int8 auf der CPU.
   compute_type: null
   beam_size: 5
+  # Weitere Versuche pro Segment nach Speichermangel oder Runtime-Fehler, 0 bis 5.
+  retries: 2
 
 # Sprecher-Diarisierung: pyannote, nur aus dem lokalen Modell-Cache.
 # Einrichtung, einmaliger Download und Hardware siehe README, Abschnitt „Diarisierung“.
@@ -41,6 +43,8 @@ diarization:
   model: pyannote/speaker-diarization-community-1
   # auto nimmt die NVIDIA-GPU, wenn eine erreichbar ist, sonst die CPU.
   device: auto
+  # Weitere Versuche pro Segment nach Speichermangel oder Runtime-Fehler, 0 bis 5.
+  retries: 2
 
 # Schreibt Transkripttext nach work/<gruppe>/<ordinal>/debug.log, nie auf die Konsole.
 debug: false

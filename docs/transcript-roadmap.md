@@ -7,7 +7,7 @@ Stand 2026-11-05, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 - **Eine Person, ein Zeitbudget.** TOOL- und IOA-Tickets konkurrieren um dieselben Tage; der Plan ist deshalb eine *lineare* Folge. Echte Parallelität gibt es nur dort, wo ASR-Läufe oder Modell-Downloads im Hintergrund laufen — dann wird am Narrata-Ticket derselben Phase gearbeitet.
 - **Kapazität: 3 Entwicklungstage pro Woche**, Start 02.11.2026, Pause 21.12.2026–03.01.2027. Das ist der Umrechnungsfaktor für die Kalenderspalte, nicht Teil des Plans — ändert sich die Kapazität, verschieben sich nur die Daten, nicht die Reihenfolge.
 - **Aufwände sind Entwicklungstage in 0,5er-Schritten**, grob geschätzt aus den Ticket-Beschreibungen. Sie dienen der Reihenfolge und den Meilenstein-Abständen; keine Zusage.
-- **Gesamtumfang: 68.5 Entwicklungstage** ≈ 25 Wochen inkl. Pause → letzter Meilenstein 22.04.2027. Davon 1.5 Tage bedingt (TOOL-73).
+- **Gesamtumfang: 69.5 Entwicklungstage** ≈ 26 Wochen inkl. Pause → letzter Meilenstein 26.04.2027. Davon 2 Tage bedingt (TOOL-73, TOOL-78).
 - **Neu terminiert am 02.11.2026:** Vom Plan des 03.10. war noch kein Ticket begonnen (alle TOOL- und IOA-Tickets To Do, kein Python-Repo, keine Transkript-Commits). Die 3 Tage pro Woche sind damit unbelegt; Reihenfolge belastbar, Daten nur bei dieser Kapazität.
 - Nicht eingeplant: TOOL-14 (Remote-Backend, geparkt), die Epics selbst, verworfene Tickets (TOOL-21–32, 34; TOOL-3, 7; TOOL-11, 33 nach TOOL-62).
 
@@ -28,10 +28,10 @@ Stand 2026-11-05, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 | M1 | Backend gewählt, Diarisierung entschieden, TOOL-11/33 entschieden, Export-Endpoint live | Phase 1 | 12.11.2026 – 01.12.2026 | 8.5 |
 | M2 | Eine Session läuft vom MP4 bis zur Referenztranskription mit Sprecher-Labels und Wissens-Snapshot | Phase 2 | 01.12.2026 – 25.01.2027 | 17 |
 | M3 | JSON-Export (Contract v1) einer Session importiert lokal in Narrata und rendert dort als Rohliste | Phase 3 | 25.01.2027 – 18.02.2027 | 11 |
-| M4 | Pilot-Review (TOOL-60): Kernhypothese geprüft; Entscheidungen Review-Kanal, Remote-Backend, Freigabe IT/OT | Phase 4 | 18.02.2027 – 04.03.2027 | 6.5 |
-| M5 | Transkript per Chat/MCP befragbar, in Narrata durchsuchbar, lesbar, verlinkt | Phase 5 | 08.03.2027 – 23.03.2027 | 8 |
-| M6 | IT/OT-Schicht im Export, Statistik im Bericht | Phase 6 | 25.03.2027 – 12.04.2027 | 7.5 |
-| M7 | Erste Welt-Archiv-Einträge mit Transkript-Provenienz; IT/OT-Statistik und Abendvergleich sichtbar | Phase 7 | 12.04.2027 – 22.04.2027 | 5 |
+| M4 | Pilot-Review (TOOL-60): Kernhypothese geprüft; Entscheidungen Review-Kanal, Remote-Backend, Freigabe IT/OT | Phase 4 | 18.02.2027 – 08.03.2027 | 7.5 |
+| M5 | Transkript per Chat/MCP befragbar, in Narrata durchsuchbar, lesbar, verlinkt | Phase 5 | 09.03.2027 – 25.03.2027 | 8 |
+| M6 | IT/OT-Schicht im Export, Statistik im Bericht | Phase 6 | 29.03.2027 – 13.04.2027 | 7.5 |
+| M7 | Erste Welt-Archiv-Einträge mit Transkript-Provenienz; IT/OT-Statistik und Abendvergleich sichtbar | Phase 7 | 13.04.2027 – 26.04.2027 | 5 |
 
 ## Reflexionspunkte
 
@@ -89,7 +89,7 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 | TOOL-76 | Diarisierung mit pyannote integrieren | 1.5 | 17.12.2026 | 04.01.2027 | erledigt: `src/transcript/diarization/`, `transcript diarize`, README „Diarisierung“; Labels pro Segment, Rohform unter `work/<session>/diarization/`; pyannote-Telemetrie per `transcript/__init__.py` abgeschaltet |
 | TOOL-15 | Einzelsegment transkribieren | 0.5 | 04.01.2027 | 04.01.2027 | erledigt: `src/transcript/transcription.py`, `transcript transcribe --segment N`, README „Spracherkennung“; ein Fehlschlag ersetzt nie ein erfolgreiches Ergebnis |
 | TOOL-17 | Ganze Session, Resume | 1 | 05.01.2027 | 05.01.2027 | erledigt: `transcription.transcribe_session`, `transcript transcribe <session>` mit Wiederaufnahme und Diarisierung, README „Lauf“ |
-| TOOL-18 | Fehlerkategorien, Retry, Force | 1 | 07.01.2027 | 07.01.2027 | aus TOOL-63: Fehlerklassen mit `retryable` stehen in `transcript.asr`; TOOL-18 ergänzt Retry, Resume, Force, Protokollierung; aus TOOL-16: `status: failed` mit `error.category`/`retryable` nimmt Fehler auf, `reference.failed_reference`; aus TOOL-64: Retry auf `ResourceError`/`BackendRuntimeError`; aus TOOL-76: Retry auch für `ResourceError`/`BackendRuntimeError` der Diarisierung, Nahtstelle ist der Segment-Körper von `diarize_session`; aus TOOL-15: Retry bei `ResourceError`/`BackendRuntimeError`, Protokollierung; aus TOOL-17: `transcribe_session` speichert `failed`, läuft weiter und versucht es beim nächsten Lauf ohne `--force` erneut, Nahtstelle für Retry ist `transcription._run` pro Segment; Exit 1 bei `failed`/`open` |
+| TOOL-18 | Fehlerkategorien, Retry, Force | 1 | 07.01.2027 | 07.01.2027 | erledigt: `src/transcript/retry.py`, `asr.retries`/`diarization.retries`, README „Lauf“; Diarisierung markiert Segmente `failed` statt abzubrechen |
 | TOOL-19 | Absolute Zeitstempel im Format | 0.5 | 11.01.2027 | 11.01.2027 | aus TOOL-12: für das Format `timecode.format_ms` und `manifest.Segment` nutzen; aus TOOL-16: absolute Zeiten werden nicht gespeichert, sondern über `Segment.to_absolute_ms` berechnet; Zeiten knapp hinter dem WAV-Ende hier behandeln |
 | TOOL-67 | Narrata-Kanal + Datei-Fallback | 1 | 11.01.2027 | 12.01.2027 | braucht IOA-1215; aus TOOL-6: `.env.example` anlegen, sobald das Narrata-Token die erste Variable ist; aus TOOL-12: Rohdatei unter `work/<session>/narrata/transcription-context.json`, `transcript.narrata.read_session` liest daraus den Block `session`; Response-Form gegen die IOA-1215-Doku prüfen |
 | TOOL-38 | Teilnehmerwissen | 0.5 | 12.01.2027 | 12.01.2027 |  |
@@ -128,11 +128,13 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 |---|---|---|---|---|---|
 | TOOL-56 | Preflight | 0.5 | 18.02.2027 | 18.02.2027 | aus TOOL-9: `transcript doctor` ist der Ausgangspunkt des Gesamt-Preflights |
 | TOOL-55 | E2E-CLI mit Halt an manuellen Schritten | 1 | 22.02.2027 | 22.02.2027 | aus TOOL-10: `transcript extract` ist der erste Schritt des E2E-Befehls |
-| TOOL-57 | Pipeline-Status + Resume | 1 | 23.02.2027 | 23.02.2027 |  |
-| TOOL-58 | Erste reale Session komplett (inkl. Review- und Zuordnungszeit) | 2 | 25.02.2027 | 01.03.2027 | Export → Fixture für IOA-1218 |
-| TOOL-59 | Laufzeit/Ressourcen/Aufwand auswerten | 0.5 | 02.03.2027 | 02.03.2027 |  |
-| TOOL-61 | E2E-Workflow dokumentieren | 0.5 | 02.03.2027 | 02.03.2027 |  |
-| TOOL-60 | V0.1 bewerten, Entscheidungen, V0.2-Backlog | 1 | 04.03.2027 | 04.03.2027 | Go/No-Go für Phase 6 |
+| TOOL-57 | Pipeline-Status + Resume | 1 | 23.02.2027 | 23.02.2027 | aus TOOL-18: Fehlversuche stehen nur als `WARNING` auf stderr (`transcript.retry.FailureLog`); dauerhaftes Protokoll unter `work/<session>/` ist TOOL-77, mit TOOL-57 zusammen entwerfen |
+| TOOL-77 | Fehlversuche dauerhaft protokollieren | 0.5 | 25.02.2027 | 25.02.2027 | aus TOOL-18: heute nur `WARNING` auf stderr über `transcript.retry.FailureLog`; mit TOOL-57 zusammen entwerfen |
+| TOOL-58 | Erste reale Session komplett (inkl. Review- und Zuordnungszeit) | 2 | 25.02.2027 | 02.03.2027 | Export → Fixture für IOA-1218 |
+| TOOL-59 | Laufzeit/Ressourcen/Aufwand auswerten | 0.5 | 02.03.2027 | 02.03.2027 | aus TOOL-18: entscheidet, ob TOOL-78 (Versuche pro Segment im Referenzformat) gebraucht wird |
+| TOOL-78 | Versuche pro Segment im Referenzformat | 0.5 | 04.03.2027 | 04.03.2027 | entfällt, wenn TOOL-59 keine Fehlerraten auswerten will; braucht eine neue `format_version` |
+| TOOL-61 | E2E-Workflow dokumentieren | 0.5 | 04.03.2027 | 04.03.2027 |  |
+| TOOL-60 | V0.1 bewerten, Entscheidungen, V0.2-Backlog | 1 | 08.03.2027 | 08.03.2027 | Go/No-Go für Phase 6 |
 
 ### Phase 5 — Narrata-Oberflächen
 
@@ -140,10 +142,10 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| IOA-1220 | Volltextsuche | 1.5 | 08.03.2027 | 09.03.2027 | Voraussetzung für IOA-1223 |
-| IOA-1223 | Chat + MCP | 1.5 | 09.03.2027 | 11.03.2027 | Kernziel: der KI-Assistent antwortet der Spielleitung aus dem Transkript |
-| IOA-1219 | Lese-UI am Session-Detail | 3 | 15.03.2027 | 18.03.2027 | Mockup vor Code |
-| IOA-1221 | Passage-Links | 2 | 22.03.2027 | 23.03.2027 |  |
+| IOA-1220 | Volltextsuche | 1.5 | 09.03.2027 | 11.03.2027 | Voraussetzung für IOA-1223 |
+| IOA-1223 | Chat + MCP | 1.5 | 11.03.2027 | 15.03.2027 | Kernziel: der KI-Assistent antwortet der Spielleitung aus dem Transkript |
+| IOA-1219 | Lese-UI am Session-Detail | 3 | 16.03.2027 | 22.03.2027 | Mockup vor Code |
+| IOA-1221 | Passage-Links | 2 | 23.03.2027 | 25.03.2027 |  |
 
 ### Phase 6 — IT/OT-Klassifikation
 
@@ -151,12 +153,12 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| TOOL-70 | Spike: lokales LLM an Goldstandard, Nutzen 2. Durchlauf | 2 | 25.03.2027 | 29.03.2027 | Labeln kostet die halbe Zeit |
-| TOOL-71 | IT/OT-Datenmodell, Contract-Bump | 1 | 30.03.2027 | 30.03.2027 |  |
-| TOOL-72 | Erstdurchlauf | 1.5 | 01.04.2027 | 05.04.2027 |  |
-| TOOL-73 | Zweitdurchlauf + Metrik | 1.5 | 05.04.2027 | 06.04.2027 | entfällt, wenn TOOL-70 keinen Mehrwert misst |
-| TOOL-74 | IT/OT-Review-Kandidaten | 0.5 | 08.04.2027 | 08.04.2027 |  |
-| TOOL-75 | Sessionstatistik | 1 | 08.04.2027 | 12.04.2027 |  |
+| TOOL-70 | Spike: lokales LLM an Goldstandard, Nutzen 2. Durchlauf | 2 | 29.03.2027 | 30.03.2027 | Labeln kostet die halbe Zeit |
+| TOOL-71 | IT/OT-Datenmodell, Contract-Bump | 1 | 01.04.2027 | 01.04.2027 |  |
+| TOOL-72 | Erstdurchlauf | 1.5 | 05.04.2027 | 06.04.2027 |  |
+| TOOL-73 | Zweitdurchlauf + Metrik | 1.5 | 06.04.2027 | 08.04.2027 | entfällt, wenn TOOL-70 keinen Mehrwert misst |
+| TOOL-74 | IT/OT-Review-Kandidaten | 0.5 | 12.04.2027 | 12.04.2027 |  |
+| TOOL-75 | Sessionstatistik | 1 | 12.04.2027 | 13.04.2027 |  |
 
 ### Phase 7 — Extraktion und Analytik in Narrata
 
@@ -164,8 +166,8 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| IOA-1222 | Transkript als Extraktionsquelle, polymorphe Provenienz | 3 | 12.04.2027 | 19.04.2027 | größte Migration des Epics |
-| IOA-1224 | IT/OT-Flächen + Statistik | 2 | 19.04.2027 | 22.04.2027 |  |
+| IOA-1222 | Transkript als Extraktionsquelle, polymorphe Provenienz | 3 | 13.04.2027 | 20.04.2027 | größte Migration des Epics |
+| IOA-1224 | IT/OT-Flächen + Statistik | 2 | 20.04.2027 | 26.04.2027 |  |
 
 ## Pflege
 

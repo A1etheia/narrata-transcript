@@ -51,7 +51,7 @@ P = [
         ("TOOL-76", "Diarisierung mit pyannote integrieren", 1.5, "erledigt: `src/transcript/diarization/`, `transcript diarize`, README „Diarisierung“; Labels pro Segment, Rohform unter `work/<session>/diarization/`; pyannote-Telemetrie per `transcript/__init__.py` abgeschaltet"),
         ("TOOL-15", "Einzelsegment transkribieren", 0.5, "erledigt: `src/transcript/transcription.py`, `transcript transcribe --segment N`, README „Spracherkennung“; ein Fehlschlag ersetzt nie ein erfolgreiches Ergebnis"),
         ("TOOL-17", "Ganze Session, Resume", 1.0, "erledigt: `transcription.transcribe_session`, `transcript transcribe <session>` mit Wiederaufnahme und Diarisierung, README „Lauf“"),
-        ("TOOL-18", "Fehlerkategorien, Retry, Force", 1.0, "aus TOOL-63: Fehlerklassen mit `retryable` stehen in `transcript.asr`; TOOL-18 ergänzt Retry, Resume, Force, Protokollierung; aus TOOL-16: `status: failed` mit `error.category`/`retryable` nimmt Fehler auf, `reference.failed_reference`; aus TOOL-64: Retry auf `ResourceError`/`BackendRuntimeError`; aus TOOL-76: Retry auch für `ResourceError`/`BackendRuntimeError` der Diarisierung, Nahtstelle ist der Segment-Körper von `diarize_session`; aus TOOL-15: Retry bei `ResourceError`/`BackendRuntimeError`, Protokollierung; aus TOOL-17: `transcribe_session` speichert `failed`, läuft weiter und versucht es beim nächsten Lauf ohne `--force` erneut, Nahtstelle für Retry ist `transcription._run` pro Segment; Exit 1 bei `failed`/`open`"),
+        ("TOOL-18", "Fehlerkategorien, Retry, Force", 1.0, "erledigt: `src/transcript/retry.py`, `asr.retries`/`diarization.retries`, README „Lauf“; Diarisierung markiert Segmente `failed` statt abzubrechen"),
         ("TOOL-19", "Absolute Zeitstempel im Format", 0.5, "aus TOOL-12: für das Format `timecode.format_ms` und `manifest.Segment` nutzen; aus TOOL-16: absolute Zeiten werden nicht gespeichert, sondern über `Segment.to_absolute_ms` berechnet; Zeiten knapp hinter dem WAV-Ende hier behandeln"),
         ("TOOL-67", "Narrata-Kanal + Datei-Fallback", 1.0, "braucht IOA-1215; aus TOOL-6: `.env.example` anlegen, sobald das Narrata-Token die erste Variable ist; aus TOOL-12: Rohdatei unter `work/<session>/narrata/transcription-context.json`, `transcript.narrata.read_session` liest daraus den Block `session`; Response-Form gegen die IOA-1215-Doku prüfen"),
         ("TOOL-38", "Teilnehmerwissen", 0.5, ""),
@@ -82,9 +82,11 @@ P = [
      "M4 — Pilot-Review (TOOL-60): Kernhypothese geprüft; Entscheidungen Review-Kanal, Remote-Backend, Freigabe IT/OT. Zweiter großer Reflexionspunkt.", [
         ("TOOL-56", "Preflight", 0.5, "aus TOOL-9: `transcript doctor` ist der Ausgangspunkt des Gesamt-Preflights"),
         ("TOOL-55", "E2E-CLI mit Halt an manuellen Schritten", 1.0, "aus TOOL-10: `transcript extract` ist der erste Schritt des E2E-Befehls"),
-        ("TOOL-57", "Pipeline-Status + Resume", 1.0, ""),
+        ("TOOL-57", "Pipeline-Status + Resume", 1.0, "aus TOOL-18: Fehlversuche stehen nur als `WARNING` auf stderr (`transcript.retry.FailureLog`); dauerhaftes Protokoll unter `work/<session>/` ist TOOL-77, mit TOOL-57 zusammen entwerfen"),
+        ("TOOL-77", "Fehlversuche dauerhaft protokollieren", 0.5, "aus TOOL-18: heute nur `WARNING` auf stderr über `transcript.retry.FailureLog`; mit TOOL-57 zusammen entwerfen"),
         ("TOOL-58", "Erste reale Session komplett (inkl. Review- und Zuordnungszeit)", 2.0, "Export → Fixture für IOA-1218"),
-        ("TOOL-59", "Laufzeit/Ressourcen/Aufwand auswerten", 0.5, ""),
+        ("TOOL-59", "Laufzeit/Ressourcen/Aufwand auswerten", 0.5, "aus TOOL-18: entscheidet, ob TOOL-78 (Versuche pro Segment im Referenzformat) gebraucht wird"),
+        ("TOOL-78", "Versuche pro Segment im Referenzformat", 0.5, "entfällt, wenn TOOL-59 keine Fehlerraten auswerten will; braucht eine neue `format_version`"),
         ("TOOL-61", "E2E-Workflow dokumentieren", 0.5, ""),
         ("TOOL-60", "V0.1 bewerten, Entscheidungen, V0.2-Backlog", 1.0, "Go/No-Go für Phase 6"),
     ]),
@@ -111,7 +113,7 @@ P = [
     ]),
 ]
 
-CONDITIONAL = {"TOOL-73"}
+CONDITIONAL = {"TOOL-73", "TOOL-78"}
 
 
 def workday_calendar(limit: int) -> list[dt.date]:

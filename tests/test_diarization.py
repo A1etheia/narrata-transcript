@@ -8,7 +8,7 @@ from unittest import mock
 
 from test_reference import KEY, MANIFEST, SEGMENT, minimal
 
-from transcript.asr import BackendInfo, ResourceError
+from transcript.asr import AudioInputError, BackendInfo, ResourceError
 from transcript.audio import sha256_file
 from transcript.diarization import (
     DIARIZATION_FORMAT_VERSION,
@@ -36,6 +36,7 @@ from transcript.reference import (
 from transcript.reference import (
     to_json as reference_json,
 )
+from transcript.retry import SegmentFailure
 from transcript.session import SessionPaths
 
 SECRET = "Drachenhort"  # stands in for text that must not reach a message
@@ -495,13 +496,72 @@ class DiarizeSessionTest(unittest.TestCase):
         update.assert_not_called()
         self.assertEqual(self.paths.reference(1).stat().st_mtime_ns, written)
 
-    def test_diarizer_is_closed_when_a_segment_fails(self) -> None:
-        diarizer = FakeDiarizer()
-        diarizer.diarize = mock.Mock(side_effect=ResourceError("pyannote: oom"))
+    def transcribe_segment_3(self) -> None:
+        segment = dataclasses.replace(self.transcribed.segment, index=3)
+        update_reference(
+            self.paths, dataclasses.replace(self.transcribed, segment=segment)
+        )
 
-        with self.assertRaises(ResourceError):
-            self.diarize(diarizer)
+    def failing_on(self, diarizer: FakeDiarizer, *errors: Exception) -> FakeDiarizer:
+        """`diarizer` raising `errors` in turn for segment 1, each from `SECRET`."""
+        pending = list(errors)
+        answer = diarizer.diarize
+
+        def diarize(audio: Path, *args: Any) -> DiarizationRun:
+            if audio.name == "segment-01.wav" and pending:
+                raise pending.pop(0) from RuntimeError(SECRET)
+            return answer(audio, *args)
+
+        diarizer.diarize = diarize  # type: ignore[method-assign]
+        return diarizer
+
+    def test_failed_segment_leaves_its_files_and_the_run_goes_on(self) -> None:
+        self.diarize(FakeDiarizer())  # stored run and labels for segment 1
+        self.transcribe_segment_3()
+        files = [self.paths.reference(1), self.paths.diarization_raw(1)]
+        before = [path.read_bytes() for path in files]
+        diarizer = self.failing_on(FakeDiarizer(), AudioInputError("pyannote: bad"))
+
+        with self.assertLogs("transcript.diarization", "WARNING") as logs:
+            summaries = self.diarize(
+                diarizer, force=True, retries=2, sleep=lambda _: None
+            )
+
+        first = summaries[0]
+        self.assertEqual(first.outcome, "failed")
+        self.assertEqual(
+            first.failure, SegmentFailure("AudioInputError", "pyannote: bad", False, 1)
+        )
+        self.assertEqual(summaries[2].outcome, "diarized")
+        self.assertEqual([path.read_bytes() for path in files], before)
         self.assertEqual(diarizer.close_calls, 1)
+        self.assertIn(
+            f"{KEY} segment 1: {INFO.backend_id}: attempt 1/3 failed", logs.output[0]
+        )
+        self.assertIn("not retryable", logs.output[0])
+        self.assertNotIn(SECRET, "\n".join(logs.output) + repr(summaries))
+
+    def test_retryable_failure_is_tried_again(self) -> None:
+        sleeps: list[float] = []
+        diarizer = self.failing_on(FakeDiarizer(), ResourceError("pyannote: oom"))
+
+        with self.assertLogs("transcript.diarization", "WARNING"):
+            summaries = self.diarize(diarizer, retries=1, sleep=sleeps.append)
+
+        self.assertEqual((summaries[0].outcome, summaries[0].attempts), ("diarized", 2))
+        self.assertEqual((diarizer.load_calls, len(sleeps)), (1, 1))
+
+    def test_exhausted_retries_fail_and_the_next_run_tries_again(self) -> None:
+        errors = [ResourceError("pyannote: oom")] * 2
+        diarizer = self.failing_on(FakeDiarizer(), *errors)
+
+        with self.assertLogs("transcript.diarization", "WARNING") as logs:
+            summaries = self.diarize(diarizer, retries=1, sleep=lambda _: None)
+
+        self.assertEqual((summaries[0].outcome, summaries[0].attempts), ("failed", 2))
+        self.assertIn("giving up", logs.output[-1])
+        self.assertIsNone(load_run(self.paths, 1))
+        self.assertEqual(self.diarize(FakeDiarizer())[0].outcome, "diarized")
 
 
 if __name__ == "__main__":

@@ -8,12 +8,14 @@ the model is loaded, because loading takes minutes.
 reuses a stored result made with the same model, revision and settings.
 
 A successful result is never replaced by a failed one: a failure is recorded as
-`status: failed` only where no transcribed result exists.
+`status: failed` only where no transcribed result exists. A retryable failure is
+tried again up to `retries` times first (`transcript.retry`).
 
-Error messages and summaries name the segment, files and error classes, never
-transcript text or keywords.
+Error messages, logs and summaries name the session, segment, backend, files
+and error classes, never transcript text or keywords.
 """
 
+import logging
 import time
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
@@ -36,7 +38,10 @@ from transcript.reference import (
     load_reference,
     write_reference,
 )
+from transcript.retry import FailureLog, SegmentFailure, attempt
 from transcript.session import SessionPaths
+
+_logger = logging.getLogger(__name__)
 
 OUTCOME_STATUSES = ("transcribed", "reused", "failed", "open")
 
@@ -50,8 +55,8 @@ class SegmentOutcome:
     """What a session run did with one segment: counts and error class, never text.
 
     `status` is one of `OUTCOME_STATUSES`: `transcribed` or `reused` (a stored
-    result counts), `failed` (the backend raised `error`) or `open` (not
-    reached, the backend did not load).
+    result counts), `failed` (see `failure`) or `open` (not reached, the
+    backend did not load).
     """
 
     index: int
@@ -60,9 +65,9 @@ class SegmentOutcome:
     words: int = 0
     words_with_confidence: int = 0
     language: str | None = None
-    elapsed_ms: int | None = None  # of the backend call, when it transcribed
-    error: str | None = None  # error class of a failure
-    retryable: bool | None = None
+    elapsed_ms: int | None = None  # of the successful backend call
+    failure: SegmentFailure | None = None  # set exactly when `failed`
+    attempts: int = 0  # backend calls made in this run
 
 
 @dataclass(frozen=True)
@@ -88,15 +93,19 @@ def transcribe_session(
     force: bool = False,
     indices: Collection[int] | None = None,
     progress: Callable[[SegmentOutcome], None] | None = None,
+    retries: int = 0,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> SessionRun:
     """Transcribe the selected segments of `manifest`, all of them by default.
 
     A stored transcribed result is reused, unless `force`, when backend, model,
     revision and settings match the backend's identity and, with `language` set,
     the detected language matches it. Everything else is transcribed in manifest
-    order with the backend loaded once. A `BackendError` from one segment is
-    recorded as `failed` and the run goes on; one from loading leaves the
-    remaining segments `open`. `progress` gets each outcome as it is known.
+    order with the backend loaded once. A retryable `BackendError` from one
+    segment is tried again up to `retries` times, each failed attempt logged;
+    the last error is recorded as `failed` and the run goes on. One from
+    loading leaves the remaining segments `open`. `progress` gets each outcome
+    as it is known.
 
     Raises before loading: a `BackendError` when the backend cannot run, a
     `TranscriptionError` for an unknown segment or missing audio, and a
@@ -132,6 +141,8 @@ def transcribe_session(
                         language,
                         keywords,
                         keep_existing,
+                        retries,
+                        sleep,
                     )
                     outcomes[segment.index] = outcome
                     report(outcome)
@@ -156,37 +167,44 @@ def _run(
     language: str | None,
     keywords: Sequence[str],
     keep_existing: bool,
+    retries: int,
+    sleep: Callable[[float], None],
 ) -> SegmentOutcome:
     """Transcribe `segment` with the loaded `backend` and write the result.
 
-    A `BackendError` becomes a `failed` outcome and a failed reference, unless
-    `keep_existing`: a transcribed result is never replaced by a failure.
+    The last `BackendError` after the retries becomes a `failed` outcome and a
+    failed reference, unless `keep_existing`: a transcribed result is never
+    replaced by a failure.
     """
     request = TranscriptionRequest(
         audio=paths.segment_wav(segment.index),
         language=language,
         keywords=tuple(keywords),
     )
-    started = time.perf_counter()
-    try:
-        result = transcribe(backend, request)
-    except BackendError as error:
+    log = FailureLog(
+        _logger,
+        f"{manifest.key} segment {segment.index}: {backend.info.backend_id}",
+        retries,
+    )
+    done = attempt(lambda: transcribe(backend, request), retries, log, sleep)
+    if done.error is not None:
         if not keep_existing:
             failure = failed_reference(
-                error, backend, manifest, segment, _elapsed_ms(started)
+                done.error, backend, manifest, segment, done.elapsed_ms
             )
             write_reference(paths, failure, None)
         return SegmentOutcome(
             segment.index,
             "failed",
-            error=type(error).__name__,
-            retryable=error.retryable,
+            failure=SegmentFailure.of(done),
+            attempts=done.attempts,
         )
+    assert done.result is not None
     reference = from_backend_result(
-        result, backend, manifest, segment, _elapsed_ms(started)
+        done.result, backend, manifest, segment, done.elapsed_ms
     )
-    write_reference(paths, reference, result.raw)
-    return _outcome(reference, "transcribed")
+    write_reference(paths, reference, done.result.raw)
+    return _outcome(reference, "transcribed", done.attempts)
 
 
 def _selected(manifest: Manifest, indices: Collection[int] | None) -> list[Segment]:
@@ -230,7 +248,9 @@ def _reusable(
     )
 
 
-def _outcome(reference: ReferenceTranscript, status: str) -> SegmentOutcome:
+def _outcome(
+    reference: ReferenceTranscript, status: str, attempts: int = 0
+) -> SegmentOutcome:
     words = reference.words
     return SegmentOutcome(
         index=reference.segment.index,
@@ -240,12 +260,9 @@ def _outcome(reference: ReferenceTranscript, status: str) -> SegmentOutcome:
         words_with_confidence=sum(word.confidence is not None for word in words),
         language=reference.asr.language,
         elapsed_ms=reference.processing.elapsed_ms if status == "transcribed" else None,
+        attempts=attempts,
     )
 
 
 def _ignore(outcome: SegmentOutcome) -> None:
     pass
-
-
-def _elapsed_ms(started: float) -> int:
-    return round((time.perf_counter() - started) * 1000)

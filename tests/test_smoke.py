@@ -16,9 +16,9 @@ from test_transcription import MANIFEST_3, FailingLoad, session_backend
 
 import transcript
 from transcript import __main__ as transcript_main
-from transcript import audio_tools
+from transcript import audio_tools, retry
 from transcript.__main__ import main
-from transcript.asr import BackendUnavailableError
+from transcript.asr import AudioInputError, BackendUnavailableError, ResourceError
 from transcript.asr.fake import FakeBackend
 from transcript.audio_tools import AudioToolError, AudioTools, ToolInfo
 from transcript.reference import Passage, Word, update_reference
@@ -33,6 +33,19 @@ def run(*argv: str) -> tuple[int, str, str]:
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
         code = main(argv)
     return code, stdout.getvalue(), stderr.getvalue()
+
+
+def failing_diarizer(test: Any, error: Exception) -> Any:
+    """Patch the diarizer factory so every diarizer `test` gets raises `error`."""
+
+    def broken(config: Any) -> FakeDiarizer:
+        diarizer = test.diarizer(config)
+        diarizer.diarize = mock.Mock(side_effect=error)
+        return diarizer
+
+    return mock.patch.object(
+        transcript_main.PyannoteDiarizer, "from_config", side_effect=broken
+    )
 
 
 class SmokeTest(unittest.TestCase):
@@ -300,6 +313,7 @@ class TranscribeCommandTest(unittest.TestCase):
         self.backend = session_backend()
         self.diarizers: list[FakeDiarizer] = []
         for patcher in (
+            mock.patch.object(retry, "RETRY_DELAY_S", 0),
             mock.patch.object(
                 transcript_main.manifest, "load_manifest", return_value=MANIFEST_3
             ),
@@ -381,11 +395,55 @@ class TranscribeCommandTest(unittest.TestCase):
     def test_failed_segment_gives_exit_1_and_the_run_goes_on(self) -> None:
         self.backend = session_backend(fail_on=2)
 
-        code, stdout, _ = self.transcribe("--no-diarize")
+        code, stdout, stderr = self.transcribe("--no-diarize")
 
         self.assertEqual(code, 1)
-        self.assertIn("  2. failed: ResourceError (retryable)", stdout)
+        self.assertIn(
+            "  2. failed after 3 attempt(s): ResourceError (retryable): "
+            "fake: out of memory",
+            stdout,
+        )
         self.assertIn("2 transcribed, 0 reused, 1 failed, 0 open", stdout)
+        self.assertIn(
+            "WARNING beispielgruppe/042 segment 2: fake: attempt 3/3 failed: "
+            "ResourceError: fake: out of memory; giving up",
+            stderr,
+        )
+        self.assertNotIn(SECRET, stdout + stderr)
+
+    def test_passing_failure_is_retried_with_exit_0(self) -> None:
+        self.backend = session_backend(errors={2: [ResourceError("fake: oom")]})
+
+        code, stdout, stderr = self.transcribe("--no-diarize")
+
+        self.assertEqual(code, 0)
+        self.assertIn("3 transcribed, 0 reused, 0 failed, 0 open", stdout)
+        self.assertIn("segment 2: fake: attempt 1/3 failed", stderr)
+        self.assertIn("retrying in 0 s", stderr)
+
+    def test_retries_come_from_the_configuration(self) -> None:
+        self.config.write_text(
+            self.config.read_text(encoding="utf-8") + "  retries: 0\n",
+            encoding="utf-8",
+        )
+        self.backend = session_backend(fail_on=2)
+
+        _, stdout, _ = self.transcribe("--no-diarize")
+
+        self.assertIn("  2. failed after 1 attempt(s)", stdout)
+
+    def test_failed_diarization_gives_exit_1(self) -> None:
+        with failing_diarizer(self, AudioInputError("fake-diar: bad audio")):
+            code, stdout, stderr = self.transcribe()
+
+        self.assertEqual(code, 1)
+        self.assertIn("3 transcribed, 0 reused, 0 failed, 0 open", stdout)
+        self.assertIn(
+            "  1. failed after 1 attempt(s): AudioInputError (not retryable): "
+            "fake-diar: bad audio",
+            stdout,
+        )
+        self.assertIn("segment 1: fake-diar: attempt 1/3 failed", stderr)
 
     def test_load_failure_leaves_segments_open_with_exit_1(self) -> None:
         self.backend = FailingLoad()
@@ -458,6 +516,7 @@ class DiarizeCommandTest(unittest.TestCase):
         )
         self.diarizers: list[FakeDiarizer] = []
         for patcher in (
+            mock.patch.object(retry, "RETRY_DELAY_S", 0),
             mock.patch.object(
                 transcript_main.manifest, "load_manifest", return_value=self.manifest
             ),
@@ -500,6 +559,19 @@ class DiarizeCommandTest(unittest.TestCase):
 
         _, stdout, _ = self.diarize("--force")
         self.assertIn("1. diarized in", stdout)
+
+    def test_failed_segment_gives_exit_1(self) -> None:
+        with failing_diarizer(self, ResourceError("fake-diar: out of memory")):
+            code, stdout, stderr = self.diarize()
+
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "1. failed after 3 attempt(s): ResourceError (retryable): "
+            "fake-diar: out of memory",
+            stdout,
+        )
+        self.assertEqual(stderr.count("WARNING beispielgruppe/042 segment 1"), 3)
+        self.assertEqual(self.diarizers[0].close_calls, 1)
 
     def test_invalid_speaker_count_is_rejected_by_argparse(self) -> None:
         with (

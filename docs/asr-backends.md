@@ -64,7 +64,7 @@ Jedes Backend deklariert `Capabilities`. `capabilities.to_dict()` liefert sie al
 | `BackendRuntimeError` | unerwarteter Fehler im Backend, ungültiges Ergebnis | ja |
 | `UnsupportedCapabilityError` | ein Schritt braucht eine nicht deklarierte Fähigkeit | nein |
 
-`retryable` sagt nur, ob derselbe Aufruf später gelingen kann. Ob und wie oft wiederholt wird, entscheidet TOOL-18. Fremde Exceptions macht `transcribe` zu `BackendUnavailableError` (`ImportError`), `ResourceError` (`MemoryError`) oder `BackendRuntimeError`. Die Message nennt dann nur Backend und Exception-Typ, das Original hängt als `__cause__` daran. Runtime-Meldungen können Hotwords oder Transkripttext enthalten.
+`retryable` sagt, ob derselbe Aufruf später gelingen kann. Danach richtet sich die Wiederholung in `transcript.retry.attempt` (TOOL-18): Ein Fehler mit `retryable` wird mit dem geladenen Backend nach 5 s erneut versucht, höchstens `asr.retries`-mal; alle anderen gehen beim ersten Mal durch. `load` wird nie wiederholt. `FailureLog` protokolliert jeden Fehlversuch mit Klasse und Message, nie mit Traceback. Fremde Exceptions macht `transcribe` zu `BackendUnavailableError` (`ImportError`), `ResourceError` (`MemoryError`) oder `BackendRuntimeError`. Die Message nennt dann nur Backend und Exception-Typ, das Original hängt als `__cause__` daran. Runtime-Meldungen können Hotwords oder Transkripttext enthalten.
 
 ## Regeln für Adapter
 

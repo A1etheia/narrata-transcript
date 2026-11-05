@@ -10,14 +10,20 @@ Only speaker fields and the `diarization` block change; text, times and
 confidence stay as the ASR backend delivered them. Labels hold within one
 segment only; matching them across segments is TOOL-68.
 
-Error messages name the file and the field, never a label or any text.
+A retryable diarizer error is tried again up to `retries` times
+(`transcript.retry`); a segment that still fails is reported as `failed` and
+the run goes on with the next one.
+
+Error messages and logs name the session, segment, file and field, never a
+label or any text.
 """
 
 import bisect
 import functools
 import itertools
+import logging
 import time
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Protocol
@@ -38,9 +44,13 @@ from transcript.reference import (
     majority_speaker,
     update_reference,
 )
+from transcript.retry import FailureLog, SegmentFailure, attempt
 from transcript.session import SessionPaths
 
 DIARIZATION_FORMAT_VERSION = 1
+
+
+_logger = logging.getLogger(__name__)
 
 
 class DiarizationError(DataFileError):
@@ -139,8 +149,10 @@ class SegmentSummary:
     """What happened to one segment: counts and times only, never labels or text."""
 
     index: int
-    outcome: str  # "diarized", "reused" or "skipped"
+    outcome: str  # "diarized", "reused", "skipped" or "failed"
     reason: str | None = None  # why it was skipped
+    failure: SegmentFailure | None = None  # set exactly when "failed"
+    attempts: int = 0  # diarizer calls made in this run
     labels: int = 0
     turns: int = 0
     words: int = 0
@@ -154,65 +166,109 @@ def diarize_session(
     diarizer: Diarizer,
     num_speakers: int | None = None,
     force: bool = False,
+    retries: int = 0,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> list[SegmentSummary]:
     """Label the words of every transcribed segment with speakers.
 
     A stored run is reused when audio, model, revision, settings and
     `num_speakers` match, unless `force`. The model is loaded only for the first
     segment that needs it and closed at the end. Segments without a transcript
-    or with a failed one are skipped. Run it after the ASR backend is closed:
-    both models together do not fit in memory.
+    or with a failed one are skipped. A retryable `BackendError` from one
+    segment is tried again up to `retries` times; the last one makes the
+    segment `failed`, leaves its files as they were, and the run goes on. One
+    from loading ends the run. Run it after the ASR backend is closed: both
+    models together do not fit in memory.
     """
     info = diarizer.identity()
     loaded = False
-    summaries = []
+
+    def load() -> None:
+        nonlocal loaded
+        if not loaded:
+            diarizer.load()
+            loaded = True
+
     try:
-        for segment in manifest.segments:
-            index = segment.index
-            reference = (
-                load_reference(paths, index)
-                if paths.reference(index).is_file()
-                else None
+        return [
+            _diarize_segment(
+                paths,
+                segment.index,
+                diarizer,
+                info=info,
+                load=load,
+                num_speakers=num_speakers,
+                force=force,
+                retries=retries,
+                sleep=sleep,
             )
-            if reference is None or reference.status != "transcribed":
-                reason = (
-                    "no transcript" if reference is None else "transcription failed"
-                )
-                summaries.append(SegmentSummary(index, "skipped", reason))
-                continue
-            audio = paths.segment_wav(index)
-            audio_sha256 = sha256_file(audio)
-            run = None if force else load_run(paths, index)
-            elapsed_ms = None
-            if run is None or not run.matches(
-                info, diarizer.settings, num_speakers, audio_sha256
-            ):
-                if not loaded:
-                    diarizer.load()
-                    loaded = True
-                started = time.perf_counter()
-                run = diarizer.diarize(audio, info, audio_sha256, num_speakers)
-                elapsed_ms = round((time.perf_counter() - started) * 1000)
-                write_run(paths, index, run)
-            labelled = assign_speakers(reference, run)
-            if labelled != reference:  # a reused run usually changes nothing
-                update_reference(paths, labelled)
-            words = labelled.words
-            summaries.append(
-                SegmentSummary(
-                    index,
-                    "reused" if elapsed_ms is None else "diarized",
-                    labels=len(run.labels),
-                    turns=len(run.turns),
-                    words=len(words),
-                    labelled_words=sum(word.speaker is not None for word in words),
-                    elapsed_ms=elapsed_ms,
-                )
-            )
+            for segment in manifest.segments
+        ]
     finally:
         if loaded:
             diarizer.close()
-    return summaries
+
+
+def _diarize_segment(
+    paths: SessionPaths,
+    index: int,
+    diarizer: Diarizer,
+    *,
+    info: BackendInfo,
+    load: Callable[[], None],
+    num_speakers: int | None,
+    force: bool,
+    retries: int,
+    sleep: Callable[[float], None],
+) -> SegmentSummary:
+    """Diarize or reuse one segment and label its words; see `diarize_session`."""
+    reference = (
+        load_reference(paths, index) if paths.reference(index).is_file() else None
+    )
+    if reference is None or reference.status != "transcribed":
+        reason = "no transcript" if reference is None else "transcription failed"
+        return SegmentSummary(index, "skipped", reason)
+    audio = paths.segment_wav(index)
+    audio_sha256 = sha256_file(audio)
+    run = None if force else load_run(paths, index)
+    elapsed_ms = None
+    attempts = 0
+    if run is None or not run.matches(
+        info, diarizer.settings, num_speakers, audio_sha256
+    ):
+        load()
+        done = attempt(
+            lambda: diarizer.diarize(audio, info, audio_sha256, num_speakers),
+            retries,
+            FailureLog(
+                _logger, f"{paths.key} segment {index}: {info.backend_id}", retries
+            ),
+            sleep,
+        )
+        if done.error is not None:
+            return SegmentSummary(
+                index,
+                "failed",
+                failure=SegmentFailure.of(done),
+                attempts=done.attempts,
+            )
+        assert done.result is not None
+        run, elapsed_ms, attempts = done.result, done.elapsed_ms, done.attempts
+        write_run(paths, index, run)
+    labelled = assign_speakers(reference, run)
+    if labelled != reference:  # a reused run usually changes nothing
+        update_reference(paths, labelled)
+    words = labelled.words
+    return SegmentSummary(
+        index,
+        "reused" if elapsed_ms is None else "diarized",
+        labels=len(run.labels),
+        turns=len(run.turns),
+        words=len(words),
+        labelled_words=sum(word.speaker is not None for word in words),
+        elapsed_ms=elapsed_ms,
+        attempts=attempts,
+    )
 
 
 def assign_speakers(
