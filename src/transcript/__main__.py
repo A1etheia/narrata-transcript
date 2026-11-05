@@ -452,6 +452,7 @@ def _transcribe(
             indices=None if index is None else {index},
             progress=_print_outcome,
             retries=config.asr_retries,
+            knowledge_snapshot_id=_snapshot_id(paths),
         )
     except (
         ValueError,
@@ -491,6 +492,13 @@ def _transcribe(
         return 2
     _print_diarization(summaries, paths)
     return 0 if run.complete and not _any_failed(summaries) else 1
+
+
+def _snapshot_id(paths: SessionPaths) -> str | None:
+    """The id of the stored snapshot; `transcribe` never builds one itself."""
+    if not paths.knowledge_snapshot.is_file():
+        return None
+    return knowledge.load_snapshot(paths).snapshot_id
 
 
 def _print_outcome(outcome: SegmentOutcome) -> None:

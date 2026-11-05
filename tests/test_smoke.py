@@ -28,13 +28,14 @@ from test_transcription import MANIFEST_3, FailingLoad, session_backend
 
 import transcript
 from transcript import __main__ as transcript_main
-from transcript import audio_tools, jsonfile, retry
+from transcript import audio_tools, jsonfile, knowledge, retry
 from transcript import manifest as manifest_module
 from transcript.__main__ import main
 from transcript.asr import AudioInputError, BackendUnavailableError, ResourceError
 from transcript.asr.fake import FakeBackend
 from transcript.audio_tools import AudioToolError, AudioTools, ToolInfo
-from transcript.reference import Passage, Word, update_reference
+from transcript.config import DEFAULT_KEYWORD_BUDGET
+from transcript.reference import Passage, Word, load_reference, update_reference
 from transcript.session import SessionKey, SessionPaths
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -771,6 +772,36 @@ class TranscribeCommandTest(unittest.TestCase):
 
         _, stdout, _ = self.transcribe("--no-diarize", "--force")
         self.assertIn("3 transcribed, 0 reused", stdout)
+
+    def test_stored_snapshot_id_is_recorded_and_a_new_one_transcribes_again(
+        self,
+    ) -> None:
+        self.transcribe("--no-diarize")
+        self.paths.narrata_context.parent.mkdir(parents=True, exist_ok=True)
+        self.paths.narrata_context.write_bytes(encoded(context()))
+        snapshot = knowledge.build_snapshot(self.paths, DEFAULT_KEYWORD_BUDGET)
+        self.backend = session_backend()
+
+        code, stdout, stderr = self.transcribe("--no-diarize")
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("3 transcribed, 0 reused", stdout)
+        self.assertEqual(
+            load_reference(self.paths, 1).asr.knowledge_snapshot_id,
+            snapshot.snapshot_id,
+        )
+        _, stdout, _ = self.transcribe("--no-diarize")
+        self.assertIn("0 transcribed, 3 reused", stdout)
+
+    def test_unreadable_snapshot_stops_before_the_asr(self) -> None:
+        self.paths.knowledge_snapshot.parent.mkdir(parents=True, exist_ok=True)
+        self.paths.knowledge_snapshot.write_text("{", encoding="utf-8")
+
+        code, _, stderr = self.transcribe("--no-diarize")
+
+        self.assertEqual(code, 2)
+        self.assertIn("knowledge snapshot is unreadable", stderr)
+        self.assertEqual(self.backend.load_calls, 0)
 
     def test_segment_option_selects_one_segment(self) -> None:
         code, stdout, _ = self.transcribe("--no-diarize", "--segment", "2")

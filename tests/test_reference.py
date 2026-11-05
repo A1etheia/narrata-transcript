@@ -102,6 +102,7 @@ def full() -> ReferenceTranscript:
             language="de",
             language_probability=0.98,
             keywords_used=(SECRET, "Beispielfigur"),
+            knowledge_snapshot_id="ab" * 32,
         ),
         processing=Processing(
             pipeline_version="0.0.1",
@@ -173,6 +174,17 @@ class RoundTripTest(ReferenceTestCase):
         self.assertNotIn("raw", data)
         json.dumps(data)
 
+    def test_version_1_is_read_without_a_snapshot_id(self) -> None:
+        data = to_json(full())
+        data["format_version"] = 1
+        del data["asr"]["knowledge_snapshot_id"]
+        self.store(data)
+
+        loaded = load_reference(self.paths, 1)
+
+        self.assertIsNone(loaded.asr.knowledge_snapshot_id)
+        self.assertEqual(loaded.asr.keywords_used, full().asr.keywords_used)
+
     def test_a_failed_segment_has_an_error_and_no_passages(self) -> None:
         reference = minimal(
             status="failed", error=Failure(category="ResourceError", retryable=True)
@@ -236,6 +248,9 @@ class InvalidFileTest(ReferenceTestCase):
                 avg_logprob=SECRET
             ),
             "keyword not a string": lambda d: d["asr"].update(keywords_used=[1]),
+            "snapshot id not a string": lambda d: d["asr"].update(
+                knowledge_snapshot_id=1
+            ),
             "repeated label": lambda d: d["diarization"].update(
                 labels=["SPEAKER_00", "SPEAKER_00"]
             ),

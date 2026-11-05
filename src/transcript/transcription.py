@@ -95,11 +95,13 @@ def transcribe_session(
     progress: Callable[[SegmentOutcome], None] | None = None,
     retries: int = 0,
     sleep: Callable[[float], None] = time.sleep,
+    knowledge_snapshot_id: str | None = None,
 ) -> SessionRun:
     """Transcribe the selected segments of `manifest`, all of them by default.
 
     A stored transcribed result is reused, unless `force`, when backend, model,
-    revision and settings match the backend's identity and, with `language` set,
+    revision and settings match the backend's identity, it was made with the
+    same `knowledge_snapshot_id` (`None` for none) and, with `language` set,
     the detected language matches it. Everything else is transcribed in manifest
     order with the backend loaded once. A retryable `BackendError` from one
     segment is tried again up to `retries` times, each failed attempt logged;
@@ -122,7 +124,11 @@ def transcribe_session(
     for segment in segments:
         stored = _stored(paths, segment.index, force)
         transcribed = stored is not None and stored.status == "transcribed"
-        if transcribed and not force and _reusable(stored, found, language):
+        if (
+            transcribed
+            and not force
+            and _reusable(stored, found, language, knowledge_snapshot_id)
+        ):
             outcomes[segment.index] = _outcome(stored, "reused")
             report(outcomes[segment.index])
         else:
@@ -143,6 +149,7 @@ def transcribe_session(
                         keep_existing,
                         retries,
                         sleep,
+                        knowledge_snapshot_id,
                     )
                     outcomes[segment.index] = outcome
                     report(outcome)
@@ -169,6 +176,7 @@ def _run(
     keep_existing: bool,
     retries: int,
     sleep: Callable[[float], None],
+    knowledge_snapshot_id: str | None,
 ) -> SegmentOutcome:
     """Transcribe `segment` with the loaded `backend` and write the result.
 
@@ -190,7 +198,12 @@ def _run(
     if done.error is not None:
         if not keep_existing:
             failure = failed_reference(
-                done.error, backend, manifest, segment, done.elapsed_ms
+                done.error,
+                backend,
+                manifest,
+                segment,
+                done.elapsed_ms,
+                knowledge_snapshot_id=knowledge_snapshot_id,
             )
             write_reference(paths, failure, None)
         return SegmentOutcome(
@@ -201,7 +214,12 @@ def _run(
         )
     assert done.result is not None
     reference = from_backend_result(
-        done.result, backend, manifest, segment, done.elapsed_ms
+        done.result,
+        backend,
+        manifest,
+        segment,
+        done.elapsed_ms,
+        knowledge_snapshot_id=knowledge_snapshot_id,
     )
     write_reference(paths, reference, done.result.raw)
     return _outcome(reference, "transcribed", done.attempts)
@@ -240,11 +258,17 @@ def _stored(paths: SessionPaths, index: int, force: bool) -> ReferenceTranscript
 
 
 def _reusable(
-    reference: ReferenceTranscript, found: BackendIdentity, language: str | None
+    reference: ReferenceTranscript,
+    found: BackendIdentity,
+    language: str | None,
+    knowledge_snapshot_id: str | None,
 ) -> bool:
+    """A new or newly built snapshot means new knowledge, so transcribe again."""
     asr = reference.asr
-    return found.matches(asr.info, asr.settings) and (
-        language is None or asr.language == language
+    return (
+        found.matches(asr.info, asr.settings)
+        and asr.knowledge_snapshot_id == knowledge_snapshot_id
+        and (language is None or asr.language == language)
     )
 
 
