@@ -20,10 +20,21 @@ def read_object(
 ) -> dict[str, Any]:
     """Read a JSON object; `what` names the file in messages, e.g. "manifest"."""
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        raw = path.read_bytes()
     except FileNotFoundError:
         raise error(f"{path}: {what} not found") from None
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as cause:
+    except OSError as cause:
+        raise error(f"{path}: {what} is unreadable ({cause})") from None
+    return parse_object(raw, path, what, error)
+
+
+def parse_object(
+    raw: bytes, path: Path, what: str, error: type[DataFileError] = DataFileError
+) -> dict[str, Any]:
+    """Parse UTF-8 bytes meant for `path` as a JSON object, reported like `read_object`."""
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as cause:
         raise error(f"{path}: {what} is unreadable ({cause})") from None
     if not isinstance(data, dict):
         raise error(f"{path}: {what} is not a JSON object")
@@ -86,12 +97,16 @@ def _is_kind(value: Any, kind: type) -> bool:
 
 def write_atomic(path: Path, data: dict[str, Any]) -> None:
     """Replace `path` atomically, so a reader never sees half a file."""
+    write_bytes_atomic(path, (json.dumps(data, indent=2) + "\n").encode("utf-8"))
+
+
+def write_bytes_atomic(path: Path, data: bytes) -> None:
+    """Replace `path` atomically with `data`, unchanged."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
-        "w", encoding="utf-8", dir=path.parent, prefix=f".{path.stem}-", delete=False
+        "wb", dir=path.parent, prefix=f".{path.stem}-", delete=False
     ) as tmp:
-        json.dump(data, tmp, indent=2)
-        tmp.write("\n")
+        tmp.write(data)
     try:
         os.replace(tmp.name, path)
     except OSError:

@@ -16,7 +16,8 @@ from test_transcription import MANIFEST_3, FailingLoad, session_backend
 
 import transcript
 from transcript import __main__ as transcript_main
-from transcript import audio_tools, retry
+from transcript import audio_tools, jsonfile, retry
+from transcript import manifest as manifest_module
 from transcript.__main__ import main
 from transcript.asr import AudioInputError, BackendUnavailableError, ResourceError
 from transcript.asr.fake import FakeBackend
@@ -25,6 +26,7 @@ from transcript.reference import Passage, Word, update_reference
 from transcript.session import SessionKey, SessionPaths
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+REAL_LOAD_MANIFEST = manifest_module.load_manifest  # before any test patches it
 
 
 def run(*argv: str) -> tuple[int, str, str]:
@@ -235,7 +237,7 @@ class ManifestCommandTest(unittest.TestCase):
         self.paths.narrata_context.write_text(
             json.dumps(
                 {
-                    "contract_version": "1.0",
+                    "contract_version": "1.1",
                     "session": {
                         "play_session_id": 4711,
                         "ordinal": 1,
@@ -367,6 +369,28 @@ class TranscribeCommandTest(unittest.TestCase):
         self.assertEqual(self.backend.requests[0].keywords, ())
         self.assertEqual(self.diarizers, [])
         self.assertNotIn(SECRET, stdout + stderr)
+
+    def test_unsupported_contract_version_stops_before_the_asr(self) -> None:
+        jsonfile.write_atomic(self.paths.manifest, manifest_module._to_json(MANIFEST_3))
+        jsonfile.write_atomic(
+            self.paths.narrata_context,
+            {"contract_version": "2.0", "session": {"ordinal": KEY.ordinal}},
+        )
+
+        # MANIFEST_3 is a made-up timeline with gaps; only the context check counts.
+        with (
+            mock.patch.object(
+                transcript_main.manifest, "load_manifest", REAL_LOAD_MANIFEST
+            ),
+            mock.patch.object(manifest_module, "_check_timeline"),
+        ):
+            code, stdout, stderr = self.transcribe()
+
+        self.assertEqual(code, 2)
+        self.assertIn("contract_version 2.0 is not supported", stderr)
+        self.assertEqual(stdout, "")
+        self.assertEqual(self.backend.load_calls, 0)
+        self.assertEqual(self.diarizers, [])
 
     def test_second_run_reuses_without_loading(self) -> None:
         self.transcribe("--no-diarize")
