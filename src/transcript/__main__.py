@@ -120,21 +120,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _show_config(args.config)
     if args.command == "doctor":
         return _doctor()
-    if args.command == "extract":
-        return _extract(args.session, args.config, args.stream)
-    if args.command == "manifest":
-        return _manifest(args.session, args.config, args.consent)
-    if args.command == "transcribe":
-        return _transcribe(
-            args.session,
-            args.config,
-            args.segment,
-            args.force,
-            diarize=not args.no_diarize,
-            num_speakers=args.num_speakers,
-        )
-    if args.command == "diarize":
-        return _diarize(args.session, args.config, args.num_speakers, args.force)
+    with _log_to_stderr():  # pipeline steps log progress and failed attempts
+        if args.command == "extract":
+            return _extract(args.session, args.config, args.stream)
+        if args.command == "manifest":
+            return _manifest(args.session, args.config, args.consent)
+        if args.command == "transcribe":
+            return _transcribe(
+                args.session,
+                args.config,
+                args.segment,
+                args.force,
+                diarize=not args.no_diarize,
+                num_speakers=args.num_speakers,
+            )
+        if args.command == "diarize":
+            return _diarize(args.session, args.config, args.num_speakers, args.force)
     parser.print_help()
     return 0
 
@@ -156,10 +157,9 @@ def _extract(raw_key: str, config_path: Path, stream: int) -> int:
         config = _load_config(config_path)
         paths = config.session_paths(key)
         recordings = audio.find_recordings(paths)
-        with _log_to_stderr():
-            tools = audio_tools.check_audio_tools()
-            infos = [audio.probe(recording, tools) for recording in recordings]
-            segments = audio.extract(infos, paths, config, tools, stream=stream)
+        tools = audio_tools.check_audio_tools()
+        infos = [audio.probe(recording, tools) for recording in recordings]
+        segments = audio.extract(infos, paths, config, tools, stream=stream)
     except (
         ValueError,
         ConfigError,
@@ -223,8 +223,9 @@ def _transcribe(
 ) -> int:
     """Only counts, times and provenance reach the console, never text (TOOL-66).
 
-    Exit 0 when every selected segment is transcribed, 1 when one failed or
-    stayed open, 2 when the run could not start.
+    Exit 0 when every selected segment is transcribed and diarized, 1 when
+    one failed or stayed open, 2 when the run could not start. Every failed
+    attempt is logged to stderr with session, segment and backend.
     """
     try:
         key = SessionKey.parse(raw_key)
@@ -244,6 +245,7 @@ def _transcribe(
             force=force,
             indices=None if index is None else {index},
             progress=_print_outcome,
+            retries=config.asr_retries,
         )
     except (
         ValueError,
@@ -268,17 +270,21 @@ def _transcribe(
 
     if diarizer is None:
         print(f"wrote {paths.asr_dir}")
-    else:
-        print(f"{key}: diarization")
-        try:
-            summaries = diarization.diarize_session(
-                paths, session_manifest, diarizer, num_speakers=num_speakers
-            )
-        except (ValueError, DataFileError, BackendError) as error:
-            print(f"error: {error}", file=sys.stderr)
-            return 2
-        _print_diarization(summaries, paths)
-    return 0 if run.complete else 1
+        return 0 if run.complete else 1
+    print(f"{key}: diarization")
+    try:
+        summaries = diarization.diarize_session(
+            paths,
+            session_manifest,
+            diarizer,
+            num_speakers=num_speakers,
+            retries=config.diarization_retries,
+        )
+    except (ValueError, DataFileError, BackendError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    _print_diarization(summaries, paths)
+    return 0 if run.complete and not _any_failed(summaries) else 1
 
 
 def _print_outcome(outcome: SegmentOutcome) -> None:
@@ -303,7 +309,11 @@ def _print_outcome(outcome: SegmentOutcome) -> None:
 def _diarize(
     raw_key: str, config_path: Path, num_speakers: int | None, force: bool
 ) -> int:
-    """Only counts and times reach the console, never labels or text (TOOL-66)."""
+    """Only counts and times reach the console, never labels or text (TOOL-66).
+
+    Exit 0 when every transcribed segment is diarized, 1 when one failed, 2
+    when the run could not start or the model could not load.
+    """
     try:
         key = SessionKey.parse(raw_key)
         config = _load_config(config_path)
@@ -314,6 +324,7 @@ def _diarize(
             PyannoteDiarizer.from_config(config),
             num_speakers=num_speakers,
             force=force,
+            retries=config.diarization_retries,
         )
     except (ValueError, ConfigError, DataFileError, BackendError) as error:
         print(f"error: {error}", file=sys.stderr)
@@ -321,7 +332,11 @@ def _diarize(
 
     print(f"{key}: {len(summaries)} segment(s)")
     _print_diarization(summaries, paths)
-    return 0
+    return 1 if _any_failed(summaries) else 0
+
+
+def _any_failed(summaries: Sequence[diarization.SegmentSummary]) -> bool:
+    return any(summary.outcome == "failed" for summary in summaries)
 
 
 def _print_diarization(
