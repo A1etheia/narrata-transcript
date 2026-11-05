@@ -302,7 +302,7 @@ def _from_json(data: dict[str, Any], path: Path) -> Manifest:
     except ValueError as error:
         raise ManifestError(f"{path}: {error}") from error
     play_session_id = data.get("play_session_id")
-    if not narrata.is_play_session_id(play_session_id):
+    if not narrata.is_narrata_id(play_session_id):
         raise ManifestError(f"{path}: play_session_id missing or invalid")
     consent = data.get("consent")
     audio = _field(data, "audio", dict, path)
