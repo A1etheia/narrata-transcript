@@ -222,7 +222,7 @@ def from_backend_result(
     return ReferenceTranscript(
         key=manifest.key,
         play_session_id=manifest.play_session_id,
-        segment=_segment_ref(segment),
+        segment=segment_ref(segment),
         status="transcribed",
         asr=_asr_info(
             result.info,
@@ -252,7 +252,7 @@ def failed_reference(
     return ReferenceTranscript(
         key=manifest.key,
         play_session_id=manifest.play_session_id,
-        segment=_segment_ref(segment),
+        segment=segment_ref(segment),
         status="failed",
         error=Failure(category=type(error).__name__, retryable=error.retryable),
         asr=_asr_info(backend.info, backend),
@@ -302,7 +302,8 @@ def _asr_info(info: BackendInfo, backend: Backend, **result: Any) -> AsrInfo:
     )
 
 
-def _segment_ref(segment: Segment) -> SegmentRef:
+def segment_ref(segment: Segment) -> SegmentRef:
+    """How a transcript names its manifest segment."""
     return SegmentRef(
         index=segment.index, file=segment.file, source_sha256=segment.source.sha256
     )
