@@ -46,5 +46,13 @@ diarization:
   # Weitere Versuche pro Segment nach Speichermangel oder Runtime-Fehler, 0 bis 5.
   retries: 2
 
+# Abruf des Transkriptionskontexts aus Narrata (transcript context).
+# Der Token gehört nicht hierher, sondern als NARRATA_TOKEN in .env.
+narrata:
+  # Basis-URL des Narrata-Hosts; https, http nur für localhost.
+  url: null
+  # Gruppen-ID je Gruppen-Slug aus dem Session-Schlüssel, etwa beispielgruppe: 12.
+  groups: {}
+
 # Schreibt Transkripttext nach work/<gruppe>/<ordinal>/debug.log, nie auf die Konsole.
 debug: false
