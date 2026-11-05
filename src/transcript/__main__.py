@@ -2,6 +2,7 @@
 `diarize`."""
 
 import argparse
+import collections
 import contextlib
 import logging
 import sys
@@ -14,9 +15,14 @@ from transcript.asr.whisper import WhisperBackend
 from transcript.config import Config, ConfigError, format_config, load_config
 from transcript.diarization.pyannote import PyannoteDiarizer
 from transcript.jsonfile import DataFileError
-from transcript.session import SessionKey
+from transcript.session import SessionKey, SessionPaths
 from transcript.timecode import format_ms
-from transcript.transcription import TranscriptionError, transcribe_segment
+from transcript.transcription import (
+    OUTCOME_STATUSES,
+    SegmentOutcome,
+    TranscriptionError,
+    transcribe_session,
+)
 
 _DEFAULT_CONFIG = Path("config/config.yaml")
 _EXAMPLE_CONFIG = Path("config/example.yaml")
@@ -57,19 +63,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="note that everyone audible agreed to the recording orally",
     )
     transcribe_command = commands.add_parser(
-        "transcribe", help="Transcribe one segment of a session with the ASR backend."
+        "transcribe",
+        help="Transcribe a session's segments with the ASR backend, then diarize.",
     )
     transcribe_command.add_argument("session", help="session key <group>/<ordinal>")
     transcribe_command.add_argument(
         "--segment",
         type=_positive_int,
-        required=True,
-        help="segment to transcribe, counted from 1 as in the manifest",
+        help="only this segment, counted from 1 as in the manifest (default: all)",
     )
     transcribe_command.add_argument(
         "--force",
         action="store_true",
-        help="transcribe again even if a transcript exists; drops speaker labels",
+        help="transcribe again even if a matching transcript exists",
+    )
+    transcribe_command.add_argument(
+        "--no-diarize",
+        action="store_true",
+        help="skip the speaker diarization after the transcription",
+    )
+    transcribe_command.add_argument(
+        "--num-speakers",
+        type=_positive_int,
+        help="number of people audible, for the diarization (default: model decides)",
     )
     diarize_command = commands.add_parser(
         "diarize", help="Label the words of a session's transcripts with speakers."
@@ -109,7 +125,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "manifest":
         return _manifest(args.session, args.config, args.consent)
     if args.command == "transcribe":
-        return _transcribe(args.session, args.config, args.segment, args.force)
+        return _transcribe(
+            args.session,
+            args.config,
+            args.segment,
+            args.force,
+            diarize=not args.no_diarize,
+            num_speakers=args.num_speakers,
+        )
     if args.command == "diarize":
         return _diarize(args.session, args.config, args.num_speakers, args.force)
     parser.print_help()
@@ -190,20 +213,37 @@ def _manifest(raw_key: str, config_path: Path, consent: bool) -> int:
     return 0
 
 
-def _transcribe(raw_key: str, config_path: Path, index: int, force: bool) -> int:
-    """Only counts, times and provenance reach the console, never text (TOOL-66)."""
+def _transcribe(
+    raw_key: str,
+    config_path: Path,
+    index: int | None,
+    force: bool,
+    diarize: bool,
+    num_speakers: int | None,
+) -> int:
+    """Only counts, times and provenance reach the console, never text (TOOL-66).
+
+    Exit 0 when every selected segment is transcribed, 1 when one failed or
+    stayed open, 2 when the run could not start.
+    """
     try:
         key = SessionKey.parse(raw_key)
         config = _load_config(config_path)
         paths = config.session_paths(key)
-        result = transcribe_segment(
+        session_manifest = manifest.load_manifest(paths)
+        diarizer = PyannoteDiarizer.from_config(config) if diarize else None
+        if diarizer is not None:
+            diarizer.identity()  # a missing pyannote fails now, not after the ASR
+        print(f"{key}: {len(session_manifest.segments)} segment(s)")
+        run = transcribe_session(
             paths,
-            manifest.load_manifest(paths),
-            index,
+            session_manifest,
             WhisperBackend.from_config(config),
             config.language,
             keywords=(),  # hints from the knowledge interface come with TOOL-43
             force=force,
+            indices=None if index is None else {index},
+            progress=_print_outcome,
         )
     except (
         ValueError,
@@ -215,16 +255,50 @@ def _transcribe(raw_key: str, config_path: Path, index: int, force: bool) -> int
         print(f"error: {error}", file=sys.stderr)
         return 2
 
-    revision = f" ({result.model_version})" if result.model_version else ""
+    info = run.identity.info
+    revision = f" ({info.model_version})" if info.model_version else ""
+    counts = collections.Counter(outcome.status for outcome in run.outcomes)
     print(
-        f"{key}: segment {result.index} transcribed in {result.elapsed_ms / 1000:.1f} s "
-        f"with {result.backend_id} {result.model}{revision}: "
-        f"{result.passages} passage(s), {result.words} word(s), "
-        f"{result.words_with_confidence} with confidence, "
-        f"language {result.language or 'unknown'}"
+        f"{key}: "
+        + ", ".join(f"{counts[status]} {status}" for status in OUTCOME_STATUSES)
+        + f" with {info.backend_id} {info.model}{revision}"
     )
-    print(f"wrote {paths.reference(result.index)}")
-    return 0
+    if run.load_error is not None:
+        print(f"error: {run.load_error}", file=sys.stderr)
+
+    if diarizer is None:
+        print(f"wrote {paths.asr_dir}")
+    else:
+        print(f"{key}: diarization")
+        try:
+            summaries = diarization.diarize_session(
+                paths, session_manifest, diarizer, num_speakers=num_speakers
+            )
+        except (ValueError, DataFileError, BackendError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+        _print_diarization(summaries, paths)
+    return 0 if run.complete else 1
+
+
+def _print_outcome(outcome: SegmentOutcome) -> None:
+    if outcome.status == "open":
+        line = "open"
+    elif outcome.status == "failed":
+        retry = "retryable" if outcome.retryable else "not retryable"
+        line = f"failed: {outcome.error} ({retry})"
+    else:
+        how = (
+            "reused"
+            if outcome.status == "reused"
+            else f"transcribed in {(outcome.elapsed_ms or 0) / 1000:.1f} s"
+        )
+        line = (
+            f"{how}: {outcome.passages} passage(s), {outcome.words} word(s), "
+            f"{outcome.words_with_confidence} with confidence, "
+            f"language {outcome.language or 'unknown'}"
+        )
+    print(f"  {outcome.index}. {line}", flush=True)
 
 
 def _diarize(
@@ -247,6 +321,13 @@ def _diarize(
         return 2
 
     print(f"{key}: {len(summaries)} segment(s)")
+    _print_diarization(summaries, paths)
+    return 0
+
+
+def _print_diarization(
+    summaries: Sequence[diarization.SegmentSummary], paths: SessionPaths
+) -> None:
     for summary in summaries:
         if summary.outcome == "skipped":
             print(f"  {summary.index}. skipped: {summary.reason}")
@@ -262,7 +343,6 @@ def _diarize(
             f"{summary.labelled_words}/{summary.words} words labelled"
         )
     print(f"wrote {paths.asr_dir} and {paths.diarization_dir}")
-    return 0
 
 
 def _positive_int(text: str) -> int:

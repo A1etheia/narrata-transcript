@@ -19,7 +19,7 @@ from test_reference import MANIFEST, SEGMENT
 from transcript.asr.whisper import WhisperBackend
 from transcript.reference import load_reference
 from transcript.session import SessionPaths
-from transcript.transcription import transcribe_segment
+from transcript.transcription import transcribe_session
 
 SENTENCE = "The dragon sleeps on a hoard of gold in the old tower."
 
@@ -49,19 +49,20 @@ class WhisperSmokeTest(unittest.TestCase):
             )
             device = os.environ.get("TRANSCRIPT_WHISPER_DEVICE", "auto")
             # a missing model or CUDA library fails here
-            summary = transcribe_segment(
+            run = transcribe_session(
                 paths,
                 MANIFEST,
-                SEGMENT.index,
                 WhisperBackend(device=device),
                 "en",
                 keywords=("hoard",),
             )
+            summary = run.outcomes[0]
+            self.assertEqual(summary.status, "transcribed")
 
             reference = load_reference(paths, SEGMENT.index)
             self.assertEqual(reference.status, "transcribed")
             self.assertIn("dragon", reference.text.lower())
-            words = [word for passage in reference.passages for word in passage.words]
+            words = reference.words
             self.assertTrue(words)
             self.assertEqual(summary.words, len(words))
             for word in words:

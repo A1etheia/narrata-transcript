@@ -38,32 +38,20 @@ from transcript.reference import (
 )
 from transcript.session import SessionPaths
 
+OUTCOME_STATUSES = ("transcribed", "reused", "failed", "open")
+
 
 class TranscriptionError(Exception):
     """A segment cannot be transcribed for a reason found before the backend runs."""
 
 
 @dataclass(frozen=True)
-class SegmentResult:
-    """What one transcription produced: counts and provenance only, never text."""
-
-    index: int
-    backend_id: str
-    model: str
-    model_version: str | None
-    language: str | None
-    passages: int
-    words: int
-    words_with_confidence: int
-    elapsed_ms: int
-
-
-@dataclass(frozen=True)
 class SegmentOutcome:
     """What a session run did with one segment: counts and error class, never text.
 
-    `status` is `transcribed` or `reused` (a stored result counts), `failed` (the
-    backend raised `error`) or `open` (not reached, the backend did not load).
+    `status` is one of `OUTCOME_STATUSES`: `transcribed` or `reused` (a stored
+    result counts), `failed` (the backend raised `error`) or `open` (not
+    reached, the backend did not load).
     """
 
     index: int
@@ -136,7 +124,7 @@ def transcribe_session(
         try:
             with opened(backend):
                 for segment, keep_existing in pending:
-                    outcome = _run_or_fail(
+                    outcome = _run(
                         paths,
                         manifest,
                         segment,
@@ -149,57 +137,14 @@ def transcribe_session(
                     report(outcome)
         except BackendError as error:  # from load or close; segments catch their own
             load_error = error
+    unreached = [segment for segment in segments if segment.index not in outcomes]
+    for segment in unreached:
+        outcomes[segment.index] = SegmentOutcome(segment.index, "open")
+        report(outcomes[segment.index])
     return SessionRun(
         identity=found,
-        outcomes=tuple(
-            outcomes.get(segment.index, SegmentOutcome(segment.index, "open"))
-            for segment in segments
-        ),
-        load_error=load_error if len(outcomes) < len(segments) else None,
-    )
-
-
-def transcribe_segment(
-    paths: SessionPaths,
-    manifest: Manifest,
-    index: int,
-    backend: Backend,
-    language: str | None,
-    keywords: Sequence[str] = (),
-    force: bool = False,
-) -> SegmentResult:
-    """Transcribe segment `index` of `manifest` and write its reference transcript.
-
-    An existing transcribed result stops the call unless `force`. A `BackendError`
-    from loading writes nothing; one from transcribing is recorded as a failed
-    reference, unless a transcribed one exists, and is raised again either way.
-    `keywords` are hints in priority order; the backend decides whether it uses them.
-    """
-    segment = _segment(manifest, index)
-    _check_audio(paths, index)
-    stored = _stored(paths, index, force)
-    keep_existing = stored is not None and stored.status == "transcribed"
-    if keep_existing and not force:
-        raise TranscriptionError(
-            f"{paths.reference(index)}: segment {index} is already transcribed; "
-            "use --force to transcribe it again"
-        )
-
-    with opened(backend):
-        reference = _run(
-            paths, manifest, segment, backend, language, keywords, keep_existing
-        )
-    outcome = _outcome(reference, "transcribed")
-    return SegmentResult(
-        index=index,
-        backend_id=reference.asr.backend_id,
-        model=reference.asr.model,
-        model_version=reference.asr.model_version,
-        language=outcome.language,
-        passages=outcome.passages,
-        words=outcome.words,
-        words_with_confidence=outcome.words_with_confidence,
-        elapsed_ms=reference.processing.elapsed_ms or 0,
+        outcomes=tuple(outcomes[segment.index] for segment in segments),
+        load_error=load_error if unreached else None,
     )
 
 
@@ -211,11 +156,11 @@ def _run(
     language: str | None,
     keywords: Sequence[str],
     keep_existing: bool,
-) -> ReferenceTranscript:
+) -> SegmentOutcome:
     """Transcribe `segment` with the loaded `backend` and write the result.
 
-    A `BackendError` is recorded as a failed reference, unless `keep_existing`
-    (a transcribed one exists), and raised again.
+    A `BackendError` becomes a `failed` outcome and a failed reference, unless
+    `keep_existing`: a transcribed result is never replaced by a failure.
     """
     request = TranscriptionRequest(
         audio=paths.segment_wav(segment.index),
@@ -231,42 +176,28 @@ def _run(
                 error, backend, manifest, segment, _elapsed_ms(started)
             )
             write_reference(paths, failure, None)
-        raise
-    reference = from_backend_result(
-        result, backend, manifest, segment, _elapsed_ms(started)
-    )
-    write_reference(paths, reference, result.raw)
-    return reference
-
-
-def _run_or_fail(
-    paths: SessionPaths,
-    manifest: Manifest,
-    segment: Segment,
-    backend: Backend,
-    language: str | None,
-    keywords: Sequence[str],
-    keep_existing: bool,
-) -> SegmentOutcome:
-    try:
-        reference = _run(
-            paths, manifest, segment, backend, language, keywords, keep_existing
-        )
-    except BackendError as error:
         return SegmentOutcome(
             segment.index,
             "failed",
             error=type(error).__name__,
             retryable=error.retryable,
         )
+    reference = from_backend_result(
+        result, backend, manifest, segment, _elapsed_ms(started)
+    )
+    write_reference(paths, reference, result.raw)
     return _outcome(reference, "transcribed")
 
 
 def _selected(manifest: Manifest, indices: Collection[int] | None) -> list[Segment]:
     if indices is None:
         return list(manifest.segments)
-    for index in sorted(indices):
-        _segment(manifest, index)  # raises for an unknown index
+    unknown = sorted(set(indices) - {segment.index for segment in manifest.segments})
+    if unknown:
+        raise TranscriptionError(
+            f"segment {unknown[0]} not in the manifest of {manifest.key}; "
+            f"it has segments 1 to {len(manifest.segments)}"
+        )
     return [segment for segment in manifest.segments if segment.index in indices]
 
 
@@ -314,16 +245,6 @@ def _outcome(reference: ReferenceTranscript, status: str) -> SegmentOutcome:
 
 def _ignore(outcome: SegmentOutcome) -> None:
     pass
-
-
-def _segment(manifest: Manifest, index: int) -> Segment:
-    for segment in manifest.segments:
-        if segment.index == index:
-            return segment
-    raise TranscriptionError(
-        f"segment {index} not in the manifest of {manifest.key}; "
-        f"it has segments 1 to {len(manifest.segments)}"
-    )
 
 
 def _elapsed_ms(started: float) -> int:
