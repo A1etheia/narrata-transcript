@@ -10,7 +10,7 @@ from unittest import mock
 
 from media import mp4_with_audio, needs_media, sine, synth, video
 from test_diarization import FakeDiarizer
-from test_narrata import NAME, context, encoded
+from test_narrata import CHARACTER, NAME, context, encoded, participant
 from test_narrata_client import TOKEN, start_fake_narrata
 from test_reference import KEY, MANIFEST, SECRET, SEGMENT, minimal
 from test_transcription import MANIFEST_3, FailingLoad, session_backend
@@ -337,7 +337,9 @@ class ContextCommandTest(unittest.TestCase):
             "beispielgruppe/042: play session 4711, 2026-10-30, contract 1.1", stdout
         )
         self.assertIn(
-            "  1 participant(s), 0 glossary entries, archive tier 0 of 0", stdout
+            "  1 participant(s) (0 gm, 0 former), 0 character(s), "
+            "0 glossary entries, archive tier 0 of 0",
+            stdout,
         )
         self.assertIn(f"wrote {self.paths.narrata_context}", stdout)
         self.assertNotIn(NAME, stdout + stderr)
@@ -363,6 +365,42 @@ class ContextCommandTest(unittest.TestCase):
         self.assertEqual((code, stdout), (2, ""))
         self.assertIn("contract_version 2.0 is not supported", stderr)
         self.assertFalse(self.paths.narrata_context.exists())
+
+    def test_participants_are_counted_without_names(self) -> None:
+        self.narrata.body = encoded(
+            context(
+                participants=[
+                    participant(user_id=7, role="gm"),
+                    participant(
+                        is_former=True,
+                        characters=[
+                            {"person_id": 18, "name": CHARACTER, "aliases": []},
+                            {"person_id": 19, "name": "Ilse Erdacht", "aliases": []},
+                        ],
+                    ),
+                ]
+            )
+        )
+
+        code, stdout, stderr = self.context()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("2 participant(s) (1 gm, 1 former), 2 character(s)", stdout)
+        self.assertNotIn(NAME, stdout + stderr)
+        self.assertNotIn(CHARACTER, stdout + stderr)
+
+    def test_invalid_participants_keep_the_stored_file(self) -> None:
+        code, _, stderr = self.context()
+        self.assertEqual(code, 0, stderr)
+        good = self.paths.narrata_context.read_bytes()
+        self.narrata.body = encoded(context(participants=[participant(role=NAME)]))
+
+        code, stdout, stderr = self.context()
+
+        self.assertEqual((code, stdout), (2, ""))
+        self.assertIn("participants[0].role missing or invalid", stderr)
+        self.assertNotIn(NAME, stderr)
+        self.assertEqual(self.paths.narrata_context.read_bytes(), good)
 
     def test_rejected_token_is_reported_without_its_value(self) -> None:
         self.narrata.status = 401
