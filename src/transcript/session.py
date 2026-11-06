@@ -108,6 +108,14 @@ class SessionPaths:
         return self.diarization_dir / f"{segment_name(index)}.json"
 
     @property
+    def review_dir(self) -> Path:
+        return self.work_dir / "review"
+
+    def review_hints(self, index: int) -> Path:
+        """Review hints of the `index`-th segment from the knowledge (TOOL-44)."""
+        return self.review_dir / f"{segment_name(index)}.hints.json"
+
+    @property
     def manifest(self) -> Path:
         return self.work_dir / "manifest.json"
 

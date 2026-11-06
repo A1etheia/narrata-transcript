@@ -1,13 +1,26 @@
+import datetime
+import json
+import tempfile
 import time
 import unittest
+from pathlib import Path
 
 from test_glossary import entry, glossary
 from test_reference import minimal
 
 from transcript.domain import DomainContext, Origin
-from transcript.hints import Hint, cologne_phonetic, find_hints
+from transcript.hints import (
+    Hint,
+    HintsError,
+    cologne_phonetic,
+    find_hints,
+    load_hints,
+    segment_hints,
+    write_hints,
+)
 from transcript.narrata import Ambiguity, GlossaryEntry
 from transcript.reference import AsrInfo, Passage, ReferenceTranscript, Word
+from transcript.session import SessionPaths
 
 # Every name below is made up.
 ORIGIN = Origin("ab" * 32, "ctx.json", "1.1", 4711)
@@ -174,6 +187,60 @@ class InfluenceTest(unittest.TestCase):
         self.assertEqual(len(find_hints(reference, domain(GRAUWASSER))), 2)
 
         self.assertEqual(repr(reference), before)
+
+
+class HintFileTest(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.paths = SessionPaths(minimal().key, Path(directory.name))
+        reference = spoken("Nach Grauwassa.", "Hinter Nebel Au und Grau Wasser")
+        shared = (Ambiguity("Nebel Au", (NEBELAU.ref, ALTFURT.ref)),)
+        self.hints = segment_hints(
+            reference, domain(GRAUWASSER, NEBELAU, ALTFURT, ambiguities=shared)
+        )
+        self.path = self.paths.review_hints(1)
+
+    def stored(self) -> dict:
+        return json.loads(self.path.read_text(encoding="utf-8"))
+
+    def rewrite(self, data: dict) -> None:
+        self.path.write_text(json.dumps(data), encoding="utf-8")
+
+    def test_a_round_trip_keeps_every_field(self) -> None:
+        write_hints(self.paths, self.hints, datetime.datetime(2026, 11, 6, 9, 0))
+
+        self.assertEqual(load_hints(self.paths, 1), self.hints)
+        data = self.stored()
+        self.assertEqual(data["format_version"], 1)
+        self.assertEqual(data["reference"]["file"], "segment-01.json")
+        self.assertEqual(
+            data["counts"], {"ambiguous": 1, "known_variant": 2, "similar": 1}
+        )
+
+    def test_another_version_or_segment_is_rejected(self) -> None:
+        write_hints(self.paths, self.hints)
+        data = self.stored()
+        self.rewrite({**data, "format_version": 2})
+        with self.assertRaisesRegex(HintsError, "unsupported format_version"):
+            load_hints(self.paths, 1)
+        self.rewrite({**data, "segment": 2})
+        with self.assertRaisesRegex(HintsError, "another session or segment"):
+            load_hints(self.paths, 1)
+
+    def test_an_invalid_hint_names_position_and_field_but_no_value(self) -> None:
+        write_hints(self.paths, self.hints)
+        data = self.stored()
+        data["hints"][1]["candidates"][0]["kind"] = "Grauwasser"
+        self.rewrite(data)
+
+        with self.assertRaises(HintsError) as raised:
+            load_hints(self.paths, 1)
+
+        message = str(raised.exception)
+        self.assertIn("hint 2: field 'kind' invalid", message)
+        self.assertNotIn("Grauwasser", message)
+        self.assertNotIn("Nebel", message)
 
 
 class PhoneticTest(unittest.TestCase):

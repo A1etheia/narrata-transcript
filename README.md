@@ -115,7 +115,8 @@ Pipeline-Schritte fragen das Wissen einer Sitzung über `transcript.domain.Domai
 | `participant(user_id)`, `character(person_id)` | Teilnehmende und Spielfigur samt spielender Person |
 | `relevant_entries()`, `keyword_entries()` | Einträge der Stufen `pc`, `session`, `recent` bzw. die Keyword-Einträge des Snapshots |
 | `transcription_keywords()` | Namen und Aliasse der Keyword-Einträge als ASR-Hinweise, wichtigste zuerst, ohne Hörfehler |
-| `match_candidates()` | jeden Begriff jedes Eintrags samt Hörfehlern, als Grundlage für den Abgleich (TOOL-40) |
+| `match_candidates()` | jeden Begriff jedes Eintrags samt Hörfehlern, als Grundlage für die [Review-Hinweise](#review-hinweise) |
+| `is_ambiguous(begriff)` | ob Narrata den Begriff als Hörfehler mehrerer Einträge führt (`asr_ambiguities`) |
 
 Jeder Treffer (`TermHit`) nennt Eintrag mit Typ, Archiv-ID und Stufe, die Art (`name`, `alias`, `asr_variant`), das Feld (`aliases[1]`), die Schreibweise aus Narrata, ob der Eintrag Keyword ist, und die Herkunft (`Origin`: Snapshot-Kennung, Kontextdatei, Contract-Version, `play_session_id`). Abfragen ändern weder Wissen noch Transkripttext und entscheiden nie zwischen Einträgen, die sich einen Begriff teilen. Ob ein Backend die Hinweise nutzt, entscheidet seine Capability `keyword_biasing`. Backends ohne sie brauchen keine Domänenlogik.
 
@@ -248,6 +249,22 @@ Pro Segment entsteht `work/<gruppe>/<ordinal>/diarization/segment-NN.json` mit d
 TRANSCRIPT_DIARIZATION_SMOKE=1 python -m unittest discover -s tests -p test_diarization_smoke.py -v
 ```
 
+## Review-Hinweise
+
+Nach der Spracherkennung vergleicht `transcript transcribe` den erkannten Text jedes fertigen Segments mit dem [Wissens-Snapshot](#wissens-snapshot) (`transcript.hints`). Wo das Transkript vermutlich einen Glossar-Eintrag meint, entsteht ein Hinweis für die Durchsicht. Der Text bleibt unverändert: Ein Hinweis ist nur ein Verweis, die Entscheidung trifft das Review mit dem Audio.
+
+| Signal | Wann | Stärke |
+| --- | --- | --- |
+| `known_variant` | Die Wortfolge ist ein in Narrata gepflegter Hörfehler (`asr_variants`) | stark |
+| `similar` | Die Wortfolge ähnelt Name oder Alias eines Eintrags: Schreibung (`method: spelling`, Ähnlichkeit ab 0,85, Leerzeichen zählen nicht, „Grau Wasser“ trifft „Grauwasser“) oder Klang (`method: sound`, gleicher Code der Kölner Phonetik mit mindestens 3 Stellen) | schwach |
+
+- **Kein Hinweis** entsteht für einen richtig erkannten Namen oder Alias und für Wörter unter 4 Buchstaben. `similar` braucht einen großen Anfangsbuchstaben, wie Whisper ihn bei Namen setzt, und eine Länge, die höchstens 30 % vom Begriff abweicht. Die Schwellen sind Startwerte, kalibriert wird in TOOL-35.
+- **Wortfolgen** bis zur Wortzahl des längsten Begriffs, höchstens 4. Überlappen sich Treffer, gewinnt ein richtig erkannter Begriff, dann das starke Signal, dann die längere Folge.
+- **Mehrdeutig** (`ambiguous: true`) ist ein Hinweis, wenn mehrere Einträge passen oder Narrata den Hörfehler in `asr_ambiguities` führt. Dann stehen alle Kandidaten in Glossar-Reihenfolge darin, ausgewählt wird keiner.
+- **Einfluss des Wissens:** Jeder Kandidat nennt Typ, Archiv-ID, Begriff, Art (`name`, `alias`, `asr_variant`), Feld und Stufe, dazu `biased`, also ob der Begriff als Hotword an die Spracherkennung ging. Der Dateikopf nennt Snapshot-Kennung, Zahl der Hotwords und das gelesene Referenztranskript.
+
+Die Datei `work/<gruppe>/<ordinal>/review/segment-NN.hints.json` (`format_version: 1`) entsteht bei jedem Lauf neu, auch für wiederverwendete Segmente. Der Abgleich braucht kein Modell und dauert Sekunden. Ohne Snapshot entsteht keine Datei, und eine vorhandene wird entfernt. Die Konsole zeigt nur Zahlen, etwa `review hints: 3 known variant(s), 11 similar, 2 ambiguous`, nie Text oder Namen. Die Datei selbst enthält erkannten Text und Archivnamen und bleibt deshalb unter `work/`.
+
 ## Konfiguration
 
 Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht im Repo, ebenso alles andere unter `config/` außer `config/example.yaml`. `transcript config` zeigt die wirksamen Werte, `transcript config --config <pfad>` liest eine andere Datei. Fehlende Pflichtwerte, ungültige Werte und unbekannte Schlüssel enden mit einer Meldung, die Datei und Schlüssel nennt.
@@ -318,7 +335,7 @@ work/beispielgruppe/042/
   audio/                       segment-NN.wav (Arbeitsformat, eine pro Aufnahme), audio.json (Audio-Metadaten)
   asr/                         segment-NN.json (Referenztranskript), segment-NN.raw.json (Backend-Rohantwort)
   diarization/                 segment-NN.json (Sprecher-Turns von pyannote)
-  review/                      Review-Kandidaten, CSV
+  review/                      segment-NN.hints.json (Review-Hinweise aus dem Wissen), später Review-Kandidaten, CSV
   speakers/                    Sprecherzuordnung
   debug.log                    nur im Debug-Modus
 output/beispielgruppe/042/     JSON-Export, TXT, DOCX

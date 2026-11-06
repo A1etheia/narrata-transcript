@@ -7,20 +7,45 @@ only a pointer for the review: it never changes the transcript, and when more
 than one entry fits it lists all of them as `ambiguous` and picks none.
 
 The thresholds are first values, to be calibrated in TOOL-35. Hints hold real
-names, so this module logs nothing.
+names, so this module logs nothing, and its error messages name file, field and
+position, never a value.
+
+`write_hints` stores the hints of one segment as `review/segment-NN.hints.json`,
+together with the snapshot and the reference they came from.
 """
 
+import dataclasses
+import datetime
 import difflib
+import functools
 import unicodedata
-from collections import defaultdict
-from collections.abc import Iterator, Sequence
+from collections import Counter, defaultdict
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from pathlib import Path
+from typing import Any, Literal, get_args
 
+from transcript import jsonfile
 from transcript.domain import DomainContext, TermHit
 from transcript.glossary import MatchKind, normalize
-from transcript.narrata import EntryRef, EntryType, Relevance
-from transcript.reference import Passage, ReferenceTranscript
+from transcript.jsonfile import DataFileError, write_atomic
+from transcript.narrata import (
+    ENTRY_TYPES,
+    RELEVANCE_TIERS,
+    EntryRef,
+    EntryType,
+    Relevance,
+    is_narrata_id,
+)
+from transcript.reference import Passage, ReferenceTranscript, load_reference
+from transcript.session import SessionPaths
+
+HINTS_FORMAT_VERSION = 1
+
+
+class HintsError(DataFileError):
+    """A hint file is missing, invalid or belongs to another segment."""
+
 
 Signal = Literal["known_variant", "similar"]
 Method = Literal["spelling", "sound"]
@@ -340,3 +365,161 @@ def _code(c: str, before: str, after: str, initial: bool) -> str:
     if c == "R":
         return "7"
     return "8"  # S, Z
+
+
+@dataclass(frozen=True)
+class SegmentHints:
+    """The hints of one segment and what they were made from."""
+
+    segment: int
+    knowledge_snapshot_id: str | None
+    reference_processed_at: str  # of the reference transcript that was read
+    keywords_used: int  # ASR hints of that transcript
+    hints: tuple[Hint, ...]
+
+    def counts(self) -> Counter[str]:
+        """Hints per signal, plus `ambiguous` across both."""
+        counts = Counter(hint.signal for hint in self.hints)
+        counts["ambiguous"] = sum(hint.ambiguous for hint in self.hints)
+        return counts
+
+
+def segment_hints(
+    reference: ReferenceTranscript, domain: DomainContext
+) -> SegmentHints:
+    return SegmentHints(
+        segment=reference.segment.index,
+        knowledge_snapshot_id=domain.origin.snapshot_id,
+        reference_processed_at=reference.processing.processed_at,
+        keywords_used=len(reference.asr.keywords_used),
+        hints=find_hints(reference, domain),
+    )
+
+
+def review_session(
+    paths: SessionPaths, indices: Iterable[int], domain: DomainContext | None
+) -> Counter[str] | None:
+    """Write the hints of the transcribed segments among `indices`; their counts.
+
+    Without knowledge there are no hints: stale files of `indices` are removed
+    and the result is `None`. A segment without a transcribed reference keeps
+    what it has, which still matches the reference that was kept.
+    """
+    selected = list(indices)
+    if domain is None:
+        for index in selected:
+            paths.review_hints(index).unlink(missing_ok=True)
+        return None
+    total: Counter[str] = Counter()
+    for index in selected:
+        if not paths.reference(index).is_file():
+            continue
+        reference = load_reference(paths, index)
+        if reference.status == "transcribed":
+            found = segment_hints(reference, domain)
+            write_hints(paths, found)
+            total += found.counts()
+    return total
+
+
+def write_hints(
+    paths: SessionPaths, hints: SegmentHints, now: datetime.datetime | None = None
+) -> None:
+    """Replace the hint file of `hints.segment` atomically."""
+    moment = now or datetime.datetime.now().astimezone()
+    write_atomic(
+        paths.review_hints(hints.segment),
+        {
+            "format_version": HINTS_FORMAT_VERSION,
+            "session": str(paths.key),
+            "segment": hints.segment,
+            "created_at": moment.isoformat(timespec="seconds"),
+            "knowledge_snapshot_id": hints.knowledge_snapshot_id,
+            "reference": {
+                "file": paths.reference(hints.segment).name,
+                "processed_at": hints.reference_processed_at,
+            },
+            "keywords_used": hints.keywords_used,
+            # an overview for people reading the file; `load_hints` ignores it
+            "counts": dict(sorted(hints.counts().items())),
+            "hints": [dataclasses.asdict(hint) for hint in hints.hints],
+        },
+    )
+
+
+def load_hints(paths: SessionPaths, index: int) -> SegmentHints:
+    """The stored hints of segment `index`; `HintsError` if absent or invalid."""
+    path = paths.review_hints(index)
+    data = _read_json(path, "review hints")
+    if data.get("format_version") != HINTS_FORMAT_VERSION:
+        raise HintsError(
+            f"{path}: unsupported format_version; run transcript transcribe again"
+        )
+    if data.get("session") != str(paths.key) or data.get("segment") != index:
+        raise HintsError(f"{path}: belongs to another session or segment")
+    reference = _field(data, "reference", dict, path)
+    return SegmentHints(
+        segment=index,
+        knowledge_snapshot_id=_optional(data, "knowledge_snapshot_id", str, path),
+        reference_processed_at=_field(reference, "processed_at", str, path),
+        keywords_used=_field(data, "keywords_used", int, path),
+        hints=tuple(
+            _hint_from(item, number, path)
+            for number, item in enumerate(
+                jsonfile.list_of(data, "hints", dict, path, HintsError), start=1
+            )
+        ),
+    )
+
+
+def _hint_from(data: dict[str, Any], number: int, path: Path) -> Hint:
+    """One hint; an error from it names the hint number."""
+    try:
+        method = _optional(data, "method", str, path)
+        return Hint(
+            passage=_field(data, "passage", int, path),
+            first_word=_optional(data, "first_word", int, path),
+            last_word=_optional(data, "last_word", int, path),
+            start_ms=_optional(data, "start_ms", int, path),
+            end_ms=_optional(data, "end_ms", int, path),
+            heard=_field(data, "heard", str, path),
+            signal=_one_of(data, "signal", get_args(Signal), path),
+            method=None if method is None else _one_of(data, "method", _METHODS, path),
+            score=_number(data, "score", path),
+            candidates=tuple(
+                _candidate_from(item, path)
+                for item in jsonfile.list_of(data, "candidates", dict, path, HintsError)
+            ),
+            ambiguous=_field(data, "ambiguous", bool, path),
+        )
+    except HintsError as error:
+        detail = str(error).removeprefix(f"{path}: ")
+        raise HintsError(f"{path}: hint {number}: {detail}") from None
+
+
+def _candidate_from(data: dict[str, Any], path: Path) -> Candidate:
+    if not is_narrata_id(data.get("id")):
+        raise HintsError(f"{path}: field 'id' missing or invalid")
+    return Candidate(
+        type=_one_of(data, "type", ENTRY_TYPES, path),
+        id=data["id"],
+        term=_field(data, "term", str, path),
+        kind=_one_of(data, "kind", get_args(MatchKind), path),
+        field=_field(data, "field", str, path),
+        relevance=_one_of(data, "relevance", RELEVANCE_TIERS, path),
+        biased=_field(data, "biased", bool, path),
+    )
+
+
+def _one_of(data: Any, name: str, allowed: Sequence[str], path: Path) -> Any:
+    value = _field(data, name, str, path)
+    if value not in allowed:
+        raise HintsError(f"{path}: field {name!r} invalid")
+    return value
+
+
+_METHODS: tuple[Method, ...] = get_args(Method)
+_field = functools.partial(jsonfile.field, error=HintsError)
+_optional = functools.partial(jsonfile.optional_field, error=HintsError)
+_number = functools.partial(jsonfile.optional_number, error=HintsError)
+_read_json = functools.partial(jsonfile.read_object, error=HintsError)

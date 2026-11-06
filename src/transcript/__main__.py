@@ -16,6 +16,7 @@ from transcript import (
     audio_tools,
     diagnosis,
     diarization,
+    hints,
     knowledge,
     manifest,
     narrata,
@@ -521,6 +522,17 @@ def _transcribe(
         print(f"{key}: {run.keywords_used} of {len(keywords)} keyword(s) passed")
     if run.load_error is not None:
         print(f"error: {run.load_error}", file=sys.stderr)
+    try:
+        found = hints.review_session(paths, (o.index for o in run.outcomes), domain)
+    except DataFileError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    if found is not None:
+        print(
+            f"{key}: review hints: {found['known_variant']} known variant(s), "
+            f"{found['similar']} similar, {found['ambiguous']} ambiguous"
+        )
+        print(f"wrote {paths.review_dir}")
 
     if diarizer is None:
         print(f"wrote {paths.asr_dir}")
