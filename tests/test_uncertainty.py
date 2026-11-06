@@ -1,22 +1,39 @@
+import datetime
+import json
+import tempfile
 import time
 import unittest
+from pathlib import Path
 from typing import Any
 
 from test_reference import minimal
 
 from transcript.asr.backend import FEATURES
 from transcript.config import UncertaintyThresholds
-from transcript.hints import Candidate, Hint, SegmentHints
+from transcript.hints import Candidate, Hint, SegmentHints, write_hints
 from transcript.reference import (
     TIME_CAPABILITIES,
     AsrInfo,
     Diarization,
+    Failure,
     Overlap,
     Passage,
     ReferenceTranscript,
     Word,
+    update_reference,
 )
-from transcript.uncertainty import PassageRating, Reason, assess
+from transcript.session import SessionPaths
+from transcript.uncertainty import (
+    UNCERTAINTY_FORMAT_VERSION,
+    PassageRating,
+    Reason,
+    UncertaintyError,
+    assess,
+    assess_session,
+    load_assessment,
+    segment_assessment,
+    write_assessment,
+)
 
 LIMITS = UncertaintyThresholds()
 WHISPER = {"word_timestamps": True, "segment_timestamps": True}
@@ -279,6 +296,13 @@ class NoSignalTest(unittest.TestCase):
             ("word_confidence", "segment_signals", "word_times", "speaker"),
         )
 
+    def test_times_alone_never_make_a_passage_confident(self) -> None:
+        rating = rate(transcript(passage(words(None, None), signals={})))
+
+        self.assertEqual(rating.level, "needs_review")
+        self.assertEqual(rules(rating), ["no_signals"])
+        self.assertNotIn("word_times", rating.missing)
+
     def test_a_passage_without_words_is_not_rated_confident(self) -> None:
         rating = rate(transcript(passage(signals={}), capabilities={}))
 
@@ -390,6 +414,109 @@ class HintTest(unittest.TestCase):
 
     def test_without_hints_they_are_missing(self) -> None:
         self.assertIn("hints", rate(transcript(passage(words(0.9)))).missing)
+
+
+class RatingFileTest(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.paths = SessionPaths(minimal().key, Path(directory.name))
+        self.reference = transcript(
+            passage(words(0.9, 0.9, 0.9), index=1),
+            passage(words(0.3, 0.3, 0.9), index=2),
+        )
+        update_reference(self.paths, self.reference)
+        self.path = self.paths.review_uncertainty(1)
+
+    def stored(self) -> dict:
+        return json.loads(self.path.read_text(encoding="utf-8"))
+
+    def rewrite(self, data: dict) -> None:
+        self.path.write_text(json.dumps(data), encoding="utf-8")
+
+    def test_a_round_trip_keeps_every_field(self) -> None:
+        assessment = segment_assessment(self.reference, hints(hint()), LIMITS)
+
+        write_assessment(self.paths, assessment, datetime.datetime(2026, 11, 6, 9))
+
+        self.assertEqual(load_assessment(self.paths, 1), assessment)
+        data = self.stored()
+        self.assertEqual(data["format_version"], UNCERTAINTY_FORMAT_VERSION)
+        self.assertEqual(data["reference"]["file"], "segment-01.json")
+        self.assertEqual(data["knowledge_snapshot_id"], "ab" * 32)
+        self.assertEqual(
+            data["counts"], {"confident": 0, "needs_review": 1, "uncertain": 1}
+        )
+
+    def test_the_file_holds_no_text(self) -> None:
+        write_hints(self.paths, hints(hint()))
+        assess_session(self.paths, [1], LIMITS)
+
+        text = self.path.read_text(encoding="utf-8")
+        for secret in ("wort", "Grau", "SPEAKER_"):
+            self.assertNotIn(secret, text)
+
+    def test_the_session_step_uses_matching_hints_and_counts_levels(self) -> None:
+        write_hints(self.paths, hints(hint()))
+
+        counts = assess_session(self.paths, [1, 2], LIMITS)
+
+        self.assertEqual(
+            dict(counts), {"confident": 0, "needs_review": 1, "uncertain": 1}
+        )
+        stored = load_assessment(self.paths, 1)
+        self.assertEqual(stored.knowledge_snapshot_id, "ab" * 32)
+        self.assertEqual([r.rule for r in stored.ratings[0].reasons], ["known_variant"])
+        self.assertFalse(self.paths.review_uncertainty(2).exists())
+
+    def test_without_hint_file_hints_are_missing(self) -> None:
+        assess_session(self.paths, [1], LIMITS)
+
+        stored = load_assessment(self.paths, 1)
+        self.assertIsNone(stored.knowledge_snapshot_id)
+        self.assertIn("hints", stored.ratings[0].missing)
+
+    def test_a_failed_segment_loses_its_rating(self) -> None:
+        assess_session(self.paths, [1], LIMITS)
+        update_reference(
+            self.paths,
+            minimal(status="failed", error=Failure("ResourceError", True)),
+        )
+
+        counts = assess_session(self.paths, [1], LIMITS)
+
+        self.assertFalse(self.path.exists())
+        self.assertEqual(sum(counts.values()), 0)
+
+    def test_another_version_or_segment_is_rejected(self) -> None:
+        assess_session(self.paths, [1], LIMITS)
+        data = self.stored()
+        self.rewrite({**data, "format_version": 2})
+        with self.assertRaisesRegex(UncertaintyError, "run transcript assess"):
+            load_assessment(self.paths, 1)
+        self.rewrite({**data, "segment": 2})
+        with self.assertRaisesRegex(UncertaintyError, "another session or segment"):
+            load_assessment(self.paths, 1)
+
+    def test_an_invalid_entry_names_position_and_field(self) -> None:
+        assess_session(self.paths, [1], LIMITS)
+        data = self.stored()
+        data["passages"][1]["reasons"][0]["rule"] = "guess"
+        self.rewrite(data)
+
+        with self.assertRaisesRegex(
+            UncertaintyError, "passage entry 2: field 'rule' invalid"
+        ):
+            load_assessment(self.paths, 1)
+
+    def test_invalid_thresholds_are_rejected(self) -> None:
+        assess_session(self.paths, [1], LIMITS)
+        data = self.stored()
+        data["thresholds"]["word_very_low"] = 0.9
+        self.rewrite(data)
+
+        with self.assertRaisesRegex(UncertaintyError, "field 'thresholds' invalid"):
+            load_assessment(self.paths, 1)
 
 
 if __name__ == "__main__":

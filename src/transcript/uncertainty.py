@@ -7,18 +7,40 @@ signal family is listed instead, and no value is guessed. A passage without any
 signal on the quality of the recognition is `needs_review`, never `confident`.
 
 The rating reads the transcript and its hints and changes neither. It holds no
-text, so this module has nothing to hide from a log.
+text, so this module has nothing to hide from a log. `write_assessment` stores
+the ratings of one segment as `review/segment-NN.uncertainty.json`, together with
+the thresholds and the transcript they came from.
 """
 
 import bisect
+import dataclasses
+import datetime
+import functools
 import itertools
-from collections.abc import Callable, Sequence
+from collections import Counter
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from pathlib import Path
+from typing import Any, Literal, get_args
 
+from transcript import jsonfile
 from transcript.config import LEVELS, Level, UncertaintyThresholds
-from transcript.hints import Hint, SegmentHints
-from transcript.reference import Overlap, Passage, ReferenceTranscript
+from transcript.hints import Hint, SegmentHints, load_hints
+from transcript.jsonfile import DataFileError, write_atomic
+from transcript.reference import (
+    Overlap,
+    Passage,
+    ReferenceTranscript,
+    load_reference,
+)
+from transcript.session import SessionPaths
+
+UNCERTAINTY_FORMAT_VERSION = 1
+
+
+class UncertaintyError(DataFileError):
+    """A rating file is missing, invalid or belongs to another segment."""
+
 
 Rule = Literal[
     "no_signals",
@@ -38,9 +60,9 @@ Rule = Literal[
 ]
 # Signal families a rule needs; a passage lists those it lacks.
 Family = Literal["word_confidence", "segment_signals", "word_times", "speaker", "hints"]
-# Families that say something about the recognition itself; speakers and hints
-# can raise a level but never make a passage confident.
-_QUALITY: tuple[Family, ...] = ("word_confidence", "segment_signals", "word_times")
+# Families that say how sure the recognition itself was. Times, speakers and
+# hints can raise a level but never make a passage confident on their own.
+_QUALITY: tuple[Family, ...] = ("word_confidence", "segment_signals")
 _SEGMENT_SIGNALS = ("no_speech_prob", "avg_logprob", "compression_ratio")
 _MIN_SPARSE_SPAN_MS = 1000  # shorter passages are too short to judge density
 
@@ -310,3 +332,180 @@ def _hint_words(hint: Hint) -> tuple[int, ...]:
     if hint.first_word is None or hint.last_word is None:
         return ()
     return tuple(range(hint.first_word, hint.last_word + 1))
+
+
+def level_counts() -> Counter[Level]:
+    """A counter of passages per level with every level present, also at 0."""
+    return Counter(dict.fromkeys(LEVELS, 0))
+
+
+@dataclass(frozen=True)
+class SegmentAssessment:
+    """The ratings of one segment and what they were made from."""
+
+    segment: int
+    reference_processed_at: str  # of the reference transcript that was rated
+    knowledge_snapshot_id: str | None  # of the hints used; None: no hints used
+    thresholds: UncertaintyThresholds
+    ratings: tuple[PassageRating, ...]
+
+    def counts(self) -> Counter[Level]:
+        """Passages per level; every level is present, also with 0."""
+        counts = level_counts()
+        counts.update(rating.level for rating in self.ratings)
+        return counts
+
+
+def segment_assessment(
+    reference: ReferenceTranscript,
+    hints: SegmentHints | None,
+    thresholds: UncertaintyThresholds,
+) -> SegmentAssessment:
+    used = hints if hints is not None and hints.matches(reference) else None
+    return SegmentAssessment(
+        segment=reference.segment.index,
+        reference_processed_at=reference.processing.processed_at,
+        knowledge_snapshot_id=None if used is None else used.knowledge_snapshot_id,
+        thresholds=thresholds,
+        ratings=assess(reference, used, thresholds),
+    )
+
+
+def assess_session(
+    paths: SessionPaths, indices: Iterable[int], thresholds: UncertaintyThresholds
+) -> Counter[Level]:
+    """Rate the transcribed segments among `indices`; passages per level.
+
+    A failed segment loses its rating; a segment without a transcript keeps
+    whatever it has. Hints are used where a hint file exists.
+    """
+    total = level_counts()
+    for index in indices:
+        if not paths.reference(index).is_file():
+            continue
+        reference = load_reference(paths, index)
+        if reference.status != "transcribed":
+            paths.review_uncertainty(index).unlink(missing_ok=True)
+            continue
+        found = (
+            load_hints(paths, index) if paths.review_hints(index).is_file() else None
+        )
+        assessment = segment_assessment(reference, found, thresholds)
+        write_assessment(paths, assessment)
+        total.update(assessment.counts())
+    return total
+
+
+def write_assessment(
+    paths: SessionPaths,
+    assessment: SegmentAssessment,
+    now: datetime.datetime | None = None,
+) -> None:
+    """Replace the rating file of `assessment.segment` atomically."""
+    moment = now or datetime.datetime.now().astimezone()
+    write_atomic(
+        paths.review_uncertainty(assessment.segment),
+        {
+            "format_version": UNCERTAINTY_FORMAT_VERSION,
+            "session": str(paths.key),
+            "segment": assessment.segment,
+            "created_at": moment.isoformat(timespec="seconds"),
+            "reference": {
+                "file": paths.reference(assessment.segment).name,
+                "processed_at": assessment.reference_processed_at,
+            },
+            "knowledge_snapshot_id": assessment.knowledge_snapshot_id,
+            "thresholds": dataclasses.asdict(assessment.thresholds),
+            # an overview for people reading the file; `load_assessment` ignores it
+            "counts": dict(assessment.counts()),
+            "passages": [
+                {
+                    "passage": rating.passage,
+                    "level": rating.level,
+                    "reasons": [dataclasses.asdict(r) for r in rating.reasons],
+                    "missing": list(rating.missing),
+                }
+                for rating in assessment.ratings
+            ],
+        },
+    )
+
+
+def load_assessment(paths: SessionPaths, index: int) -> SegmentAssessment:
+    """The stored rating of segment `index`; `UncertaintyError` if absent or invalid."""
+    path = paths.review_uncertainty(index)
+    data = _read_json(path, "uncertainty rating")
+    if data.get("format_version") != UNCERTAINTY_FORMAT_VERSION:
+        raise UncertaintyError(
+            f"{path}: unsupported format_version; run transcript assess again"
+        )
+    if data.get("session") != str(paths.key) or data.get("segment") != index:
+        raise UncertaintyError(f"{path}: belongs to another session or segment")
+    reference = _field(data, "reference", dict, path)
+    return SegmentAssessment(
+        segment=index,
+        reference_processed_at=_field(reference, "processed_at", str, path),
+        knowledge_snapshot_id=_optional(data, "knowledge_snapshot_id", str, path),
+        thresholds=_thresholds_from(_field(data, "thresholds", dict, path), path),
+        ratings=tuple(
+            _rating_from(item, number, path)
+            for number, item in enumerate(
+                jsonfile.list_of(data, "passages", dict, path, UncertaintyError),
+                start=1,
+            )
+        ),
+    )
+
+
+def _thresholds_from(data: dict[str, Any], path: Path) -> UncertaintyThresholds:
+    names = {f.name for f in dataclasses.fields(UncertaintyThresholds)}
+    try:
+        if set(data) != names:
+            raise ValueError("thresholds do not match")
+        return UncertaintyThresholds(**data)
+    except (TypeError, ValueError):
+        raise UncertaintyError(f"{path}: field 'thresholds' invalid") from None
+
+
+def _rating_from(data: dict[str, Any], number: int, path: Path) -> PassageRating:
+    """One passage rating; an error from it names the entry number."""
+    try:
+        return PassageRating(
+            passage=_field(data, "passage", int, path),
+            level=_one_of(data, "level", LEVELS, path),
+            reasons=tuple(
+                _reason_from(item, path)
+                for item in jsonfile.list_of(
+                    data, "reasons", dict, path, UncertaintyError
+                )
+            ),
+            missing=tuple(
+                _check(value, _FAMILIES, "missing", path)
+                for value in jsonfile.list_of(
+                    data, "missing", str, path, UncertaintyError
+                )
+            ),
+        )
+    except UncertaintyError as error:
+        detail = str(error).removeprefix(f"{path}: ")
+        raise UncertaintyError(f"{path}: passage entry {number}: {detail}") from None
+
+
+def _reason_from(data: dict[str, Any], path: Path) -> Reason:
+    return Reason(
+        rule=_one_of(data, "rule", _RULES, path),
+        level=_one_of(data, "level", LEVELS, path),
+        value=_number(data, "value", path),
+        threshold=_number(data, "threshold", path),
+        words=tuple(jsonfile.list_of(data, "words", int, path, UncertaintyError)),
+    )
+
+
+_RULES: tuple[Rule, ...] = get_args(Rule)
+_FAMILIES: tuple[Family, ...] = get_args(Family)
+_field = functools.partial(jsonfile.field, error=UncertaintyError)
+_one_of = functools.partial(jsonfile.one_of, error=UncertaintyError)
+_check = functools.partial(jsonfile.check_one_of, error=UncertaintyError)
+_optional = functools.partial(jsonfile.optional_field, error=UncertaintyError)
+_number = functools.partial(jsonfile.optional_number, error=UncertaintyError)
+_read_json = functools.partial(jsonfile.read_object, error=UncertaintyError)

@@ -266,6 +266,34 @@ Nach der Spracherkennung vergleicht `transcript transcribe` den erkannten Text j
 
 Die Datei `work/<gruppe>/<ordinal>/review/segment-NN.hints.json` (`format_version: 1`) entsteht bei jedem Lauf neu, auch für wiederverwendete Segmente. Der Abgleich braucht kein Modell und dauert Sekunden. Ohne Snapshot entsteht keine Datei, und eine vorhandene wird entfernt. Die Konsole zeigt nur Zahlen, etwa `review hints: 3 known variant(s), 11 similar, 2 ambiguous`, nie Text oder Namen. Die Datei selbst enthält erkannten Text und Archivnamen und bleibt deshalb unter `work/`.
 
+## Unsicherheitsbewertung
+
+Jede Passage eines transkribierten Segments bekommt eine Stufe (`transcript.uncertainty`): `confident` (sicher), `needs_review` (prüfenswert) oder `uncertain` (unsicher). Die Namen sind die von `confidence_tier` im Narrata-Contract. Die Bewertung läuft am Ende von `transcript transcribe` (nach der Diarisierung, bei `--no-diarize` nach der ASR) und von `transcript diarize`. Allein, etwa nach geänderten Schwellen, läuft sie mit `transcript assess <gruppe>/<ordinal> [--segment N]`. Sie braucht kein Modell und dauert Sekunden.
+
+Die Stufe einer Passage ist die höchste ihrer Gründe. Die Schwellen stehen unter `review.uncertainty` (siehe [Konfiguration](#konfiguration)); die Defaults sind Startwerte, kalibriert wird in TOOL-35.
+
+| Regel | Wann | Stufe |
+| --- | --- | --- |
+| `low_confidence` | Anteil der Wörter unter `word_low` ab `low_share_review` bzw. `low_share_uncertain` | `needs_review` / `uncertain` |
+| `very_low_confidence` | mindestens ein Wort unter `word_very_low` | `needs_review` |
+| `no_speech` / `low_logprob` | Whisper-Signal der Passage ab `no_speech_prob` bzw. bis `avg_logprob` | `needs_review` |
+| `repetition` | `compression_ratio` ab der Schwelle, das Zeichen einer Whisper-Schleife | `uncertain` |
+| `gap` | längste Pause zwischen zwei Wörtern ab `gap_ms`, dort fehlen womöglich Wörter | `needs_review` |
+| `sparse` | weniger als `min_words_per_second` Wörter pro Sekunde in einer Passage ab 1 s | `needs_review` |
+| `missing_times` | das Backend kann Zeiten liefern, Passage oder Wörter haben aber keine | `needs_review` |
+| `speaker_unclear` | Diarisierung vorhanden, aber kein Mehrheitslabel der Wörter | `needs_review` |
+| `crosstalk` | die Passage überschneidet einen Bereich mit Übersprechen | `needs_review` |
+| `known_variant` | Review-Hinweis auf einen bekannten Hörfehler | `needs_review` |
+| `similar` | Review-Hinweis auf eine ähnliche Schreibung oder einen ähnlichen Klang | `similar_level`, `confident` heißt ohne Wirkung |
+| `ambiguous` | mehrdeutiger Review-Hinweis | `uncertain` |
+| `no_signals` | weder Word-Confidence noch Whisper-Signale vorhanden | `needs_review` |
+
+- **Fehlende Daten werden nie ersetzt.** Fehlt einer Passage eine Signalart, greifen ihre Regeln nicht, und die Art steht unter `missing`: `word_confidence`, `segment_signals`, `word_times`, `speaker` (keine Diarisierung) oder `hints` (keine Hinweisdatei, oder sie passt nicht zum Referenztranskript). Sicher wird eine Passage nur durch Confidence oder Whisper-Signale. Zeiten, Sprecher und Hinweise können eine Stufe nur anheben.
+- **Gleiche Eingabe, gleiche Stufen:** Die Regeln sind deterministisch und lesen nur Referenztranskript, Hinweisdatei und Konfiguration. Beide Dateien bleiben unverändert.
+- **Sprecher und Mundart:** Labels gelten pro Segment und sind bis TOOL-68 keiner Person zugeordnet. Schwellen pro Person gibt es deshalb nicht.
+
+Die Datei `work/<gruppe>/<ordinal>/review/segment-NN.uncertainty.json` (`format_version: 1`) enthält pro Passage Index, Stufe, Gründe (`rule`, `level`, gesehener `value`, `threshold`, Wortpositionen `words`) und `missing`. Dazu kommen im Kopf die verwendeten Schwellen, das gelesene Referenztranskript und die Snapshot-Kennung der Hinweise. Text enthält sie nicht. Ein fehlgeschlagenes Segment verliert seine Datei. Die Konsole zeigt nur Zahlen, etwa `passages: 412 confident, 96 needs_review, 31 uncertain`.
+
 ## Konfiguration
 
 Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht im Repo, ebenso alles andere unter `config/` außer `config/example.yaml`. `transcript config` zeigt die wirksamen Werte, `transcript config --config <pfad>` liest eine andere Datei. Fehlende Pflichtwerte, ungültige Werte und unbekannte Schlüssel enden mit einer Meldung, die Datei und Schlüssel nennt.
@@ -291,6 +319,10 @@ Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht 
 | `narrata.recent_sessions` | nein | `3` | Fenster der Stufe `recent`: die letzten `n` Sitzungen, diese eingeschlossen, `1` bis `20` |
 | `narrata.archive_limit` | nein | `500` | Höchstzahl der Glossar-Einträge der Stufe `archive`, `0` bis `2000` |
 | `knowledge.keyword_budget` | nein | person 15, place 10, organisation 5, artifact 5, event 3, lore 3 | Höchstzahl der Keyword-Einträge je Typ aus den Stufen `session` und `recent`; Spielfiguren zählen nicht mit, ein fehlender Typ behält seinen Default, `0` heißt keiner |
+| `review.similar.min_ratio` | nein | `0.85` | Mindestähnlichkeit der Schreibung für einen Hinweis `similar`, `0` bis `1` |
+| `review.similar.min_length` | nein | `4` | Mindestlänge von Begriff und Wortfolge in Buchstaben, `1` bis `50` |
+| `review.similar.max_length_deviation` | nein | `0.3` | höchste Längenabweichung als Anteil der Begriffslänge, `0` bis `0.9` |
+| `review.uncertainty.*` | nein | siehe `config/example.yaml` | Schwellen der [Unsicherheitsbewertung](#unsicherheitsbewertung): `word_low` (0,5), `word_very_low` (0,2), `low_share_review` (0,2), `low_share_uncertain` (0,5), `no_speech_prob` (0,6), `avg_logprob` (−1,0), `compression_ratio` (2,4), `gap_ms` (1500), `min_words_per_second` (1,0), `similar_level` (`needs_review`); `word_very_low` darf `word_low` nicht übersteigen, `low_share_review` nicht `low_share_uncertain` |
 | `debug` | nein | `false` | schreibt Transkripttext nach `work/<gruppe>/<ordinal>/debug.log`, nie auf die Konsole |
 
 Einen eigenen Ausgabepfad gibt es nicht: `output/` liegt immer unter `paths.root`, damit echte Daten im Layout unter [Sessions](#sessions) bleiben. Secrets gehören nicht in diese Datei, sondern in `.env` (Vorlage `.env.example`, heute nur `NARRATA_TOKEN`).
@@ -336,7 +368,7 @@ work/beispielgruppe/042/
   audio/                       segment-NN.wav (Arbeitsformat, eine pro Aufnahme), audio.json (Audio-Metadaten)
   asr/                         segment-NN.json (Referenztranskript), segment-NN.raw.json (Backend-Rohantwort)
   diarization/                 segment-NN.json (Sprecher-Turns von pyannote)
-  review/                      segment-NN.hints.json (Review-Hinweise aus dem Wissen), später Review-Kandidaten, CSV
+  review/                      segment-NN.hints.json (Review-Hinweise aus dem Wissen), segment-NN.uncertainty.json (Unsicherheitsbewertung), später Review-Kandidaten, CSV
   speakers/                    Sprecherzuordnung
   debug.log                    nur im Debug-Modus
 output/beispielgruppe/042/     JSON-Export, TXT, DOCX

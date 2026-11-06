@@ -532,15 +532,9 @@ def _candidate_from(data: dict[str, Any], path: Path) -> Candidate:
     )
 
 
-def _one_of(data: Any, name: str, allowed: Sequence[str], path: Path) -> Any:
-    value = _field(data, name, str, path)
-    if value not in allowed:
-        raise HintsError(f"{path}: field {name!r} invalid")
-    return value
-
-
 _METHODS: tuple[Method, ...] = get_args(Method)
 _field = functools.partial(jsonfile.field, error=HintsError)
+_one_of = functools.partial(jsonfile.one_of, error=HintsError)
 _optional = functools.partial(jsonfile.optional_field, error=HintsError)
 _number = functools.partial(jsonfile.optional_number, error=HintsError)
 _read_json = functools.partial(jsonfile.read_object, error=HintsError)

@@ -1,5 +1,5 @@
 """Command-line entry point: `config`, `doctor`, `extract`, `context`, `snapshot`,
-`manifest`, `transcribe`, `diarize`."""
+`manifest`, `transcribe`, `diarize`, `assess`."""
 
 import argparse
 import collections
@@ -20,10 +20,11 @@ from transcript import (
     knowledge,
     manifest,
     narrata,
+    uncertainty,
 )
 from transcript.asr import BackendError
 from transcript.asr.whisper import WhisperBackend
-from transcript.config import Config, ConfigError, format_config, load_config
+from transcript.config import LEVELS, Config, ConfigError, format_config, load_config
 from transcript.diarization.pyannote import PyannoteDiarizer
 from transcript.domain import DomainContext
 from transcript.jsonfile import DataFileError
@@ -142,6 +143,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="diarize again even if a stored result matches",
     )
+    assess_command = commands.add_parser(
+        "assess",
+        help="Rate the passages of a session's transcripts as confident, "
+        "needs_review or uncertain.",
+    )
+    assess_command.add_argument("session", help="session key <group>/<ordinal>")
+    assess_command.add_argument(
+        "--segment",
+        type=_positive_int,
+        help="only this segment, counted from 1 as in the manifest (default: all)",
+    )
     for command in (
         config_command,
         extract_command,
@@ -150,6 +162,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest_command,
         transcribe_command,
         diarize_command,
+        assess_command,
     ):
         command.add_argument(
             "--config",
@@ -183,6 +196,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         if args.command == "diarize":
             return _diarize(args.session, args.config, args.num_speakers, args.force)
+        if args.command == "assess":
+            return _assess(args.session, args.config, args.segment)
     parser.print_help()
     return 0
 
@@ -534,25 +549,65 @@ def _transcribe(
             f"{key}: review hints: {found['known_variant']} known variant(s), "
             f"{found['similar']} similar, {found['ambiguous']} ambiguous"
         )
-        print(f"wrote {paths.review_dir}")
 
+    diarized = True  # False: the diarization could not run at all
+    summaries: Sequence[diarization.SegmentSummary] = ()
+    if diarizer is not None:
+        print(f"{key}: diarization")
+        try:
+            summaries = diarization.diarize_session(
+                paths,
+                session_manifest,
+                diarizer,
+                num_speakers=num_speakers,
+                retries=config.diarization_retries,
+            )
+        except (ValueError, DataFileError, BackendError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            diarized = False
+        else:
+            _print_diarization(summaries, paths)
+    # Also after a failed diarization: the new transcripts get ratings.
+    rated = _rate_passages(key, paths, config, [o.index for o in run.outcomes])
+    if not (diarized and rated):
+        return 2
     if diarizer is None:
         print(f"wrote {paths.asr_dir}")
-        return 0 if run.complete else 1
-    print(f"{key}: diarization")
+    return 0 if run.complete and not _any_failed(summaries) else 1
+
+
+def _assess(raw_key: str, config_path: Path, index: int | None) -> int:
+    """Only counts reach the console (TOOL-66). Exit 0, or 2 on a problem."""
     try:
-        summaries = diarization.diarize_session(
-            paths,
-            session_manifest,
-            diarizer,
-            num_speakers=num_speakers,
-            retries=config.diarization_retries,
-        )
-    except (ValueError, DataFileError, BackendError) as error:
+        key = SessionKey.parse(raw_key)
+        config = _load_config(config_path)
+        paths = config.session_paths(key)
+        indices = [segment.index for segment in manifest.load_manifest(paths).segments]
+    except (ValueError, ConfigError, DataFileError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
-    _print_diarization(summaries, paths)
-    return 0 if run.complete and not _any_failed(summaries) else 1
+    if index is not None:
+        if index not in indices:
+            print(f"error: segment {index} not in the manifest", file=sys.stderr)
+            return 2
+        indices = [index]
+    return 0 if _rate_passages(key, paths, config, indices) else 2
+
+
+def _rate_passages(
+    key: SessionKey, paths: SessionPaths, config: Config, indices: Sequence[int]
+) -> bool:
+    """Write the ratings of `indices` and print their counts; False on a problem."""
+    try:
+        counts = uncertainty.assess_session(paths, indices, config.review_uncertainty)
+    except DataFileError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return False
+    print(
+        f"{key}: passages: " + ", ".join(f"{counts[level]} {level}" for level in LEVELS)
+    )
+    print(f"wrote {paths.review_dir}")
+    return True
 
 
 def _domain(paths: SessionPaths) -> DomainContext | None:
@@ -607,6 +662,8 @@ def _diarize(
 
     print(f"{key}: {len(summaries)} segment(s)")
     _print_diarization(summaries, paths)
+    if not _rate_passages(key, paths, config, [s.index for s in summaries]):
+        return 2
     return 1 if _any_failed(summaries) else 0
 
 

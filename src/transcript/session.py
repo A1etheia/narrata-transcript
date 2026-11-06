@@ -115,6 +115,10 @@ class SessionPaths:
         """Review hints of the `index`-th segment from the knowledge (TOOL-44)."""
         return self.review_dir / f"{segment_name(index)}.hints.json"
 
+    def review_uncertainty(self, index: int) -> Path:
+        """Uncertainty rating of the `index`-th segment's passages (TOOL-35)."""
+        return self.review_dir / f"{segment_name(index)}.uncertainty.json"
+
     @property
     def manifest(self) -> Path:
         return self.work_dir / "manifest.json"
