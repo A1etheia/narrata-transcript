@@ -1169,6 +1169,54 @@ class DiarizeCommandTest(unittest.TestCase):
         text = self.paths.review_uncertainty(1).read_text(encoding="utf-8")
         self.assertNotIn(SECRET, stdout + stderr + text)
 
+    def calibrate(self, *extra: str) -> tuple[int, str, str]:
+        return run("calibrate", str(KEY), "--config", str(self.config), *extra)
+
+    def test_calibrate_prints_counts_but_no_text_or_names(self) -> None:
+        hand = self.root / "reference.txt"
+        hand.write_text(f"Sprecherin: Zum {SECRET}.\n", encoding="utf-8")
+
+        code, stdout, stderr = self.calibrate(
+            "--segment", "1", "--reference", str(hand),
+            "--start", "00:00:00.000", "--end", "00:00:02.000",
+        )  # fmt: skip
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("beispielgruppe/042: reference: 2 word(s), recognised: 2", stdout)
+        self.assertIn("errors: 0 (0.0% WER)", stdout)
+        self.assertIn("speaker S1: 2 word(s)", stdout)
+        self.assertFalse(self.paths.review_uncertainty(1).exists())
+        for secret in (SECRET, "Sprecherin", "Zum"):
+            self.assertNotIn(secret, stdout + stderr)
+
+    def test_calibrate_needs_a_complete_measurement(self) -> None:
+        code, _, stderr = self.calibrate("--segment", "1")
+        self.assertEqual(code, 2)
+        self.assertIn(
+            "calibrate needs --segment, --reference, --start and --end", stderr
+        )
+
+        hand = self.root / "reference.txt"
+        hand.write_text("Zum\n", encoding="utf-8")
+        code, _, stderr = self.calibrate(
+            "--segment", "1", "--reference", str(hand),
+            "--start", "00:00:02.000", "--end", "00:00:01.000",
+        )  # fmt: skip
+        self.assertEqual(code, 2)
+        self.assertIn("--end must lie after --start", stderr)
+
+    def test_calibrate_writes_and_reads_a_similar_sheet(self) -> None:
+        code, stdout, stderr = self.calibrate("--similar-sheet")
+
+        self.assertEqual(code, 0, stderr)
+        sheet = self.paths.review_dir / "calibration" / "similar-sheet.csv"
+        self.assertIn("beispielgruppe/042: 0 similar hint(s) to judge", stdout)
+        self.assertIn(f"wrote {sheet}", stdout)
+
+        code, stdout, stderr = self.calibrate("--similar-judged", str(sheet))
+        self.assertEqual(code, 2)
+        self.assertIn("judged sheet lists no hints", stderr)
+
     def test_assess_reports_problems_with_exit_2(self) -> None:
         code, _, stderr = run(
             "assess", str(KEY), "--config", str(self.config), "--segment", "3"

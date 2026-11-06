@@ -294,6 +294,27 @@ Die Stufe einer Passage ist die höchste ihrer Gründe. Die Schwellen stehen unt
 
 Die Datei `work/<gruppe>/<ordinal>/review/segment-NN.uncertainty.json` (`format_version: 1`) enthält pro Passage Index, Stufe, Gründe (`rule`, `level`, gesehener `value`, `threshold`, Wortpositionen `words`) und `missing`. Dazu kommen im Kopf die verwendeten Schwellen, das gelesene Referenztranskript und die Snapshot-Kennung der Hinweise. Text enthält sie nicht. Ein fehlgeschlagenes Segment verliert seine Datei. Die Konsole zeigt nur Zahlen, etwa `passages: 412 confident, 96 needs_review, 31 uncertain`.
 
+### Kalibrierung
+
+`transcript calibrate` misst die Bewertung an einer Handreferenz: einer Textdatei, die beim Anhören eines Abschnitts eines Segments entsteht. Jede Zeile darf mit einer Sprecherkennung beginnen (`Name:`), Notizen in eckigen Klammern sind keine Sprache, `???` markiert Unverständliches. Was die Spracherkennung dort erkennt, zählt weder als richtig noch als Einfügung (Konvention aus [TOOL-62](docs/spikes/TOOL-62-asr-vergleich.md)).
+
+```bash
+transcript calibrate beispielgruppe/042 --segment 1 --reference work/beispielgruppe/042/review/calibration/reference.txt \
+  --start 01:20:00.000 --end 01:23:00.000
+```
+
+`--start` und `--end` sind Zeiten im Segment-WAV. Gezählt werden die Wörter, die in diesem Bereich beginnen. Die Ausrichtung beruht auf `difflib` und liegt nahe an der minimalen Wortfehlerrate. Jede Ersetzung und Einfügung zeigt auf ein erkanntes Wort, jede Auslassung auf die Stelle daneben und damit auf eine Passage. Die Bewertung entsteht mit den Schwellen der aktuellen Konfiguration neu, gespeichert wird nichts. Wer Schwellen ändert, ruft `calibrate` einfach noch einmal auf.
+
+Der Bericht enthält nur Zahlen:
+- Fehler gesamt und nach Art
+- Fehlerquote je Sprecher der Handreferenz, als `S1`, `S2`, … in der Reihenfolge ihres Auftretens
+- pro Stufe und für alle markierten Passagen: Anteil an Passagen und Zeit, enthaltene Fehler und Auslassungen
+- übersehene Fehler in `confident`-Passagen und Fehlalarme, also markierte Passagen ohne Fehler
+- pro Regel die Passagen, in denen sie angeschlagen hat
+- die AUC der Word-Confidence und der Anteil falscher Wörter unter den unsichersten 10, 20 und 30 %
+
+Für `similar` gibt es einen Bogen zum Anhören. `transcript calibrate <session> --similar-sheet` schreibt höchstens 50 `similar`-Hinweise nach `work/<gruppe>/<ordinal>/review/calibration/similar-sheet.csv`, gleichmäßig über die Session verteilt und bei gleichen Hinweisdateien immer dieselben. In die Spalte `correct` kommt `ja` oder `nein`, leer heißt nicht beurteilt. `--similar-judged <datei>` liest den ausgefüllten Bogen und gibt die Präzision je Methode und Score-Band aus. Eine Trefferquote ergibt sich daraus nicht. Handreferenz und Bogen enthalten echte Namen und bleiben unter `work/`.
+
 ## Konfiguration
 
 Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht im Repo, ebenso alles andere unter `config/` außer `config/example.yaml`. `transcript config` zeigt die wirksamen Werte, `transcript config --config <pfad>` liest eine andere Datei. Fehlende Pflichtwerte, ungültige Werte und unbekannte Schlüssel enden mit einer Meldung, die Datei und Schlüssel nennt.

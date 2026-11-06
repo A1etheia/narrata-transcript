@@ -1,5 +1,5 @@
 """Command-line entry point: `config`, `doctor`, `extract`, `context`, `snapshot`,
-`manifest`, `transcribe`, `diarize`, `assess`."""
+`manifest`, `transcribe`, `diarize`, `assess`, `calibrate`."""
 
 import argparse
 import collections
@@ -14,6 +14,7 @@ from transcript import (
     __version__,
     audio,
     audio_tools,
+    calibration,
     diagnosis,
     diarization,
     hints,
@@ -30,7 +31,7 @@ from transcript.domain import DomainContext
 from transcript.jsonfile import DataFileError
 from transcript.narrata_client import NarrataClientError, fetch_context, read_token
 from transcript.session import SessionKey, SessionPaths
-from transcript.timecode import format_ms
+from transcript.timecode import format_ms, parse_timecode
 from transcript.transcription import (
     OUTCOME_STATUSES,
     SegmentOutcome,
@@ -154,6 +155,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=_positive_int,
         help="only this segment, counted from 1 as in the manifest (default: all)",
     )
+    calibrate_command = commands.add_parser(
+        "calibrate",
+        help="Measure the passage ratings against a hand-checked reference, or "
+        "make and read a sheet of similar hints; prints counts only.",
+    )
+    calibrate_command.add_argument("session", help="session key <group>/<ordinal>")
+    calibrate_command.add_argument(
+        "--segment", type=_positive_int, help="segment the hand reference belongs to"
+    )
+    calibrate_command.add_argument(
+        "--reference", type=Path, help="hand reference as a text file"
+    )
+    calibrate_command.add_argument(
+        "--start", help="where the hand reference starts in the segment, HH:MM:SS.mmm"
+    )
+    calibrate_command.add_argument(
+        "--end", help="where the hand reference ends in the segment, HH:MM:SS.mmm"
+    )
+    calibrate_command.add_argument(
+        "--similar-sheet",
+        action="store_true",
+        help="write a sheet of similar hints to judge under review/calibration/",
+    )
+    calibrate_command.add_argument(
+        "--similar-judged", type=Path, help="read a judged sheet of similar hints"
+    )
     for command in (
         config_command,
         extract_command,
@@ -163,6 +190,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         transcribe_command,
         diarize_command,
         assess_command,
+        calibrate_command,
     ):
         command.add_argument(
             "--config",
@@ -196,6 +224,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         if args.command == "diarize":
             return _diarize(args.session, args.config, args.num_speakers, args.force)
+        if args.command == "calibrate":
+            return _calibrate(args)
         if args.command == "assess":
             return _assess(args.session, args.config, args.segment)
     parser.print_help()
@@ -592,6 +622,57 @@ def _assess(raw_key: str, config_path: Path, index: int | None) -> int:
             return 2
         indices = [index]
     return 0 if _rate_passages(key, paths, config, indices) else 2
+
+
+def _calibrate(args: argparse.Namespace) -> int:
+    """Only counts and shares reach the console, never text or names (TOOL-66)."""
+    try:
+        key = SessionKey.parse(args.session)
+        config = _load_config(args.config)
+        paths = config.session_paths(key)
+        indices = [segment.index for segment in manifest.load_manifest(paths).segments]
+        if args.similar_sheet:
+            rows = calibration.similar_sheet(paths, indices)
+            sheet = paths.review_dir / "calibration" / "similar-sheet.csv"
+            calibration.write_sheet(sheet, rows)
+            print(f"{key}: {len(rows)} similar hint(s) to judge")
+            print(f"wrote {sheet}")
+            return 0
+        if args.similar_judged is not None:
+            lines = calibration.judged_precision(args.similar_judged)
+        else:
+            lines = _measure(paths, config, indices, args)
+    except (ValueError, ConfigError, DataFileError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    for line in lines:
+        print(f"{key}: {line}")
+    return 0
+
+
+def _measure(
+    paths: SessionPaths,
+    config: Config,
+    indices: Sequence[int],
+    args: argparse.Namespace,
+) -> list[str]:
+    """The report of the hand reference against the stored transcript."""
+    if None in (args.segment, args.reference, args.start, args.end):
+        raise ValueError(
+            "calibrate needs --segment, --reference, --start and --end, "
+            "or --similar-sheet, or --similar-judged"
+        )
+    if args.segment not in indices:
+        raise ValueError(f"segment {args.segment} not in the manifest")
+    report = calibration.measure(
+        paths,
+        args.segment,
+        calibration.read_hand_reference(args.reference),
+        parse_timecode(args.start),
+        parse_timecode(args.end),
+        config.review_uncertainty,
+    )
+    return report.lines()
 
 
 def _rate_passages(

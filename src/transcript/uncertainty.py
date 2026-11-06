@@ -25,7 +25,7 @@ from typing import Any, Literal, get_args
 
 from transcript import jsonfile
 from transcript.config import LEVELS, Level, UncertaintyThresholds
-from transcript.hints import Hint, SegmentHints, load_hints
+from transcript.hints import Hint, SegmentHints, stored_hints
 from transcript.jsonfile import DataFileError, write_atomic
 from transcript.reference import (
     Overlap,
@@ -387,10 +387,9 @@ def assess_session(
         if reference.status != "transcribed":
             paths.review_uncertainty(index).unlink(missing_ok=True)
             continue
-        found = (
-            load_hints(paths, index) if paths.review_hints(index).is_file() else None
+        assessment = segment_assessment(
+            reference, stored_hints(paths, index), thresholds
         )
-        assessment = segment_assessment(reference, found, thresholds)
         write_assessment(paths, assessment)
         total.update(assessment.counts())
     return total

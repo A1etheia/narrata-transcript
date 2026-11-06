@@ -468,6 +468,13 @@ def write_hints(
     )
 
 
+def stored_hints(paths: SessionPaths, index: int) -> SegmentHints | None:
+    """The hints of segment `index`, or `None` without a hint file."""
+    if not paths.review_hints(index).is_file():
+        return None
+    return load_hints(paths, index)
+
+
 def load_hints(paths: SessionPaths, index: int) -> SegmentHints:
     """The stored hints of segment `index`; `HintsError` if absent or invalid."""
     path = paths.review_hints(index)
