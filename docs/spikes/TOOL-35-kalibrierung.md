@@ -91,7 +91,11 @@ In der Session gibt es 413 `similar`-Hinweise. 312 davon wurden über den Klang 
 
 Gemessen ist nur die Präzision, eine Trefferquote nicht. Wie viele falsch erkannte Namen gar keinen Hinweis bekommen, bleibt offen. Für Score-Bänder sind die Zahlen zu klein, `min_ratio` bleibt deshalb bei 0,85.
 
-Ein Teil der Fehlalarme kommt vom Glossar. Narrata hat für diese Sitzung keinen Eintrag als `session` oder `recent` eingestuft, alle 199 Nicht-Spielfiguren stehen im Archiv. Die Pipeline prüft deshalb gegen Figuren und Orte, die seit langem nicht mehr vorkommen. Sind die letzten Sitzungen in Narrata mit Tagebuch-Einträgen verknüpft, werden die aktuellen Einträge erkennbar. Archiv-Treffer strenger zu behandeln ist ein eigenes Folge-Ticket.
+Ein Teil der Fehlalarme kommt vom Glossar. Narrata hat für diese Sitzung keinen Eintrag als `session` oder `recent` eingestuft, alle 199 Nicht-Spielfiguren stehen im Archiv. Die Pipeline prüft deshalb gegen Figuren und Orte, die seit langem nicht mehr vorkommen. Ursache ist, dass das Fenster für `recent` nur Sitzungen mit Tagebuch berücksichtigt und das Tagebuch hinter dem Spiel zurückliegt. Narrata behebt das in zwei Schritten:
+- [IOA-1278](https://alethe1a.atlassian.net/browse/IOA-1278) wählt das Fenster nach Sitzungen mit Quelle (Tagebuch oder Transkript) und nimmt Ereignisse aus dem Glossar.
+- [IOA-1279](https://alethe1a.atlassian.net/browse/IOA-1279) bringt ein Ausschluss-Kennzeichen für tote Begriffe und eine Pflege pro Sitzung.
+
+Ob Archiv-Treffer danach noch strenger behandelt werden müssen, misst [TOOL-83](https://alethe1a.atlassian.net/browse/TOOL-83) nach IOA-1278 mit einem neuen Bogen.
 
 `known_variant` ließ sich nicht messen, weil der Snapshot keine `asr_variants` enthält.
 

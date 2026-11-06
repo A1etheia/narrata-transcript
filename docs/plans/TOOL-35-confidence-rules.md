@@ -96,7 +96,9 @@ Eigene Wahl:
 - TOOL-36: Review-Kandidaten lesen `review/segment-NN.uncertainty.json` und die Hinweise, `uncertain` vor `needs_review`; Gewichtung pro Sprecher, sobald TOOL-68 Labels Personen zuordnet (Kommentar am Ticket).
 - TOOL-69: Stufe → `confidence_tier`, Gründe `gap`/`speaker_unclear`/`crosstalk` → `markers` (Kommentar am Ticket).
 - TOOL-60: Prüft am vollen Pilotlauf, ob die Eingrenzung aus dem Bericht hält (Kommentar am Ticket).
-- Parakeet-Zweitlauf: [kein Ticket: entscheidet Chunk 5; bei Aufnahme wird das Ticket vor `/close-ticket` angelegt und hier eingetragen]
+- TOOL-82: Parakeet-Zweitlauf als Review-Signal für Auslassungen (in Chunk 5 aufgenommen).
+- TOOL-81: Hotwords lassen auf langen Aufnahmen Wörter wegfallen; nach der Behebung die Kalibrierung mit Hotwords wiederholen.
+- TOOL-83: `similar`-Präzision nach Relevanz-Stufe neu messen, sobald IOA-1278 das Fenster für `recent` nach Quellen auswählt; erst danach über strengere Archiv-Treffer entscheiden.
 
 ## Chunk-Tabelle
 | Chunk | Scope | Clear context after? |
