@@ -37,6 +37,8 @@ from transcript.timecode import seconds_to_ms
 REFERENCE_FORMAT_VERSION = 2
 READABLE_FORMAT_VERSIONS = (1, REFERENCE_FORMAT_VERSION)  # 1 has no snapshot id
 STATUSES = ("transcribed", "failed")
+# Names from `asr.backend.FEATURES` as `Capabilities.to_dict` stores them.
+TIME_CAPABILITIES = ("word_timestamps", "segment_timestamps")
 
 
 class ReferenceError(DataFileError):
@@ -98,6 +100,11 @@ class AsrInfo:
     language_probability: float | None = None
     keywords_used: tuple[str, ...] = ()
     knowledge_snapshot_id: str | None = None  # the knowledge the run was given
+
+    @property
+    def delivers_times(self) -> bool:
+        """Whether the backend can deliver word or passage times."""
+        return any(self.capabilities.get(name) is True for name in TIME_CAPABILITIES)
 
     @property
     def info(self) -> BackendInfo:

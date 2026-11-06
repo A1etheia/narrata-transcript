@@ -386,6 +386,13 @@ class SegmentHints:
     keywords_used: int  # ASR hints of that transcript
     hints: tuple[Hint, ...]
 
+    def matches(self, reference: ReferenceTranscript) -> bool:
+        """Whether these hints were made from this version of `reference`."""
+        return (
+            self.segment == reference.segment.index
+            and self.reference_processed_at == reference.processing.processed_at
+        )
+
     def counts(self) -> Counter[str]:
         """Hints per signal, plus `ambiguous` across both."""
         counts = Counter(hint.signal for hint in self.hints)
