@@ -119,7 +119,7 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 | TOOL-69 | JSON-Export Contract v1 | 1 | 11.02.2027 | 11.02.2027 | gegen IOA-1214-Validator; aus TOOL-19: Passagenzeiten über `session_time.passage_span` bilden und prüfen, ob Contract v1 die Granularität und `clamped` aufnehmen soll |
 | TOOL-51 | TXT-Rendering | 0.5 | 15.02.2027 | 15.02.2027 |  |
 | TOOL-52 | DOCX-Rendering | 0.5 | 15.02.2027 | 15.02.2027 |  |
-| IOA-1218 | Storage + idempotenter Import | 2 | 16.02.2027 | 18.02.2027 | erst gegen Fixture, dann gegen echten TOOL-69-Export |
+| IOA-1218 | Storage + idempotenter Import | 2 | 16.02.2027 | 18.02.2027 | erledigt: `transcript:import` und Upload-Endpoint in Narrata (ios-archiv PR #1138), gegen die IOA-1214-Fixture; die Probe gegen einen echten TOOL-69-Export folgt mit TOOL-58 |
 
 ### Phase 4 — End-to-End-Pilot
 
