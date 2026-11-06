@@ -778,6 +778,9 @@ class TranscribeCommandTest(unittest.TestCase):
     def transcribe(self, *extra: str) -> tuple[int, str, str]:
         return run("transcribe", str(KEY), "--config", str(self.config), *extra)
 
+    def assess(self, *extra: str) -> tuple[int, str, str]:
+        return run("assess", str(KEY), "--config", str(self.config), *extra)
+
     def test_whole_session_prints_counts_per_segment_but_no_text(self) -> None:
         code, stdout, stderr = self.transcribe("--no-diarize")
 
@@ -909,6 +912,37 @@ class TranscribeCommandTest(unittest.TestCase):
 
         self.paths.knowledge_snapshot.unlink()
         _, stdout, _ = self.transcribe("--no-diarize")
+        self.assertFalse(self.paths.review_hints(2).exists())
+        self.assertNotIn("review hints", stdout)
+
+    def test_assess_hints_takes_a_new_snapshot_without_a_new_asr(self) -> None:
+        self.transcribe("--no-diarize")
+        before = self.paths.reference(2).read_bytes()
+        data = context()
+        data["glossary"] = [glossary_entry(asr_variants=[SECRET])]
+        self.paths.narrata_context.parent.mkdir(parents=True, exist_ok=True)
+        self.paths.narrata_context.write_bytes(encoded(data))
+        snapshot = knowledge.build_snapshot(self.paths, DEFAULT_KEYWORD_BUDGET)
+
+        code, stdout, stderr = self.assess("--hints")
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "beispielgruppe/042: review hints: 3 known variant(s), 0 similar, "
+            "0 ambiguous",
+            stdout,
+        )
+        self.assertIn("beispielgruppe/042: passages:", stdout)
+        self.assertEqual(self.paths.reference(2).read_bytes(), before)
+        stored = hints.load_hints(self.paths, 2)
+        self.assertEqual(stored.knowledge_snapshot_id, snapshot.snapshot_id)
+        rated = uncertainty.load_assessment(self.paths, 2)
+        self.assertEqual(rated.knowledge_snapshot_id, snapshot.snapshot_id)
+        for name in (SECRET, PLACE, ALIAS):
+            self.assertNotIn(name, stdout + stderr)
+
+        self.paths.knowledge_snapshot.unlink()
+        _, stdout, _ = self.assess("--hints")
         self.assertFalse(self.paths.review_hints(2).exists())
         self.assertNotIn("review hints", stdout)
 

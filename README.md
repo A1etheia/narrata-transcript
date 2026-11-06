@@ -266,9 +266,11 @@ Nach der Spracherkennung vergleicht `transcript transcribe` den erkannten Text j
 
 Die Datei `work/<gruppe>/<ordinal>/review/segment-NN.hints.json` (`format_version: 1`) entsteht bei jedem Lauf neu, auch für wiederverwendete Segmente. Der Abgleich braucht kein Modell und dauert Sekunden. Ohne Snapshot entsteht keine Datei, und eine vorhandene wird entfernt. Die Konsole zeigt nur Zahlen, etwa `review hints: 3 known variant(s), 11 similar, 2 ambiguous`, nie Text oder Namen. Die Datei selbst enthält erkannten Text und Archivnamen und bleibt deshalb unter `work/`.
 
+**Neues Wissen ohne neue ASR:** `transcript assess <gruppe>/<ordinal> --hints` gleicht die gespeicherten Transkripte mit dem aktuellen Snapshot neu ab und bewertet danach die Passagen. So kommt ein neuer Snapshot, etwa nach `transcript snapshot --refresh`, in die Review, ohne die Aufnahme neu zu transkribieren. Hinweise und Bewertung tragen dann die neue Snapshot-Kennung, das ASR-Ergebnis behält die alte. Ein späteres `transcript transcribe` derselben Session transkribiert deshalb neu (siehe Wiederaufnahme).
+
 ## Unsicherheitsbewertung
 
-Jede Passage eines transkribierten Segments bekommt eine Stufe (`transcript.uncertainty`): `confident` (sicher), `needs_review` (prüfenswert) oder `uncertain` (unsicher). Die Namen sind die von `confidence_tier` im Narrata-Contract. Die Bewertung läuft am Ende von `transcript transcribe` (nach der Diarisierung, bei `--no-diarize` nach der ASR) und von `transcript diarize`. Allein, etwa nach geänderten Schwellen, läuft sie mit `transcript assess <gruppe>/<ordinal> [--segment N]`. Sie braucht kein Modell und dauert Sekunden.
+Jede Passage eines transkribierten Segments bekommt eine Stufe (`transcript.uncertainty`): `confident` (sicher), `needs_review` (prüfenswert) oder `uncertain` (unsicher). Die Namen sind die von `confidence_tier` im Narrata-Contract. Die Bewertung läuft am Ende von `transcript transcribe` (nach der Diarisierung, bei `--no-diarize` nach der ASR) und von `transcript diarize`. Allein, etwa nach geänderten Schwellen, läuft sie mit `transcript assess <gruppe>/<ordinal> [--segment N] [--hints]`. `--hints` erzeugt vorher die Hinweise aus dem aktuellen Snapshot neu. Sie braucht kein Modell und dauert Sekunden.
 
 Die Stufe einer Passage ist die höchste ihrer Gründe. Die Schwellen stehen unter `review.uncertainty` (siehe [Konfiguration](#konfiguration)); die Defaults sind Startwerte, kalibriert wird in TOOL-35.
 

@@ -155,6 +155,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=_positive_int,
         help="only this segment, counted from 1 as in the manifest (default: all)",
     )
+    assess_command.add_argument(
+        "--hints",
+        action="store_true",
+        help="first match the stored transcripts against the current knowledge "
+        "snapshot again; the ASR result stays as it is",
+    )
     calibrate_command = commands.add_parser(
         "calibrate",
         help="Measure the passage ratings against a hand-checked reference, or "
@@ -227,7 +233,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "calibrate":
             return _calibrate(args)
         if args.command == "assess":
-            return _assess(args.session, args.config, args.segment)
+            return _assess(args.session, args.config, args.segment, args.hints)
     parser.print_help()
     return 0
 
@@ -567,18 +573,8 @@ def _transcribe(
         print(f"{key}: {run.keywords_used} of {len(keywords)} keyword(s) passed")
     if run.load_error is not None:
         print(f"error: {run.load_error}", file=sys.stderr)
-    try:
-        found = hints.review_session(
-            paths, (o.index for o in run.outcomes), domain, config.review_similar
-        )
-    except DataFileError as error:
-        print(f"error: {error}", file=sys.stderr)
+    if not _write_hints(key, paths, config, domain, [o.index for o in run.outcomes]):
         return 2
-    if found is not None:
-        print(
-            f"{key}: review hints: {found['known_variant']} known variant(s), "
-            f"{found['similar']} similar, {found['ambiguous']} ambiguous"
-        )
 
     diarized = True  # False: the diarization could not run at all
     summaries: Sequence[diarization.SegmentSummary] = ()
@@ -606,13 +602,20 @@ def _transcribe(
     return 0 if run.complete and not _any_failed(summaries) else 1
 
 
-def _assess(raw_key: str, config_path: Path, index: int | None) -> int:
-    """Only counts reach the console (TOOL-66). Exit 0, or 2 on a problem."""
+def _assess(
+    raw_key: str, config_path: Path, index: int | None, rebuild_hints: bool
+) -> int:
+    """Only counts reach the console (TOOL-66). Exit 0, or 2 on a problem.
+
+    `rebuild_hints` matches the stored transcripts against the current snapshot
+    first, so new knowledge reaches the review without a new ASR run.
+    """
     try:
         key = SessionKey.parse(raw_key)
         config = _load_config(config_path)
         paths = config.session_paths(key)
         indices = [segment.index for segment in manifest.load_manifest(paths).segments]
+        domain = _domain(paths) if rebuild_hints else None
     except (ValueError, ConfigError, DataFileError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
@@ -621,7 +624,30 @@ def _assess(raw_key: str, config_path: Path, index: int | None) -> int:
             print(f"error: segment {index} not in the manifest", file=sys.stderr)
             return 2
         indices = [index]
+    if rebuild_hints and not _write_hints(key, paths, config, domain, indices):
+        return 2
     return 0 if _rate_passages(key, paths, config, indices) else 2
+
+
+def _write_hints(
+    key: SessionKey,
+    paths: SessionPaths,
+    config: Config,
+    domain: DomainContext | None,
+    indices: Sequence[int],
+) -> bool:
+    """Write the review hints of `indices` and print their counts; False on a problem."""
+    try:
+        found = hints.review_session(paths, indices, domain, config.review_similar)
+    except DataFileError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return False
+    if found is not None:
+        print(
+            f"{key}: review hints: {found['known_variant']} known variant(s), "
+            f"{found['similar']} similar, {found['ambiguous']} ambiguous"
+        )
+    return True
 
 
 def _calibrate(args: argparse.Namespace) -> int:
