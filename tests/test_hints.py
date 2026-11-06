@@ -101,6 +101,26 @@ class KnownVariantTest(unittest.TestCase):
         self.assertTrue(hint.ambiguous)
         self.assertEqual(len(hint.candidates), 1)
 
+    def test_several_variants_point_to_the_same_entry(self) -> None:
+        place = entry("Grauwasser", variants=("Grauwassa", "Krauwasser"), entry_id=1)
+
+        hints = find_hints(spoken("Grauwassa", "Krauwasser"), domain(place))
+
+        self.assertEqual([h.signal for h in hints], ["known_variant"] * 2)
+        self.assertEqual([h.ambiguous for h in hints], [False, False])
+        self.assertEqual(
+            [(c.ref, c.field) for h in hints for c in h.candidates],
+            [(place.ref, "asr_variants[0]"), (place.ref, "asr_variants[1]")],
+        )
+
+    def test_without_variants_only_similar_hints_remain(self) -> None:
+        place = entry("Grauwasser", entry_id=1)
+
+        hint = only(find_hints(spoken("Grauwasserr"), domain(place)))
+
+        self.assertEqual(hint.signal, "similar")
+        self.assertEqual(hint.candidates[0].kind, "name")
+
 
 class SimilarTest(unittest.TestCase):
     def test_a_split_name_is_a_weak_spelling_hint(self) -> None:
