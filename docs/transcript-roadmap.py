@@ -19,7 +19,7 @@ import pathlib
 START = dt.date(2026, 11, 2)  # a Monday
 WORKDAYS = [0, 1, 3]  # Mon, Tue, Thu -> 3 dev-days per week
 PAUSES = [(dt.date(2026, 12, 21), dt.date(2027, 1, 3))]  # inclusive ranges, no work
-GENERATED = "2026-11-05"
+GENERATED = "2026-11-06"
 
 # (phase title, milestone sentence, [(key, title, dev-days, note)])
 P = [
@@ -59,14 +59,14 @@ P = [
         ("TOOL-41", "Relevanzregel + Snapshot", 1.0, "erledigt: `src/transcript/knowledge.py`, `transcript snapshot`, README „Wissens-Snapshot“; Relevanzstufe kommt aus Narrata, lokal nur Keyword-Auswahl und `knowledge.keyword_budget`; `asr.knowledge_snapshot_id` im Referenzformat v2 und in der Wiederverwendungsregel; `n`/`archive_limit` konfigurierbar; `num_speakers` an TOOL-79"),
         ("TOOL-42", "Validator + Diagnose", 0.5, "erledigt: `src/transcript/diagnosis.py`, `transcript snapshot` schreibt `narrata/diagnosis.json`, README „Diagnose“; technische Fehler bleiben in den Parsern, Querbezüge (geteilte Begriffe, Hörfehler, Spielfiguren gegen `pc`) sind Warnungen ohne Namen"),
         ("TOOL-43", "Wissensschnittstelle", 1.0, "erledigt: `src/transcript/domain.py` (`DomainContext`), README „Wissensschnittstelle“; `transcribe` übergibt die Snapshot-Keywords, die Wiederverwendungsregel prüft `keywords_used` als geordnete Teilfolge der aktuellen Keywords"),
-        ("TOOL-44", "Keyword-Biasing + Review-Signal", 1.0, "aus TOOL-62: Hotwords nur mit large-v3-turbo, höchstens 223 Tokens, wichtigste Begriffe nach vorne; Wirkung auf die WER unbelegt; aus TOOL-15: Keywords erreichen das Backend über `transcribe_session(keywords=…)`; aus TOOL-39: `keyword_terms` auf das Token-Budget kappen, die Reihenfolge nach Stufen liefert TOOL-39 schon; aus TOOL-41: Die Token-Kappung arbeitet auf den Keyword-Einträgen des Snapshots, die nach dem Budget pro Typ schon vorgekappt sind.; aus TOOL-43: Token-Kappung und Priorisierung der Keywords pro Backend; `whisper.py` kappt schon als Präfix auf `HOTWORD_TOKENS`, TOOL-44 baut darauf auf."),
-        ("TOOL-40", "Fehlvarianten (leer-lauffähig) + Vorschlagsliste", 0.5, "aus TOOL-39: Fuzzy-/Phonetik-Abgleich auf `GlossaryIndex` und den `asr_variant`-Treffern aufbauen, Mehrdeutigkeiten aus `NarrataGlossary.ambiguities`; aus TOOL-43: Fuzzy-/Phonetik-Abgleich auf `DomainContext.match_candidates()`"),
+        ("TOOL-44", "Keyword-Biasing + Review-Signal", 1.0, "erledigt: `src/transcript/hints.py`, README „Review-Hinweise“; Hotwords nur für Turbo-Modelle, `transcribe` meldet die Zahl der übergebenen Keywords; pro Segment `review/segment-NN.hints.json` mit `known_variant` (stark) und `similar` (schwach), Mehrdeutiges als `ambiguous`, ASR-Text unverändert"),
+        ("TOOL-40", "Fehlvarianten (leer-lauffähig) + Vorschlagsliste", 0.5, "aus TOOL-44: Fuzzy-/Phonetik-Abgleich und Review-Hinweise sind erledigt (`transcript.hints`, `review/segment-NN.hints.json`); offen bleiben Kontext/Gültigkeitsbereich der Varianten und die Vorschlagsliste aus Review-Korrekturen"),
     ]),
     ("Phase 3 — Review, Sprecherzuordnung, Export",
      "M3 — JSON-Export (Contract v1) einer Session importiert lokal in Narrata und rendert dort als Rohliste.", [
-        ("TOOL-35", "Konfidenz-/Unsicherheitsregeln kalibrieren", 1.5, "Stichprobe aus Phase 1 wiederverwenden; aus TOOL-62: AUC 0,79–0,82, unsicherste 30 % enthalten 62–71 % der falschen Wörter, Auslassungen unsichtbar, Mundart verdreifacht die Fehlerquote; entscheidet mit Messwerten aus der Stichprobe, ob ein Abgleich mit Parakeet als zweites Review-Signal (v. a. für Auslassungen) aufgenommen wird, Umsetzung dann als Folge-Ticket"),
-        ("TOOL-36", "Review-Kandidaten", 1.0, ""),
-        ("TOOL-46", "Review-Datenmodell", 0.5, ""),
+        ("TOOL-35", "Konfidenz-/Unsicherheitsregeln kalibrieren", 1.5, "Stichprobe aus Phase 1 wiederverwenden; aus TOOL-62: AUC 0,79–0,82, unsicherste 30 % enthalten 62–71 % der falschen Wörter, Auslassungen unsichtbar, Mundart verdreifacht die Fehlerquote; entscheidet mit Messwerten aus der Stichprobe, ob ein Abgleich mit Parakeet als zweites Review-Signal (v. a. für Auslassungen) aufgenommen wird, Umsetzung dann als Folge-Ticket; aus TOOL-44: Schwellen von `similar` (Ratio 0,85, Mindestlänge 4, Längenabweichung 30 %) an der Stichprobe kalibrieren"),
+        ("TOOL-36", "Review-Kandidaten", 1.0, "aus TOOL-44: Review-Kandidaten lesen `review/segment-NN.hints.json`; `known_variant` und `ambiguous` gehen bevorzugt in die Auswahl"),
+        ("TOOL-46", "Review-Datenmodell", 0.5, "aus TOOL-44: Hinweise ins Review-Datenmodell übernehmen, das Format der Hinweisdatei ist Eingang dafür"),
         ("TOOL-47", "Review-CSV", 0.5, ""),
         ("TOOL-48", "CSV-Reimport", 0.5, ""),
         ("TOOL-68", "Sprecherzuordnung manuell", 1.0, "braucht TOOL-76; aus TOOL-20: 1:1-Zuordnung von 4 Labels zu Personen, NSC-Stimmen ohne eigenes Label; aus TOOL-76: Labels gelten nur pro Segment, über mehrere Aufnahmen einer Session zusammenführen; aus TOOL-38: Kandidaten aus `narrata.read_participants` (aktive zuerst, Ehemalige wählbar), `present` bleibt bis TOOL-79 `None`; aus TOOL-42: Referenzen auf unbekannte Sprecher prüfen, sobald Sprecherzuordnungen entstehen; TOOL-42 hat dafür noch keine Daten."),

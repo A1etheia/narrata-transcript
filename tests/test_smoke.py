@@ -28,7 +28,7 @@ from test_transcription import MANIFEST_3, FailingLoad, session_backend
 
 import transcript
 from transcript import __main__ as transcript_main
-from transcript import audio_tools, jsonfile, knowledge, retry
+from transcript import audio_tools, hints, jsonfile, knowledge, retry
 from transcript import manifest as manifest_module
 from transcript.__main__ import main
 from transcript.asr import AudioInputError, BackendUnavailableError, ResourceError
@@ -875,12 +875,58 @@ class TranscribeCommandTest(unittest.TestCase):
         self.assertEqual(
             load_reference(self.paths, 1).asr.keywords_used, (PLACE, ALIAS)
         )
+        self.assertIn("beispielgruppe/042: 2 of 2 keyword(s) passed", stdout)
         for name in (PLACE, ALIAS, VARIANT):
             self.assertNotIn(name, stdout + stderr)
 
         self.backend = session_backend(biasing=True)
         _, stdout, _ = self.transcribe("--no-diarize")
         self.assertIn("0 transcribed, 3 reused", stdout)
+
+    def test_review_hints_are_written_with_counts_but_no_names(self) -> None:
+        data = context()
+        data["glossary"] = [glossary_entry(asr_variants=[SECRET])]
+        self.paths.narrata_context.parent.mkdir(parents=True, exist_ok=True)
+        self.paths.narrata_context.write_bytes(encoded(data))
+        snapshot = knowledge.build_snapshot(self.paths, DEFAULT_KEYWORD_BUDGET)
+
+        code, stdout, stderr = self.transcribe("--no-diarize")
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "beispielgruppe/042: review hints: 3 known variant(s), 0 similar, "
+            "0 ambiguous",
+            stdout,
+        )
+        self.assertIn(f"wrote {self.paths.review_dir}", stdout)
+        stored = hints.load_hints(self.paths, 2)
+        self.assertEqual(stored.knowledge_snapshot_id, snapshot.snapshot_id)
+        (hint,) = stored.hints
+        self.assertEqual((hint.signal, hint.heard), ("known_variant", f"{SECRET}."))
+        self.assertEqual(hint.candidates[0].term, SECRET)
+        for name in (SECRET, PLACE, ALIAS):
+            self.assertNotIn(name, stdout + stderr)
+
+        self.paths.knowledge_snapshot.unlink()
+        _, stdout, _ = self.transcribe("--no-diarize")
+        self.assertFalse(self.paths.review_hints(2).exists())
+        self.assertNotIn("review hints", stdout)
+
+    def test_a_backend_without_biasing_says_so_once(self) -> None:
+        data = context()
+        data["glossary"] = [glossary_entry()]
+        self.paths.narrata_context.parent.mkdir(parents=True, exist_ok=True)
+        self.paths.narrata_context.write_bytes(encoded(data))
+        knowledge.build_snapshot(self.paths, DEFAULT_KEYWORD_BUDGET)
+
+        code, stdout, stderr = self.transcribe("--no-diarize")
+
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(stdout.count("keywords not passed"), 1)
+        self.assertNotIn("keyword(s) passed", stdout)
+        self.assertEqual(load_reference(self.paths, 1).asr.keywords_used, ())
+        for name in (PLACE, ALIAS, VARIANT):
+            self.assertNotIn(name, stdout + stderr)
 
     def test_unreadable_snapshot_stops_before_the_asr(self) -> None:
         self.paths.knowledge_snapshot.parent.mkdir(parents=True, exist_ok=True)

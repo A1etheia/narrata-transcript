@@ -58,8 +58,6 @@ _LIBRARY_HINT = "CUDA libraries not found, set LD_LIBRARY_PATH as in the README"
 class WhisperBackend:
     """Loads one Whisper model and transcribes segments with it."""
 
-    capabilities = CAPABILITIES
-
     def __init__(
         self,
         model: str = Config.asr_model,
@@ -69,6 +67,9 @@ class WhisperBackend:
         beam_size: int = Config.asr_beam_size,
     ) -> None:
         self._model_name = model
+        self.capabilities = dataclasses.replace(
+            CAPABILITIES, keyword_biasing=takes_hotwords(model)
+        )
         self._requested_device = device
         self._requested_compute_type = compute_type
         self._beam_size = beam_size
@@ -145,11 +146,13 @@ class WhisperBackend:
     def transcribe(self, request: TranscriptionRequest) -> BackendResult:
         if self._model is None:
             raise BackendRuntimeError(f"{BACKEND_ID}: not loaded")
-        tokenizer = self._model.hf_tokenizer
-        used = fit_hotwords(
-            request.keywords,
-            lambda text: len(tokenizer.encode(text, add_special_tokens=False).ids),
-        )
+        used: tuple[str, ...] = ()
+        if self.capabilities.keyword_biasing:
+            tokenizer = self._model.hf_tokenizer
+            used = fit_hotwords(
+                request.keywords,
+                lambda text: len(tokenizer.encode(text, add_special_tokens=False).ids),
+            )
         try:
             segments, info = self._model.transcribe(
                 str(request.audio),
@@ -190,6 +193,15 @@ class WhisperBackend:
         if type(error).__module__.split(".")[0] == "av":
             return AudioInputError(f"{cause}, audio cannot be decoded")
         return runtime_error(error, cause)
+
+
+def takes_hotwords(model: str) -> bool:
+    """Whether `model`, a name or a local directory, gets hotwords.
+
+    Only turbo models do: TOOL-62 found that hotwords help or do no harm with
+    large-v3-turbo, while large-v3 falls apart. A directory counts by its last part.
+    """
+    return "turbo" in Path(model).name.casefold()
 
 
 def fit_hotwords(

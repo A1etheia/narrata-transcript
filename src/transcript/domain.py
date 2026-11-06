@@ -18,6 +18,7 @@ from transcript.glossary import (
     MatchKind,
     entry_terms,
     keyword_terms,
+    normalize,
 )
 from transcript.knowledge import KEYWORD_TIERS, Snapshot, load_snapshot
 from transcript.narrata import (
@@ -66,6 +67,7 @@ class DomainContext:
         self.participants = tuple(participants)
         self.entries = glossary.entries  # Narrata's order, nearest tier first
         self.ambiguities = glossary.ambiguities
+        self._ambiguous = frozenset(normalize(a.variant) for a in self.ambiguities)
         self._index = GlossaryIndex(glossary)
         self._entries = {entry.ref: entry for entry in self.entries}
         self._keyword_refs = frozenset(keyword_refs)
@@ -93,6 +95,10 @@ class DomainContext:
     def lookup(self, term: str) -> tuple[TermHit, ...]:
         """Every entry `term` names as name, alias or known misrecognition."""
         return tuple(self._hit(match) for match in self._index.lookup(term))
+
+    def is_ambiguous(self, term: str) -> bool:
+        """Whether Narrata reports `term` as a misrecognition of several entries."""
+        return normalize(term) in self._ambiguous
 
     def entry(self, ref: EntryRef) -> GlossaryEntry | None:
         return self._entries.get(ref)

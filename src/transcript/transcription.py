@@ -44,6 +44,7 @@ from transcript.session import SessionPaths
 _logger = logging.getLogger(__name__)
 
 OUTCOME_STATUSES = ("transcribed", "reused", "failed", "open")
+DONE_STATUSES = ("transcribed", "reused")  # a stored result counts
 
 
 class TranscriptionError(Exception):
@@ -68,6 +69,7 @@ class SegmentOutcome:
     elapsed_ms: int | None = None  # of the successful backend call
     failure: SegmentFailure | None = None  # set exactly when `failed`
     attempts: int = 0  # backend calls made in this run
+    keywords_used: int = 0  # hints of the stored result that took effect
 
 
 @dataclass(frozen=True)
@@ -81,7 +83,13 @@ class SessionRun:
     @property
     def complete(self) -> bool:
         """Whether every selected segment now has a transcribed result."""
-        return all(o.status in ("transcribed", "reused") for o in self.outcomes)
+        return all(o.status in DONE_STATUSES for o in self.outcomes)
+
+    @property
+    def keywords_used(self) -> int | None:
+        """Most hints a done segment took; `None` when no segment is done."""
+        done = [o.keywords_used for o in self.outcomes if o.status in DONE_STATUSES]
+        return max(done) if done else None
 
 
 def transcribe_session(
@@ -311,6 +319,7 @@ def _outcome(
         language=reference.asr.language,
         elapsed_ms=reference.processing.elapsed_ms if status == "transcribed" else None,
         attempts=attempts,
+        keywords_used=len(reference.asr.keywords_used),
     )
 
 

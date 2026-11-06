@@ -20,6 +20,14 @@ scripts/check        # Lint, Formatprüfung, Tests
 scripts/check --fix  # vorher automatisch korrigieren
 ```
 
+## Shell-Befehle
+`blockReadsOutsideWorkingDirectories` ist aktiv; Befehle, deren Pfade der Parser nicht prüfen kann, lösen eine Rückfrage aus. Deshalb:
+- Kein `cd … &&` / `cd …;` vor Befehlen. Die Shell startet im Projektordner; relative oder absolute Pfade direkt verwenden.
+- Keine Python- oder Shell-Heredocs (`python3 - <<'EOF'`) zum Bearbeiten von Dateien. Dateien mit Read/Edit/Write lesen und ändern.
+- Dateien lieber mit dem Read-Tool lesen als mit `cat`; suchen mit `grep -n` und expliziten Pfaden.
+- Temporäre Dateien nur im Scratchpad der aktuellen Sitzung, nie in dem einer früheren.
+- Diese Regeln gelten auch für Subagents (Explore usw.) und gehören in deren Prompt.
+
 ## Workflow
 `/plan-story TOOL-<n>` → umsetzen → `/chunk-commit` → `/close-ticket`.
 
