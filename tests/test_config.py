@@ -359,7 +359,9 @@ class LoadConfigTest(unittest.TestCase):
     def test_a_null_threshold_keeps_its_default(self) -> None:
         config = self.load(MINIMAL + "review:\n  uncertainty:\n    gap_ms: null\n")
 
-        self.assertEqual(config.review_uncertainty.gap_ms, 1500)
+        self.assertEqual(
+            config.review_uncertainty.gap_ms, UncertaintyThresholds().gap_ms
+        )
 
     def test_review_thresholds_are_read_and_keep_defaults_left_out(self) -> None:
         config = self.load(

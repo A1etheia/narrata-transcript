@@ -83,9 +83,12 @@ class UncertaintyThresholds:
     no_speech_prob: float = 0.6  # at or above: likely not speech
     avg_logprob: float = -1.0  # at or below: the decoder was unsure
     compression_ratio: float = 2.4  # at or above: repetitive output
-    gap_ms: int = 1500  # longest silence between two words of a passage
+    gap_ms: int = 2500  # longest silence between two words of a passage
     min_words_per_second: float = 1.0  # sparser speech may hide omitted words
+    crosstalk_ms: int = 1000  # shorter crosstalk in a passage is table noise
     similar_level: Level = "needs_review"  # what a `similar` hint raises to
+    # the same for a `similar` hint found by sound alone; most are false alarms
+    similar_sound_level: Level = "confident"
 
     # (lower, upper): the first may not exceed the second
     ORDERED: ClassVar[tuple[tuple[str, str], ...]] = (
@@ -117,7 +120,9 @@ _UNCERTAINTY_SPEC: dict[str, _Spec] = {
     "compression_ratio": ("number", 1, 10),
     "gap_ms": ("whole", 100, 60000),
     "min_words_per_second": ("number", 0, 10),
+    "crosstalk_ms": ("whole", 1, 60000),
     "similar_level": ("choice", LEVELS, None),
+    "similar_sound_level": ("choice", LEVELS, None),
 }
 _REVIEW_KEYS = {"similar", "uncertainty"}
 

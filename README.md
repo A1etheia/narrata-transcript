@@ -282,9 +282,9 @@ Die Stufe einer Passage ist die höchste ihrer Gründe. Die Schwellen stehen unt
 | `sparse` | weniger als `min_words_per_second` Wörter pro Sekunde in einer Passage ab 1 s | `needs_review` |
 | `missing_times` | das Backend kann Zeiten liefern, Passage oder Wörter haben aber keine | `needs_review` |
 | `speaker_unclear` | Diarisierung vorhanden, aber kein Mehrheitslabel der Wörter | `needs_review` |
-| `crosstalk` | die Passage überschneidet einen Bereich mit Übersprechen | `needs_review` |
+| `crosstalk` | die Passage überschneidet Bereiche mit Übersprechen für insgesamt mindestens `crosstalk_ms` | `needs_review` |
 | `known_variant` | Review-Hinweis auf einen bekannten Hörfehler | `needs_review` |
-| `similar` | Review-Hinweis auf eine ähnliche Schreibung oder einen ähnlichen Klang | `similar_level`, `confident` heißt ohne Wirkung |
+| `similar` | Review-Hinweis auf eine ähnliche Schreibung oder einen ähnlichen Klang | `similar_level` (Schreibung), `similar_sound_level` (nur Klang, Default `confident`: Hinweis sichtbar, Passage nicht angehoben); `confident` heißt ohne Wirkung |
 | `ambiguous` | mehrdeutiger Review-Hinweis | `uncertain` |
 | `no_signals` | weder Word-Confidence noch Whisper-Signale vorhanden | `needs_review` |
 
@@ -313,7 +313,9 @@ Der Bericht enthält nur Zahlen:
 - pro Regel die Passagen, in denen sie angeschlagen hat
 - die AUC der Word-Confidence und der Anteil falscher Wörter unter den unsichersten 10, 20 und 30 %
 
-Für `similar` gibt es einen Bogen zum Anhören. `transcript calibrate <session> --similar-sheet` schreibt höchstens 50 `similar`-Hinweise nach `work/<gruppe>/<ordinal>/review/calibration/similar-sheet.csv`, gleichmäßig über die Session verteilt und bei gleichen Hinweisdateien immer dieselben. In die Spalte `correct` kommt `ja` oder `nein`, leer heißt nicht beurteilt. `--similar-judged <datei>` liest den ausgefüllten Bogen und gibt die Präzision je Methode und Score-Band aus. Eine Trefferquote ergibt sich daraus nicht. Handreferenz und Bogen enthalten echte Namen und bleiben unter `work/`.
+Für `similar` gibt es einen Bogen zum Anhören. `transcript calibrate <session> --similar-sheet` schreibt höchstens 50 `similar`-Hinweise nach `work/<gruppe>/<ordinal>/review/calibration/similar-sheet.csv`, gleichmäßig über die Session verteilt und bei gleichen Hinweisdateien immer dieselben. In die Spalte `correct` kommt `ja` oder `nein`, leer heißt nicht beurteilt. `--similar-judged <datei>` liest den ausgefüllten Bogen und gibt die Präzision je Methode und Score-Band aus. Eine Trefferquote ergibt sich daraus nicht. Handreferenz und Bogen enthalten echte Namen und bleiben unter `work/`. Ein mit Semikolon gespeicherter Bogen, etwa aus einer deutschen Tabellenkalkulation, und zusätzliche Spalten werden ebenfalls gelesen.
+
+Die Defaults der Schwellen stammen aus der ersten Kalibrierung, siehe [TOOL-35-Bericht](docs/spikes/TOOL-35-kalibrierung.md).
 
 ## Konfiguration
 
@@ -343,7 +345,7 @@ Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht 
 | `review.similar.min_ratio` | nein | `0.85` | Mindestähnlichkeit der Schreibung für einen Hinweis `similar`, `0` bis `1` |
 | `review.similar.min_length` | nein | `4` | Mindestlänge von Begriff und Wortfolge in Buchstaben, `1` bis `50` |
 | `review.similar.max_length_deviation` | nein | `0.3` | höchste Längenabweichung als Anteil der Begriffslänge, `0` bis `0.9` |
-| `review.uncertainty.*` | nein | siehe `config/example.yaml` | Schwellen der [Unsicherheitsbewertung](#unsicherheitsbewertung): `word_low` (0,5), `word_very_low` (0,2), `low_share_review` (0,2), `low_share_uncertain` (0,5), `no_speech_prob` (0,6), `avg_logprob` (−1,0), `compression_ratio` (2,4), `gap_ms` (1500), `min_words_per_second` (1,0), `similar_level` (`needs_review`); `word_very_low` darf `word_low` nicht übersteigen, `low_share_review` nicht `low_share_uncertain` |
+| `review.uncertainty.*` | nein | siehe `config/example.yaml` | Schwellen der [Unsicherheitsbewertung](#unsicherheitsbewertung): `word_low` (0,5), `word_very_low` (0,2), `low_share_review` (0,2), `low_share_uncertain` (0,5), `no_speech_prob` (0,6), `avg_logprob` (−1,0), `compression_ratio` (2,4), `gap_ms` (2500), `min_words_per_second` (1,0), `crosstalk_ms` (1000), `similar_level` (`needs_review`), `similar_sound_level` (`confident`); `word_very_low` darf `word_low` nicht übersteigen, `low_share_review` nicht `low_share_uncertain` |
 | `debug` | nein | `false` | schreibt Transkripttext nach `work/<gruppe>/<ordinal>/debug.log`, nie auf die Konsole |
 
 Einen eigenen Ausgabepfad gibt es nicht: `output/` liegt immer unter `paths.root`, damit echte Daten im Layout unter [Sessions](#sessions) bleiben. Secrets gehören nicht in diese Datei, sondern in `.env` (Vorlage `.env.example`, heute nur `NARRATA_TOKEN`).

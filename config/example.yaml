@@ -97,10 +97,16 @@ review:
     compression_ratio: 2.4
     # Hinweise auf ausgelassene Wörter: längste Pause zwischen zwei Wörtern in ms
     # und Mindestzahl Wörter pro Sekunde.
-    gap_ms: 1500
+    gap_ms: 2500
     min_words_per_second: 1.0
+    # Mindestdauer in ms, ab der Übersprechen in einer Passage zählt; kürzeres ist
+    # bei einer Runde am Tisch der Normalfall.
+    crosstalk_ms: 1000
     # Stufe, auf die ein Hinweis similar die Passage hebt; confident heißt keine.
     similar_level: needs_review
+    # Dasselbe für similar-Hinweise, die nur über den Klang gefunden wurden. Sie
+    # bleiben in der Hinweisdatei sichtbar, heben die Passage aber nicht an.
+    similar_sound_level: confident
 
 # Schreibt Transkripttext nach work/<gruppe>/<ordinal>/debug.log, nie auf die Konsole.
 debug: false

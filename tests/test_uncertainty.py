@@ -1,3 +1,4 @@
+import dataclasses
 import datetime
 import json
 import tempfile
@@ -36,6 +37,7 @@ from transcript.uncertainty import (
 )
 
 LIMITS = UncertaintyThresholds()
+TOUCHY = UncertaintyThresholds(crosstalk_ms=50)  # for crosstalk of a few words
 WHISPER = {"word_timestamps": True, "segment_timestamps": True}
 CALM = {"no_speech_prob": 0.01, "avg_logprob": -0.2, "compression_ratio": 1.3}
 PROCESSED_AT = "2026-11-04T20:00:00+01:00"  # as in test_reference.minimal
@@ -228,12 +230,12 @@ class SegmentSignalTest(unittest.TestCase):
 
 class TimingTest(unittest.TestCase):
     def test_a_long_pause_between_words_is_a_gap(self) -> None:
-        found = (*words(0.9, 0.9), Word("spät", 2500, 2700, 0.9, "SPEAKER_00"))
+        found = (*words(0.9, 0.9, 0.9), Word("spät", 3400, 3600, 0.9, "SPEAKER_00"))
 
         rating = rate(transcript(passage(found)))
 
         self.assertEqual(
-            rating.reasons, (Reason("gap", "needs_review", 1950, 1500, (2,)),)
+            rating.reasons, (Reason("gap", "needs_review", 2550, 2500, (3,)),)
         )
 
     def test_sparse_speech_over_a_long_passage_needs_review(self) -> None:
@@ -325,9 +327,23 @@ class SpeakerTest(unittest.TestCase):
             diarization=diarized(Overlap(400, 700), Overlap(5000, 6000)),
         )
 
-        rating = rate(reference)
+        rating = rate(reference, limits=TOUCHY)
 
-        self.assertEqual(rating.reasons, (Reason("crosstalk", "needs_review", 150),))
+        self.assertEqual(
+            rating.reasons,
+            (Reason("crosstalk", "needs_review", 150, TOUCHY.crosstalk_ms),),
+        )
+
+    def test_crosstalk_shorter_than_the_minimum_is_ignored(self) -> None:
+        reference = transcript(
+            passage(words(0.9, 0.9)), diarization=diarized(Overlap(400, 700))
+        )
+
+        self.assertEqual(rate(reference).reasons, ())
+        self.assertEqual(
+            rate(reference, limits=UncertaintyThresholds(crosstalk_ms=150)).level,
+            "needs_review",
+        )
 
     def test_overlapping_crosstalk_ranges_count_once(self) -> None:
         reference = transcript(
@@ -337,9 +353,12 @@ class SpeakerTest(unittest.TestCase):
             ),
         )
 
-        rating = rate(reference)
+        rating = rate(reference, limits=TOUCHY)
 
-        self.assertEqual(rating.reasons, (Reason("crosstalk", "needs_review", 400),))
+        self.assertEqual(
+            rating.reasons,
+            (Reason("crosstalk", "needs_review", 400, TOUCHY.crosstalk_ms),),
+        )
 
     def test_crosstalk_is_found_among_many_ranges(self) -> None:
         overlaps = tuple(Overlap(n * 1000, n * 1000 + 100) for n in range(20000))
@@ -350,7 +369,7 @@ class SpeakerTest(unittest.TestCase):
         reference = transcript(*passages, diarization=diarized(*overlaps))
 
         started = time.perf_counter()
-        ratings = assess(reference, None, LIMITS)
+        ratings = assess(reference, None, TOUCHY)
 
         self.assertLess(time.perf_counter() - started, 1)
         self.assertEqual([r.level for r in ratings], ["needs_review", "confident"])
@@ -394,6 +413,14 @@ class HintTest(unittest.TestCase):
         self.assertEqual(rate(reference, found, quiet).reasons, ())
         loud = UncertaintyThresholds(similar_level="uncertain")
         self.assertEqual(rate(reference, found, loud).level, "uncertain")
+
+    def test_a_similar_hint_by_sound_has_its_own_level(self) -> None:
+        reference = transcript(passage(words(0.9, 0.9, 0.9)))
+        found = hints(dataclasses.replace(hint("similar"), method="sound"))
+
+        self.assertEqual(rate(reference, found).reasons, ())
+        loud = UncertaintyThresholds(similar_sound_level="needs_review")
+        self.assertEqual(rate(reference, found, loud).level, "needs_review")
 
     def test_hints_of_another_passage_do_not_count(self) -> None:
         reference = transcript(

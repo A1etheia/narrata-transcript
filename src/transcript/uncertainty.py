@@ -273,14 +273,14 @@ class _Rater:
         start, end = span
         if start is not None and end is not None:
             shared = self.overlaps.shared_ms(start, end)
-            if shared > 0:
-                reasons.append(Reason("crosstalk", "needs_review", shared))
+            limit = self.limits.crosstalk_ms
+            if shared >= limit:
+                reasons.append(Reason("crosstalk", "needs_review", shared, limit))
         return reasons
 
     def _hints(self, passage: Passage) -> list[Reason] | None:
         if self.hints is None:
             return None
-        similar_level = self.limits.similar_level
         reasons = []
         for hint in self.hints.get(passage.index, ()):
             words = _hint_words(hint)
@@ -292,10 +292,14 @@ class _Rater:
                 reasons.append(
                     Reason("known_variant", "needs_review", None, None, words)
                 )
-            elif similar_level != "confident":
-                reasons.append(
-                    Reason("similar", similar_level, hint.score, None, words)
+            else:
+                level = (
+                    self.limits.similar_sound_level
+                    if hint.method == "sound"
+                    else self.limits.similar_level
                 )
+                if level != "confident":
+                    reasons.append(Reason("similar", level, hint.score, None, words))
         return reasons
 
     def _missing_times(self, passage: Passage) -> list[Reason]:

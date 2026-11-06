@@ -469,7 +469,11 @@ def judged_precision(path: Path) -> list[str]:
     """Precision of the judged `similar` hints per method and score band."""
     try:
         with path.open(encoding="utf-8-sig", newline="") as handle:
-            reader = csv.DictReader(handle)
+            # Spreadsheets in a German locale save with ';'; extra columns are kept.
+            header = handle.readline()
+            handle.seek(0)
+            delimiter = ";" if header.count(";") > header.count(",") else ","
+            reader = csv.DictReader(handle, delimiter=delimiter)
             rows = list(reader)
             columns = set(reader.fieldnames or ())
     except (OSError, UnicodeDecodeError, csv.Error):
@@ -507,7 +511,7 @@ def _band(row: dict[str, str]) -> str:
     if method != "spelling":
         return method
     try:
-        score = float(row.get("score") or "")
+        score = float((row.get("score") or "").replace(",", "."))
     except ValueError:
         return "spelling"
     low, high = SCORE_BANDS

@@ -278,6 +278,18 @@ class SimilarSheetTest(unittest.TestCase):
         self.assertIn("not judged: 1", lines)
         self.assertNotIn("Grau", "\n".join(lines))
 
+    def test_a_sheet_saved_by_a_german_spreadsheet_is_read(self) -> None:
+        sheet = self.root / "judged.csv"
+        sheet.write_text(
+            ";".join((*SHEET_COLUMNS, "note"))
+            + "\r\n1-1;1;?;Grauwassr;Grauwasser;spelling;0,970;nein;ja;x\r\n",
+            encoding="utf-8-sig",
+        )
+
+        lines = judged_precision(sheet)
+
+        self.assertIn("similar spelling >=0.95: 1 of 1 right (100.0%)", lines)
+
     def test_an_invalid_answer_names_the_line_but_not_the_value(self) -> None:
         sheet = self.root / "judged.csv"
         sheet.write_text(
