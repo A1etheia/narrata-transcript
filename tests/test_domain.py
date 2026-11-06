@@ -76,6 +76,10 @@ class DomainContextTest(unittest.TestCase):
         self.snapshot = build_snapshot(self.paths, BUDGET)
         self.context = DomainContext.load(self.paths)
 
+    def test_ambiguity_is_what_narrata_reports(self) -> None:
+        self.assertTrue(self.context.is_ambiguous(" NEBEL "))
+        self.assertFalse(self.context.is_ambiguous("Nebelau"))
+
     def test_a_hit_names_its_entry_field_and_origin(self) -> None:
         (hit,) = self.context.lookup(ALIAS.upper())
 
