@@ -60,7 +60,7 @@ P = [
         ("TOOL-42", "Validator + Diagnose", 0.5, "erledigt: `src/transcript/diagnosis.py`, `transcript snapshot` schreibt `narrata/diagnosis.json`, README „Diagnose“; technische Fehler bleiben in den Parsern, Querbezüge (geteilte Begriffe, Hörfehler, Spielfiguren gegen `pc`) sind Warnungen ohne Namen"),
         ("TOOL-43", "Wissensschnittstelle", 1.0, "erledigt: `src/transcript/domain.py` (`DomainContext`), README „Wissensschnittstelle“; `transcribe` übergibt die Snapshot-Keywords, die Wiederverwendungsregel prüft `keywords_used` als geordnete Teilfolge der aktuellen Keywords"),
         ("TOOL-44", "Keyword-Biasing + Review-Signal", 1.0, "erledigt: `src/transcript/hints.py`, README „Review-Hinweise“; Hotwords nur für Turbo-Modelle, `transcribe` meldet die Zahl der übergebenen Keywords; pro Segment `review/segment-NN.hints.json` mit `known_variant` (stark) und `similar` (schwach), Mehrdeutiges als `ambiguous`, ASR-Text unverändert"),
-        ("TOOL-40", "Fehlvarianten (leer-lauffähig) + Vorschlagsliste", 0.5, "aus TOOL-44: Fuzzy-/Phonetik-Abgleich und Review-Hinweise sind erledigt (`transcript.hints`, `review/segment-NN.hints.json`); offen bleiben Kontext/Gültigkeitsbereich der Varianten und die Vorschlagsliste aus Review-Korrekturen"),
+        ("TOOL-40", "Fehlvarianten (leer-lauffähig) + Vorschlagsliste", 0.5, "erledigt: Tests in `tests/test_hints.py`, README „Review-Hinweise“ / „Hörfehler aus Narrata“; ein Hörfehler gilt für seinen Eintrag, Contract 1.1 liefert keinen Kontext pro Variante; Vorschlagsliste an TOOL-80"),
     ]),
     ("Phase 3 — Review, Sprecherzuordnung, Export",
      "M3 — JSON-Export (Contract v1) einer Session importiert lokal in Narrata und rendert dort als Rohliste.", [
@@ -69,6 +69,7 @@ P = [
         ("TOOL-46", "Review-Datenmodell", 0.5, "aus TOOL-44: Hinweise ins Review-Datenmodell übernehmen, das Format der Hinweisdatei ist Eingang dafür"),
         ("TOOL-47", "Review-CSV", 0.5, ""),
         ("TOOL-48", "CSV-Reimport", 0.5, ""),
+        ("TOOL-80", "Vorschlagsdatei neuer Hörfehler", 0.5, "aus TOOL-40: Vorschlagsdatei `ASR-Variante → kanonischer Begriff (Archiv-ID)` aus Review-Entscheidungen „manuell korrigiert“, nur Datei, Zielfeld `asr_variants`; Import-Command in Narrata erst, wenn das Format steht"),
         ("TOOL-68", "Sprecherzuordnung manuell", 1.0, "braucht TOOL-76; aus TOOL-20: 1:1-Zuordnung von 4 Labels zu Personen, NSC-Stimmen ohne eigenes Label; aus TOOL-76: Labels gelten nur pro Segment, über mehrere Aufnahmen einer Session zusammenführen; aus TOOL-38: Kandidaten aus `narrata.read_participants` (aktive zuerst, Ehemalige wählbar), `present` bleibt bis TOOL-79 `None`; aus TOOL-42: Referenzen auf unbekannte Sprecher prüfen, sobald Sprecherzuordnungen entstehen; TOOL-42 hat dafür noch keine Daten."),
         ("TOOL-49", "Arbeitsfassung", 1.0, ""),
         ("TOOL-50", "Markierungskonvention", 0.5, ""),
