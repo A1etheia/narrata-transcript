@@ -60,8 +60,8 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 | TOOL-4 | Verzeichnis-/Sessionstruktur (Narrata-Schlüssel) | 0.5 | 03.11.2026 | 03.11.2026 | erledigt: `src/transcript/session.py`, Layout im README |
 | TOOL-5 | Dateiregeln, Rohaudio bleibt lokal | 0.5 | 03.11.2026 | 03.11.2026 | erledigt: `.gitignore`, `tests/fixtures/`, Dateiregeln im README |
 | TOOL-6 | Basiskonfiguration | 0.5 | 05.11.2026 | 05.11.2026 | erledigt: `src/transcript/config.py`, `config/example.yaml` |
-| IOA-1216 | Privacy-/Sichtbarkeitsmodell, Opt-in-Flag | 1.5 | 05.11.2026 | 09.11.2026 | Narrata-Seite von TOOL-66; Anforderungen in `docs/datenschutz.md` |
-| IOA-1214 | Contract v1: Schema, Fixture, Validator | 1 | 10.11.2026 | 10.11.2026 | Fixture dient IOA-1218, bis TOOL-58 liefert; aus TOOL-5: die Kopie der Contract-Fixture liegt im Pipeline-Repo unter `tests/fixtures/` |
+| IOA-1216 | Privacy-/Sichtbarkeitsmodell, Opt-in-Flag | 1.5 | 05.11.2026 | 09.11.2026 | erledigt: ios-archiv PR #1121; Narrata-Seite von TOOL-66; Anforderungen in `docs/datenschutz.md` |
+| IOA-1214 | Contract v1: Schema, Fixture, Validator | 1 | 10.11.2026 | 10.11.2026 | erledigt: ios-archiv PR #1128, `transcript:validate`; Fixture dient IOA-1218, bis TOOL-58 liefert; aus TOOL-5: die Kopie der Contract-Fixture liegt im Pipeline-Repo unter `tests/fixtures/` |
 
 ### Phase 1 — ASR-Spike und Backend-Entscheidung
 
@@ -71,8 +71,8 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 |---|---|---|---|---|---|
 | TOOL-62 | ASR-Kandidaten an realer Session (inkl. Hand-Check, Long-Audio-Frage) | 3 | 12.11.2026 | 17.11.2026 | erledigt: `docs/spikes/TOOL-62-asr-vergleich.md`; Whisper large-v3-turbo, Fallback Parakeet, keine eigene Segmentierung; vor IOA-1216/IOA-1214 vorgezogen (02.–04.11.2026) |
 | TOOL-20 | Diarisierung / Label-Stabilität | 2 | 19.11.2026 | 23.11.2026 | erledigt: `docs/spikes/TOOL-20-diarisierung.md`; separate Diarisierung mit pyannote community-1, 4 stabile Labels für 4 Personen über 5 h, 8 % Fehlzuordnung in der Stichprobe; NeMo braucht auf 5 h über 25 GB RAM; Integration in TOOL-76 |
-| IOA-1215 | Transcription-context Export-Endpoint | 2 | 24.11.2026 | 26.11.2026 | während ASR-Läufe laufen |
-| IOA-1217 | asr_variants-Alias-Kategorie | 1.5 | 30.11.2026 | 01.12.2026 |  |
+| IOA-1215 | Transcription-context Export-Endpoint | 2 | 24.11.2026 | 26.11.2026 | erledigt: ios-archiv PR #1124; gelesen von `transcript context` (TOOL-67) |
+| IOA-1217 | asr_variants-Alias-Kategorie | 1.5 | 30.11.2026 | 01.12.2026 | erledigt: ios-archiv PR #1129; `asr_variants` und `asr_ambiguities` ab Contract 1.1, keine Hörfehler an Ereignissen; Import-Command für Vorschlagsdateien offen bis TOOL-80 |
 
 ### Phase 2 — Pipeline-Kern bis Referenztranskription
 
@@ -119,7 +119,7 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 | TOOL-69 | JSON-Export Contract v1 | 1 | 11.02.2027 | 11.02.2027 | gegen IOA-1214-Validator; aus TOOL-19: Passagenzeiten über `session_time.passage_span` bilden und prüfen, ob Contract v1 die Granularität und `clamped` aufnehmen soll |
 | TOOL-51 | TXT-Rendering | 0.5 | 15.02.2027 | 15.02.2027 |  |
 | TOOL-52 | DOCX-Rendering | 0.5 | 15.02.2027 | 15.02.2027 |  |
-| IOA-1218 | Storage + idempotenter Import | 2 | 16.02.2027 | 18.02.2027 | erst gegen Fixture, dann gegen echten TOOL-69-Export |
+| IOA-1218 | Storage + idempotenter Import | 2 | 16.02.2027 | 18.02.2027 | erledigt: `transcript:import` und Upload-Endpoint in Narrata (ios-archiv PR #1138), gegen die IOA-1214-Fixture; die Probe gegen einen echten TOOL-69-Export folgt mit TOOL-58 |
 
 ### Phase 4 — End-to-End-Pilot
 
