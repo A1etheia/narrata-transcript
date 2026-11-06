@@ -106,8 +106,8 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| TOOL-35 | Konfidenz-/Unsicherheitsregeln kalibrieren | 1.5 | 25.01.2027 | 26.01.2027 | Stichprobe aus Phase 1 wiederverwenden; aus TOOL-62: AUC 0,79–0,82, unsicherste 30 % enthalten 62–71 % der falschen Wörter, Auslassungen unsichtbar, Mundart verdreifacht die Fehlerquote; entscheidet mit Messwerten aus der Stichprobe, ob ein Abgleich mit Parakeet als zweites Review-Signal (v. a. für Auslassungen) aufgenommen wird, Umsetzung dann als Folge-Ticket; aus TOOL-44: Schwellen von `similar` (Ratio 0,85, Mindestlänge 4, Längenabweichung 30 %) an der Stichprobe kalibrieren |
-| TOOL-36 | Review-Kandidaten | 1 | 28.01.2027 | 28.01.2027 | aus TOOL-44: Review-Kandidaten lesen `review/segment-NN.hints.json`; `known_variant` und `ambiguous` gehen bevorzugt in die Auswahl |
+| TOOL-35 | Konfidenz-/Unsicherheitsregeln kalibrieren | 1.5 | 25.01.2027 | 26.01.2027 | erledigt: `transcript assess`/`calibrate`, Bericht `docs/spikes/TOOL-35-kalibrierung.md` (85 % der Fehler in 46 % der Session-Zeit); Folge-Tickets außerhalb der Roadmap: TOOL-81 (Hotwords verschlucken Wörter), TOOL-82 (Parakeet-Zweitlauf), TOOL-83 (`similar` nach Relevanz-Stufe, nach IOA-1278) |
+| TOOL-36 | Review-Kandidaten | 1 | 28.01.2027 | 28.01.2027 | aus TOOL-44: Review-Kandidaten lesen `review/segment-NN.hints.json`; `known_variant` und `ambiguous` gehen bevorzugt in die Auswahl; aus TOOL-35: `review/segment-NN.uncertainty.json` lesen, `uncertain` vor `needs_review`; Gewichtung pro Sprecher, sobald TOOL-68 Labels Personen zuordnet |
 | TOOL-46 | Review-Datenmodell | 0.5 | 01.02.2027 | 01.02.2027 | aus TOOL-44: Hinweise ins Review-Datenmodell übernehmen, das Format der Hinweisdatei ist Eingang dafür |
 | TOOL-47 | Review-CSV | 0.5 | 01.02.2027 | 01.02.2027 |  |
 | TOOL-48 | CSV-Reimport | 0.5 | 02.02.2027 | 02.02.2027 |  |
@@ -116,7 +116,7 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 | TOOL-49 | Arbeitsfassung | 1 | 08.02.2027 | 08.02.2027 |  |
 | TOOL-50 | Markierungskonvention | 0.5 | 09.02.2027 | 09.02.2027 |  |
 | TOOL-53 | Abschlussbericht | 0.5 | 09.02.2027 | 09.02.2027 | vor TOOL-69: liefert `stats` für den Export |
-| TOOL-69 | JSON-Export Contract v1 | 1 | 11.02.2027 | 11.02.2027 | gegen IOA-1214-Validator; aus TOOL-19: Passagenzeiten über `session_time.passage_span` bilden und prüfen, ob Contract v1 die Granularität und `clamped` aufnehmen soll |
+| TOOL-69 | JSON-Export Contract v1 | 1 | 11.02.2027 | 11.02.2027 | gegen IOA-1214-Validator; aus TOOL-19: Passagenzeiten über `session_time.passage_span` bilden und prüfen, ob Contract v1 die Granularität und `clamped` aufnehmen soll; aus TOOL-35: Stufe → `confidence_tier`, Gründe `gap`/`speaker_unclear`/`crosstalk` → `markers` |
 | TOOL-51 | TXT-Rendering | 0.5 | 15.02.2027 | 15.02.2027 |  |
 | TOOL-52 | DOCX-Rendering | 0.5 | 15.02.2027 | 15.02.2027 |  |
 | IOA-1218 | Storage + idempotenter Import | 2 | 16.02.2027 | 18.02.2027 | erledigt: `transcript:import` und Upload-Endpoint in Narrata (ios-archiv PR #1138), gegen die IOA-1214-Fixture; die Probe gegen einen echten TOOL-69-Export folgt mit TOOL-58 |
@@ -135,7 +135,7 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 | TOOL-59 | Laufzeit/Ressourcen/Aufwand auswerten | 0.5 | 04.03.2027 | 04.03.2027 | aus TOOL-18: entscheidet, ob TOOL-78 (Versuche pro Segment im Referenzformat) gebraucht wird |
 | TOOL-78 | Versuche pro Segment im Referenzformat | 0.5 | 04.03.2027 | 04.03.2027 | entfällt, wenn TOOL-59 keine Fehlerraten auswerten will; braucht eine neue `format_version` |
 | TOOL-61 | E2E-Workflow dokumentieren | 0.5 | 08.03.2027 | 08.03.2027 |  |
-| TOOL-60 | V0.1 bewerten, Entscheidungen, V0.2-Backlog | 1 | 08.03.2027 | 09.03.2027 | Go/No-Go für Phase 6 |
+| TOOL-60 | V0.1 bewerten, Entscheidungen, V0.2-Backlog | 1 | 08.03.2027 | 09.03.2027 | Go/No-Go für Phase 6; aus TOOL-35: am vollen Pilotlauf mit `transcript calibrate` prüfen, ob die Eingrenzung aus dem Bericht hält |
 
 ### Phase 5 — Narrata-Oberflächen
 

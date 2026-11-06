@@ -1,5 +1,5 @@
 """Command-line entry point: `config`, `doctor`, `extract`, `context`, `snapshot`,
-`manifest`, `transcribe`, `diarize`."""
+`manifest`, `transcribe`, `diarize`, `assess`, `calibrate`."""
 
 import argparse
 import collections
@@ -14,22 +14,24 @@ from transcript import (
     __version__,
     audio,
     audio_tools,
+    calibration,
     diagnosis,
     diarization,
     hints,
     knowledge,
     manifest,
     narrata,
+    uncertainty,
 )
 from transcript.asr import BackendError
 from transcript.asr.whisper import WhisperBackend
-from transcript.config import Config, ConfigError, format_config, load_config
+from transcript.config import LEVELS, Config, ConfigError, format_config, load_config
 from transcript.diarization.pyannote import PyannoteDiarizer
 from transcript.domain import DomainContext
 from transcript.jsonfile import DataFileError
 from transcript.narrata_client import NarrataClientError, fetch_context, read_token
 from transcript.session import SessionKey, SessionPaths
-from transcript.timecode import format_ms
+from transcript.timecode import format_ms, parse_timecode
 from transcript.transcription import (
     OUTCOME_STATUSES,
     SegmentOutcome,
@@ -142,6 +144,43 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="diarize again even if a stored result matches",
     )
+    assess_command = commands.add_parser(
+        "assess",
+        help="Rate the passages of a session's transcripts as confident, "
+        "needs_review or uncertain.",
+    )
+    assess_command.add_argument("session", help="session key <group>/<ordinal>")
+    assess_command.add_argument(
+        "--segment",
+        type=_positive_int,
+        help="only this segment, counted from 1 as in the manifest (default: all)",
+    )
+    calibrate_command = commands.add_parser(
+        "calibrate",
+        help="Measure the passage ratings against a hand-checked reference, or "
+        "make and read a sheet of similar hints; prints counts only.",
+    )
+    calibrate_command.add_argument("session", help="session key <group>/<ordinal>")
+    calibrate_command.add_argument(
+        "--segment", type=_positive_int, help="segment the hand reference belongs to"
+    )
+    calibrate_command.add_argument(
+        "--reference", type=Path, help="hand reference as a text file"
+    )
+    calibrate_command.add_argument(
+        "--start", help="where the hand reference starts in the segment, HH:MM:SS.mmm"
+    )
+    calibrate_command.add_argument(
+        "--end", help="where the hand reference ends in the segment, HH:MM:SS.mmm"
+    )
+    calibrate_command.add_argument(
+        "--similar-sheet",
+        action="store_true",
+        help="write a sheet of similar hints to judge under review/calibration/",
+    )
+    calibrate_command.add_argument(
+        "--similar-judged", type=Path, help="read a judged sheet of similar hints"
+    )
     for command in (
         config_command,
         extract_command,
@@ -150,6 +189,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest_command,
         transcribe_command,
         diarize_command,
+        assess_command,
+        calibrate_command,
     ):
         command.add_argument(
             "--config",
@@ -183,6 +224,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         if args.command == "diarize":
             return _diarize(args.session, args.config, args.num_speakers, args.force)
+        if args.command == "calibrate":
+            return _calibrate(args)
+        if args.command == "assess":
+            return _assess(args.session, args.config, args.segment)
     parser.print_help()
     return 0
 
@@ -523,7 +568,9 @@ def _transcribe(
     if run.load_error is not None:
         print(f"error: {run.load_error}", file=sys.stderr)
     try:
-        found = hints.review_session(paths, (o.index for o in run.outcomes), domain)
+        found = hints.review_session(
+            paths, (o.index for o in run.outcomes), domain, config.review_similar
+        )
     except DataFileError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
@@ -532,25 +579,116 @@ def _transcribe(
             f"{key}: review hints: {found['known_variant']} known variant(s), "
             f"{found['similar']} similar, {found['ambiguous']} ambiguous"
         )
-        print(f"wrote {paths.review_dir}")
 
+    diarized = True  # False: the diarization could not run at all
+    summaries: Sequence[diarization.SegmentSummary] = ()
+    if diarizer is not None:
+        print(f"{key}: diarization")
+        try:
+            summaries = diarization.diarize_session(
+                paths,
+                session_manifest,
+                diarizer,
+                num_speakers=num_speakers,
+                retries=config.diarization_retries,
+            )
+        except (ValueError, DataFileError, BackendError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            diarized = False
+        else:
+            _print_diarization(summaries, paths)
+    # Also after a failed diarization: the new transcripts get ratings.
+    rated = _rate_passages(key, paths, config, [o.index for o in run.outcomes])
+    if not (diarized and rated):
+        return 2
     if diarizer is None:
         print(f"wrote {paths.asr_dir}")
-        return 0 if run.complete else 1
-    print(f"{key}: diarization")
+    return 0 if run.complete and not _any_failed(summaries) else 1
+
+
+def _assess(raw_key: str, config_path: Path, index: int | None) -> int:
+    """Only counts reach the console (TOOL-66). Exit 0, or 2 on a problem."""
     try:
-        summaries = diarization.diarize_session(
-            paths,
-            session_manifest,
-            diarizer,
-            num_speakers=num_speakers,
-            retries=config.diarization_retries,
-        )
-    except (ValueError, DataFileError, BackendError) as error:
+        key = SessionKey.parse(raw_key)
+        config = _load_config(config_path)
+        paths = config.session_paths(key)
+        indices = [segment.index for segment in manifest.load_manifest(paths).segments]
+    except (ValueError, ConfigError, DataFileError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
-    _print_diarization(summaries, paths)
-    return 0 if run.complete and not _any_failed(summaries) else 1
+    if index is not None:
+        if index not in indices:
+            print(f"error: segment {index} not in the manifest", file=sys.stderr)
+            return 2
+        indices = [index]
+    return 0 if _rate_passages(key, paths, config, indices) else 2
+
+
+def _calibrate(args: argparse.Namespace) -> int:
+    """Only counts and shares reach the console, never text or names (TOOL-66)."""
+    try:
+        key = SessionKey.parse(args.session)
+        config = _load_config(args.config)
+        paths = config.session_paths(key)
+        indices = [segment.index for segment in manifest.load_manifest(paths).segments]
+        if args.similar_sheet:
+            rows = calibration.similar_sheet(paths, indices)
+            sheet = paths.review_dir / "calibration" / "similar-sheet.csv"
+            calibration.write_sheet(sheet, rows)
+            print(f"{key}: {len(rows)} similar hint(s) to judge")
+            print(f"wrote {sheet}")
+            return 0
+        if args.similar_judged is not None:
+            lines = calibration.judged_precision(args.similar_judged)
+        else:
+            lines = _measure(paths, config, indices, args)
+    except (ValueError, ConfigError, DataFileError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    for line in lines:
+        print(f"{key}: {line}")
+    return 0
+
+
+def _measure(
+    paths: SessionPaths,
+    config: Config,
+    indices: Sequence[int],
+    args: argparse.Namespace,
+) -> list[str]:
+    """The report of the hand reference against the stored transcript."""
+    if None in (args.segment, args.reference, args.start, args.end):
+        raise ValueError(
+            "calibrate needs --segment, --reference, --start and --end, "
+            "or --similar-sheet, or --similar-judged"
+        )
+    if args.segment not in indices:
+        raise ValueError(f"segment {args.segment} not in the manifest")
+    report = calibration.measure(
+        paths,
+        args.segment,
+        calibration.read_hand_reference(args.reference),
+        parse_timecode(args.start),
+        parse_timecode(args.end),
+        config.review_uncertainty,
+    )
+    return report.lines()
+
+
+def _rate_passages(
+    key: SessionKey, paths: SessionPaths, config: Config, indices: Sequence[int]
+) -> bool:
+    """Write the ratings of `indices` and print their counts; False on a problem."""
+    try:
+        counts = uncertainty.assess_session(paths, indices, config.review_uncertainty)
+    except DataFileError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return False
+    print(
+        f"{key}: passages: " + ", ".join(f"{counts[level]} {level}" for level in LEVELS)
+    )
+    print(f"wrote {paths.review_dir}")
+    return True
 
 
 def _domain(paths: SessionPaths) -> DomainContext | None:
@@ -605,6 +743,8 @@ def _diarize(
 
     print(f"{key}: {len(summaries)} segment(s)")
     _print_diarization(summaries, paths)
+    if not _rate_passages(key, paths, config, [s.index for s in summaries]):
+        return 2
     return 1 if _any_failed(summaries) else 0
 
 

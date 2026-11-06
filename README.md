@@ -258,13 +258,64 @@ Nach der Spracherkennung vergleicht `transcript transcribe` den erkannten Text j
 | `known_variant` | Die Wortfolge ist ein in Narrata gepflegter Hörfehler (`asr_variants`) | stark |
 | `similar` | Die Wortfolge ähnelt Name oder Alias eines Eintrags: Schreibung (`method: spelling`, Ähnlichkeit ab 0,85, Leerzeichen zählen nicht, „Grau Wasser“ trifft „Grauwasser“) oder Klang (`method: sound`, gleicher Code der Kölner Phonetik mit mindestens 3 Stellen) | schwach |
 
-- **Kein Hinweis** entsteht für einen richtig erkannten Namen oder Alias und für Wörter unter 4 Buchstaben. `similar` braucht einen großen Anfangsbuchstaben, wie Whisper ihn bei Namen setzt, und eine Länge, die höchstens 30 % vom Begriff abweicht. Die Schwellen sind Startwerte, kalibriert wird in TOOL-35.
+- **Kein Hinweis** entsteht für einen richtig erkannten Namen oder Alias und für Wörter unter 4 Buchstaben. `similar` braucht einen großen Anfangsbuchstaben, wie Whisper ihn bei Namen setzt, und eine Länge, die höchstens 30 % vom Begriff abweicht. Ähnlichkeit, Mindestlänge und Längenabweichung stehen unter `review.similar` in der Konfiguration (Defaults 0,85, 4 und 0,3), kalibriert wird in TOOL-35.
 - **Wortfolgen** bis zur Wortzahl des längsten Begriffs, höchstens 4. Überlappen sich Treffer, gewinnt ein richtig erkannter Begriff, dann das starke Signal, dann die längere Folge.
 - **Mehrdeutig** (`ambiguous: true`) ist ein Hinweis, wenn mehrere Einträge passen oder Narrata den Hörfehler in `asr_ambiguities` führt. Dann stehen alle Kandidaten in Glossar-Reihenfolge darin, ausgewählt wird keiner.
 - **Hörfehler aus Narrata:** Hörfehler pflegt die Spielleitung in Narrata („Bekannte Hörfehler“), narrata-transcript führt keine eigene Fehlerliste. Ein Hörfehler gilt genau für seinen Eintrag und dessen Relevanzstufe, einen eigenen Kontext pro Hörfehler liefert Contract 1.1 nicht. Mehrere Hörfehler können auf denselben Eintrag zeigen, das Feld (`asr_variants[0]`, `asr_variants[1]`, …) sagt, welcher getroffen hat. Führt Narrata keine Hörfehler, entstehen nur `similar`-Hinweise. Eine Vorschlagsliste neuer Hörfehler aus den Review-Korrekturen folgt mit TOOL-80.
 - **Einfluss des Wissens:** Jeder Kandidat nennt Typ, Archiv-ID, Begriff, Art (`name`, `alias`, `asr_variant`), Feld und Stufe, dazu `biased`, also ob der Begriff als Hotword an die Spracherkennung ging. Der Dateikopf nennt Snapshot-Kennung, Zahl der Hotwords und das gelesene Referenztranskript.
 
 Die Datei `work/<gruppe>/<ordinal>/review/segment-NN.hints.json` (`format_version: 1`) entsteht bei jedem Lauf neu, auch für wiederverwendete Segmente. Der Abgleich braucht kein Modell und dauert Sekunden. Ohne Snapshot entsteht keine Datei, und eine vorhandene wird entfernt. Die Konsole zeigt nur Zahlen, etwa `review hints: 3 known variant(s), 11 similar, 2 ambiguous`, nie Text oder Namen. Die Datei selbst enthält erkannten Text und Archivnamen und bleibt deshalb unter `work/`.
+
+## Unsicherheitsbewertung
+
+Jede Passage eines transkribierten Segments bekommt eine Stufe (`transcript.uncertainty`): `confident` (sicher), `needs_review` (prüfenswert) oder `uncertain` (unsicher). Die Namen sind die von `confidence_tier` im Narrata-Contract. Die Bewertung läuft am Ende von `transcript transcribe` (nach der Diarisierung, bei `--no-diarize` nach der ASR) und von `transcript diarize`. Allein, etwa nach geänderten Schwellen, läuft sie mit `transcript assess <gruppe>/<ordinal> [--segment N]`. Sie braucht kein Modell und dauert Sekunden.
+
+Die Stufe einer Passage ist die höchste ihrer Gründe. Die Schwellen stehen unter `review.uncertainty` (siehe [Konfiguration](#konfiguration)); die Defaults sind Startwerte, kalibriert wird in TOOL-35.
+
+| Regel | Wann | Stufe |
+| --- | --- | --- |
+| `low_confidence` | Anteil der Wörter unter `word_low` ab `low_share_review` bzw. `low_share_uncertain` | `needs_review` / `uncertain` |
+| `very_low_confidence` | mindestens ein Wort unter `word_very_low` | `needs_review` |
+| `no_speech` / `low_logprob` | Whisper-Signal der Passage ab `no_speech_prob` bzw. bis `avg_logprob` | `needs_review` |
+| `repetition` | `compression_ratio` ab der Schwelle, das Zeichen einer Whisper-Schleife | `uncertain` |
+| `gap` | längste Pause zwischen zwei Wörtern ab `gap_ms`, dort fehlen womöglich Wörter | `needs_review` |
+| `sparse` | weniger als `min_words_per_second` Wörter pro Sekunde in einer Passage ab 1 s | `needs_review` |
+| `missing_times` | das Backend kann Zeiten liefern, Passage oder Wörter haben aber keine | `needs_review` |
+| `speaker_unclear` | Diarisierung vorhanden, aber kein Mehrheitslabel der Wörter | `needs_review` |
+| `crosstalk` | die Passage überschneidet Bereiche mit Übersprechen für insgesamt mindestens `crosstalk_ms` | `needs_review` |
+| `known_variant` | Review-Hinweis auf einen bekannten Hörfehler | `needs_review` |
+| `similar` | Review-Hinweis auf eine ähnliche Schreibung oder einen ähnlichen Klang | `similar_level` (Schreibung), `similar_sound_level` (nur Klang, Default `confident`: Hinweis sichtbar, Passage nicht angehoben); `confident` heißt ohne Wirkung |
+| `ambiguous` | mehrdeutiger Review-Hinweis | `uncertain` |
+| `no_signals` | weder Word-Confidence noch Whisper-Signale vorhanden | `needs_review` |
+
+- **Fehlende Daten werden nie ersetzt.** Fehlt einer Passage eine Signalart, greifen ihre Regeln nicht, und die Art steht unter `missing`: `word_confidence`, `segment_signals`, `word_times`, `speaker` (keine Diarisierung) oder `hints` (keine Hinweisdatei, oder sie passt nicht zum Referenztranskript). Sicher wird eine Passage nur durch Confidence oder Whisper-Signale. Zeiten, Sprecher und Hinweise können eine Stufe nur anheben.
+- **Gleiche Eingabe, gleiche Stufen:** Die Regeln sind deterministisch und lesen nur Referenztranskript, Hinweisdatei und Konfiguration. Beide Dateien bleiben unverändert.
+- **Sprecher und Mundart:** Labels gelten pro Segment und sind bis TOOL-68 keiner Person zugeordnet. Schwellen pro Person gibt es deshalb nicht.
+
+Die Datei `work/<gruppe>/<ordinal>/review/segment-NN.uncertainty.json` (`format_version: 1`) enthält pro Passage Index, Stufe, Gründe (`rule`, `level`, gesehener `value`, `threshold`, Wortpositionen `words`) und `missing`. Dazu kommen im Kopf die verwendeten Schwellen, das gelesene Referenztranskript und die Snapshot-Kennung der Hinweise. Text enthält sie nicht. Ein fehlgeschlagenes Segment verliert seine Datei. Die Konsole zeigt nur Zahlen, etwa `passages: 412 confident, 96 needs_review, 31 uncertain`.
+
+### Kalibrierung
+
+`transcript calibrate` misst die Bewertung an einer Handreferenz: einer Textdatei, die beim Anhören eines Abschnitts eines Segments entsteht. Jede Zeile darf mit einer Sprecherkennung beginnen (`Name:`), Notizen in eckigen Klammern sind keine Sprache, `???` markiert Unverständliches. Was die Spracherkennung dort erkennt, zählt weder als richtig noch als Einfügung (Konvention aus [TOOL-62](docs/spikes/TOOL-62-asr-vergleich.md)).
+
+```bash
+transcript calibrate beispielgruppe/042 --segment 1 --reference work/beispielgruppe/042/review/calibration/reference.txt \
+  --start 01:20:00.000 --end 01:23:00.000
+```
+
+`--start` und `--end` sind Zeiten im Segment-WAV. Gezählt werden die Wörter, die in diesem Bereich beginnen. Die Ausrichtung beruht auf `difflib` und liegt nahe an der minimalen Wortfehlerrate. Jede Ersetzung und Einfügung zeigt auf ein erkanntes Wort, jede Auslassung auf die Stelle daneben und damit auf eine Passage. Die Bewertung entsteht mit den Schwellen der aktuellen Konfiguration neu, gespeichert wird nichts. Wer Schwellen ändert, ruft `calibrate` einfach noch einmal auf.
+
+Der Bericht enthält nur Zahlen:
+- Fehler gesamt und nach Art
+- Fehlerquote je Sprecher der Handreferenz, als `S1`, `S2`, … in der Reihenfolge ihres Auftretens
+- pro Stufe und für alle markierten Passagen: Anteil an Passagen und Zeit, enthaltene Fehler und Auslassungen
+- übersehene Fehler in `confident`-Passagen und Fehlalarme, also markierte Passagen ohne Fehler
+- pro Regel die Passagen, in denen sie angeschlagen hat
+- die AUC der Word-Confidence und der Anteil falscher Wörter unter den unsichersten 10, 20 und 30 %
+
+Für `similar` gibt es einen Bogen zum Anhören. `transcript calibrate <session> --similar-sheet` schreibt höchstens 50 `similar`-Hinweise nach `work/<gruppe>/<ordinal>/review/calibration/similar-sheet.csv`, gleichmäßig über die Session verteilt und bei gleichen Hinweisdateien immer dieselben. In die Spalte `correct` kommt `ja` oder `nein`, leer heißt nicht beurteilt. `--similar-judged <datei>` liest den ausgefüllten Bogen und gibt die Präzision je Methode und Score-Band aus. Eine Trefferquote ergibt sich daraus nicht. Handreferenz und Bogen enthalten echte Namen und bleiben unter `work/`. Ein mit Semikolon gespeicherter Bogen, etwa aus einer deutschen Tabellenkalkulation, und zusätzliche Spalten werden ebenfalls gelesen.
+
+Die Defaults der Schwellen stammen aus der ersten Kalibrierung, siehe [TOOL-35-Bericht](docs/spikes/TOOL-35-kalibrierung.md).
 
 ## Konfiguration
 
@@ -291,6 +342,10 @@ Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht 
 | `narrata.recent_sessions` | nein | `3` | Fenster der Stufe `recent`: die letzten `n` Sitzungen, diese eingeschlossen, `1` bis `20` |
 | `narrata.archive_limit` | nein | `500` | Höchstzahl der Glossar-Einträge der Stufe `archive`, `0` bis `2000` |
 | `knowledge.keyword_budget` | nein | person 15, place 10, organisation 5, artifact 5, event 3, lore 3 | Höchstzahl der Keyword-Einträge je Typ aus den Stufen `session` und `recent`; Spielfiguren zählen nicht mit, ein fehlender Typ behält seinen Default, `0` heißt keiner |
+| `review.similar.min_ratio` | nein | `0.85` | Mindestähnlichkeit der Schreibung für einen Hinweis `similar`, `0` bis `1` |
+| `review.similar.min_length` | nein | `4` | Mindestlänge von Begriff und Wortfolge in Buchstaben, `1` bis `50` |
+| `review.similar.max_length_deviation` | nein | `0.3` | höchste Längenabweichung als Anteil der Begriffslänge, `0` bis `0.9` |
+| `review.uncertainty.*` | nein | siehe `config/example.yaml` | Schwellen der [Unsicherheitsbewertung](#unsicherheitsbewertung): `word_low` (0,5), `word_very_low` (0,2), `low_share_review` (0,2), `low_share_uncertain` (0,5), `no_speech_prob` (0,6), `avg_logprob` (−1,0), `compression_ratio` (2,4), `gap_ms` (2500), `min_words_per_second` (1,0), `crosstalk_ms` (1000), `similar_level` (`needs_review`), `similar_sound_level` (`confident`); `word_very_low` darf `word_low` nicht übersteigen, `low_share_review` nicht `low_share_uncertain` |
 | `debug` | nein | `false` | schreibt Transkripttext nach `work/<gruppe>/<ordinal>/debug.log`, nie auf die Konsole |
 
 Einen eigenen Ausgabepfad gibt es nicht: `output/` liegt immer unter `paths.root`, damit echte Daten im Layout unter [Sessions](#sessions) bleiben. Secrets gehören nicht in diese Datei, sondern in `.env` (Vorlage `.env.example`, heute nur `NARRATA_TOKEN`).
@@ -336,7 +391,7 @@ work/beispielgruppe/042/
   audio/                       segment-NN.wav (Arbeitsformat, eine pro Aufnahme), audio.json (Audio-Metadaten)
   asr/                         segment-NN.json (Referenztranskript), segment-NN.raw.json (Backend-Rohantwort)
   diarization/                 segment-NN.json (Sprecher-Turns von pyannote)
-  review/                      segment-NN.hints.json (Review-Hinweise aus dem Wissen), später Review-Kandidaten, CSV
+  review/                      segment-NN.hints.json (Review-Hinweise aus dem Wissen), segment-NN.uncertainty.json (Unsicherheitsbewertung), später Review-Kandidaten, CSV
   speakers/                    Sprecherzuordnung
   debug.log                    nur im Debug-Modus
 output/beispielgruppe/042/     JSON-Export, TXT, DOCX

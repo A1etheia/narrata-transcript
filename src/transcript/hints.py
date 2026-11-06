@@ -6,7 +6,8 @@ spelling or sound close to a name or alias is a weak one (`similar`). A hint is
 only a pointer for the review: it never changes the transcript, and when more
 than one entry fits it lists all of them as `ambiguous` and picks none.
 
-The thresholds are first values, to be calibrated in TOOL-35. Hints hold real
+The `similar` thresholds come from `review.similar` in the configuration
+(`SimilarThresholds`), calibrated in TOOL-35. Hints hold real
 names, so this module logs nothing, and its error messages name file, field and
 position, never a value.
 
@@ -26,6 +27,7 @@ from pathlib import Path
 from typing import Any, Literal, get_args
 
 from transcript import jsonfile
+from transcript.config import SimilarThresholds
 from transcript.domain import DomainContext, TermHit
 from transcript.glossary import MatchKind, normalize
 from transcript.jsonfile import DataFileError, write_atomic
@@ -51,10 +53,8 @@ Signal = Literal["known_variant", "similar"]
 Method = Literal["spelling", "sound"]
 
 MAX_SPAN_WORDS = 4  # longest word sequence compared with a term
-MIN_SIMILAR_LENGTH = 4  # letters a term and a span need for `similar`
-MAX_LENGTH_DEVIATION = 0.3  # of the term's length
-MIN_SPELLING_RATIO = 0.85
 MIN_SOUND_CODE = 3  # shorter Cologne codes collide too often
+DEFAULT_SIMILAR = SimilarThresholds()
 
 
 @dataclass(frozen=True)
@@ -124,18 +124,26 @@ class _Found:
 
 
 def find_hints(
-    reference: ReferenceTranscript, domain: DomainContext
+    reference: ReferenceTranscript,
+    domain: DomainContext,
+    similar: SimilarThresholds = DEFAULT_SIMILAR,
 ) -> tuple[Hint, ...]:
     """The review hints of `reference`, in transcript order; reads, never writes."""
-    matcher = _Matcher(domain, reference.asr.keywords_used)
+    matcher = _Matcher(domain, reference.asr.keywords_used, similar)
     return tuple(
         hint for passage in reference.passages for hint in matcher.passage(passage)
     )
 
 
 class _Matcher:
-    def __init__(self, domain: DomainContext, keywords_used: Sequence[str]) -> None:
+    def __init__(
+        self,
+        domain: DomainContext,
+        keywords_used: Sequence[str],
+        similar: SimilarThresholds,
+    ) -> None:
         self._domain = domain
+        self._limits = similar
         self._biased = {normalize(term) for term in keywords_used}
         self._order = {entry.ref: n for n, entry in enumerate(domain.entries)}
         self._by_letter: dict[tuple[str, int], list[_Term]] = defaultdict(list)
@@ -145,7 +153,7 @@ class _Matcher:
         for hit in domain.match_candidates():
             key = normalize(hit.term)
             compact = key.replace(" ", "")
-            if len(compact) < MIN_SIMILAR_LENGTH:
+            if len(compact) < similar.min_length:
                 continue
             span = max(span, len(key.split(" ")))
             term = _Term(
@@ -223,7 +231,7 @@ class _Matcher:
     ) -> tuple[Method, float | None, list[TermHit]] | None:
         """Terms close to `compact`; only for a capitalised span, as names are."""
         initial = next((c for c in heard if c.isalpha()), "")
-        if len(compact) < MIN_SIMILAR_LENGTH or not initial.isupper():
+        if len(compact) < self._limits.min_length or not initial.isupper():
             return None
         if compact not in self._close:  # speech repeats its words
             self._close[compact] = self._closest(compact)
@@ -233,13 +241,14 @@ class _Matcher:
         self, compact: str
     ) -> tuple[Method, float | None, list[TermHit]] | None:
         spelled: list[tuple[float, TermHit]] = []
+        min_ratio = self._limits.min_ratio
         for term in self._near(compact):
             matcher = term.spelling
             matcher.set_seq1(compact)
-            if matcher.quick_ratio() < MIN_SPELLING_RATIO:
+            if matcher.quick_ratio() < min_ratio:
                 continue
             ratio = matcher.ratio()
-            if ratio >= MIN_SPELLING_RATIO:
+            if ratio >= min_ratio:
                 spelled.append((ratio, term.hit))
         if spelled:
             return "spelling", max(r for r, _ in spelled), [h for _, h in spelled]
@@ -249,17 +258,21 @@ class _Matcher:
         sounded = [
             term.hit
             for term in self._by_code.get(code, ())
-            if _close_in_length(len(compact), len(term.compact))
+            if self._close_in_length(len(compact), len(term.compact))
         ]
         return ("sound", None, sounded) if sounded else None
 
     def _near(self, compact: str) -> Iterator[_Term]:
         """Terms starting with the same letter and close enough in length."""
         length = len(compact)
-        longest = int(length / (1 - MAX_LENGTH_DEVIATION)) + 1
-        for size in range(MIN_SIMILAR_LENGTH, longest + 1):
-            if _close_in_length(length, size):
+        longest = int(length / (1 - self._limits.max_length_deviation)) + 1
+        for size in range(self._limits.min_length, longest + 1):
+            if self._close_in_length(length, size):
                 yield from self._by_letter.get((compact[0], size), ())
+
+    def _close_in_length(self, length: int, term_length: int) -> bool:
+        deviation = self._limits.max_length_deviation
+        return abs(length - term_length) <= deviation * term_length
 
     def _candidates(self, hits: Sequence[TermHit]) -> tuple[Candidate, ...]:
         """One candidate per entry, the first matching term, in glossary order."""
@@ -298,10 +311,6 @@ def _key(text: str) -> str:
     while end > start and unicodedata.category(key[end - 1])[0] in "PS":
         end -= 1
     return key[start:end]
-
-
-def _close_in_length(length: int, term_length: int) -> bool:
-    return abs(length - term_length) <= MAX_LENGTH_DEVIATION * term_length
 
 
 def _rank(found: _Found) -> int:
@@ -377,6 +386,13 @@ class SegmentHints:
     keywords_used: int  # ASR hints of that transcript
     hints: tuple[Hint, ...]
 
+    def matches(self, reference: ReferenceTranscript) -> bool:
+        """Whether these hints were made from this version of `reference`."""
+        return (
+            self.segment == reference.segment.index
+            and self.reference_processed_at == reference.processing.processed_at
+        )
+
     def counts(self) -> Counter[str]:
         """Hints per signal, plus `ambiguous` across both."""
         counts = Counter(hint.signal for hint in self.hints)
@@ -385,19 +401,24 @@ class SegmentHints:
 
 
 def segment_hints(
-    reference: ReferenceTranscript, domain: DomainContext
+    reference: ReferenceTranscript,
+    domain: DomainContext,
+    similar: SimilarThresholds = DEFAULT_SIMILAR,
 ) -> SegmentHints:
     return SegmentHints(
         segment=reference.segment.index,
         knowledge_snapshot_id=domain.origin.snapshot_id,
         reference_processed_at=reference.processing.processed_at,
         keywords_used=len(reference.asr.keywords_used),
-        hints=find_hints(reference, domain),
+        hints=find_hints(reference, domain, similar),
     )
 
 
 def review_session(
-    paths: SessionPaths, indices: Iterable[int], domain: DomainContext | None
+    paths: SessionPaths,
+    indices: Iterable[int],
+    domain: DomainContext | None,
+    similar: SimilarThresholds,
 ) -> Counter[str] | None:
     """Write the hints of the transcribed segments among `indices`; their counts.
 
@@ -416,7 +437,7 @@ def review_session(
             continue
         reference = load_reference(paths, index)
         if reference.status == "transcribed":
-            found = segment_hints(reference, domain)
+            found = segment_hints(reference, domain, similar)
             write_hints(paths, found)
             total += found.counts()
     return total
@@ -445,6 +466,13 @@ def write_hints(
             "hints": [dataclasses.asdict(hint) for hint in hints.hints],
         },
     )
+
+
+def stored_hints(paths: SessionPaths, index: int) -> SegmentHints | None:
+    """The hints of segment `index`, or `None` without a hint file."""
+    if not paths.review_hints(index).is_file():
+        return None
+    return load_hints(paths, index)
 
 
 def load_hints(paths: SessionPaths, index: int) -> SegmentHints:
@@ -511,15 +539,9 @@ def _candidate_from(data: dict[str, Any], path: Path) -> Candidate:
     )
 
 
-def _one_of(data: Any, name: str, allowed: Sequence[str], path: Path) -> Any:
-    value = _field(data, name, str, path)
-    if value not in allowed:
-        raise HintsError(f"{path}: field {name!r} invalid")
-    return value
-
-
 _METHODS: tuple[Method, ...] = get_args(Method)
 _field = functools.partial(jsonfile.field, error=HintsError)
+_one_of = functools.partial(jsonfile.one_of, error=HintsError)
 _optional = functools.partial(jsonfile.optional_field, error=HintsError)
 _number = functools.partial(jsonfile.optional_number, error=HintsError)
 _read_json = functools.partial(jsonfile.read_object, error=HintsError)

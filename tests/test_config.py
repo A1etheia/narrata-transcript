@@ -2,7 +2,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from transcript.config import Config, ConfigError, format_config, load_config
+from transcript.config import (
+    Config,
+    ConfigError,
+    SimilarThresholds,
+    UncertaintyThresholds,
+    format_config,
+    load_config,
+)
 from transcript.narrata import ENTRY_TYPES
 from transcript.session import SessionKey
 
@@ -78,6 +85,10 @@ class LoadConfigTest(unittest.TestCase):
                 "event": 4,
                 "lore": 5,
             },
+            review_similar=SimilarThresholds(0.9, 5, 0.25),
+            review_uncertainty=UncertaintyThresholds(
+                word_low=0.6, gap_ms=900, avg_logprob=-0.8, similar_level="uncertain"
+            ),
         )
 
         self.assertEqual(self.load(format_config(config)), config)
@@ -334,6 +345,92 @@ class LoadConfigTest(unittest.TestCase):
         ):
             with self.subTest(text=text):
                 self.assert_rejected(MINIMAL + f"knowledge:\n  {text}\n", expected)
+
+    def test_review_thresholds_default_to_the_start_values(self) -> None:
+        config = self.load(MINIMAL)
+
+        self.assertEqual(config.review_similar, SimilarThresholds())
+        self.assertEqual(config.review_uncertainty, UncertaintyThresholds())
+
+    def test_threshold_order_holds_for_objects_built_in_code(self) -> None:
+        with self.assertRaises(ValueError):
+            UncertaintyThresholds(word_low=0.1, word_very_low=0.3)
+
+    def test_a_null_threshold_keeps_its_default(self) -> None:
+        config = self.load(MINIMAL + "review:\n  uncertainty:\n    gap_ms: null\n")
+
+        self.assertEqual(
+            config.review_uncertainty.gap_ms, UncertaintyThresholds().gap_ms
+        )
+
+    def test_review_thresholds_are_read_and_keep_defaults_left_out(self) -> None:
+        config = self.load(
+            MINIMAL
+            + "review:\n"
+            + "  similar:\n    min_ratio: 0.9\n    min_length: 5\n"
+            + "  uncertainty:\n    word_low: 0.4\n    gap_ms: 2000\n"
+            + "    avg_logprob: -2\n    similar_level: confident\n"
+        )
+
+        self.assertEqual(config.review_similar.min_ratio, 0.9)
+        self.assertEqual(config.review_similar.min_length, 5)
+        self.assertEqual(config.review_similar.max_length_deviation, 0.3)
+        thresholds = config.review_uncertainty
+        self.assertEqual(thresholds.word_low, 0.4)
+        self.assertEqual(thresholds.gap_ms, 2000)
+        self.assertEqual(thresholds.avg_logprob, -2.0)
+        self.assertIsInstance(thresholds.avg_logprob, float)
+        self.assertEqual(thresholds.similar_level, "confident")
+        self.assertEqual(thresholds.word_very_low, 0.2)
+
+    def test_review_thresholds_are_validated(self) -> None:
+        for text, key in (
+            ("review: 1", "review"),
+            ("review:\n  similar: 0.8", "review.similar"),
+            ("review:\n  similar:\n    min_ratio: 1.5", "review.similar.min_ratio"),
+            ("review:\n  similar:\n    min_ratio: true", "review.similar.min_ratio"),
+            ("review:\n  similar:\n    min_length: 4.5", "review.similar.min_length"),
+            (
+                "review:\n  similar:\n    max_length_deviation: 1",
+                "review.similar.max_length_deviation",
+            ),
+            (
+                "review:\n  uncertainty:\n    word_low: -0.1",
+                "review.uncertainty.word_low",
+            ),
+            (
+                "review:\n  uncertainty:\n    avg_logprob: 0.5",
+                "review.uncertainty.avg_logprob",
+            ),
+            (
+                "review:\n  uncertainty:\n    no_speech_prob: .nan",
+                "review.uncertainty.no_speech_prob",
+            ),
+            ("review:\n  uncertainty:\n    gap_ms: 50", "review.uncertainty.gap_ms"),
+            (
+                "review:\n  uncertainty:\n    similar_level: maybe",
+                "review.uncertainty.similar_level",
+            ),
+            (
+                "review:\n  uncertainty:\n    word_low: 0.1\n    word_very_low: 0.3",
+                "review.uncertainty.word_very_low",
+            ),
+            (
+                "review:\n  uncertainty:\n    low_share_uncertain: 0.1",
+                "review.uncertainty.low_share_review",
+            ),
+        ):
+            with self.subTest(text=text):
+                self.assert_rejected(MINIMAL + text + "\n", f"invalid value for {key}")
+
+    def test_unknown_review_keys_name_their_path(self) -> None:
+        for text, key in (
+            ("review:\n  hints: {}", "review.hints"),
+            ("review:\n  similar:\n    ratio: 0.9", "review.similar.ratio"),
+            ("review:\n  uncertainty:\n    gap: 1", "review.uncertainty.gap"),
+        ):
+            with self.subTest(key=key):
+                self.assert_rejected(MINIMAL + text + "\n", f"unknown key: {key}")
 
     def test_session_paths_use_the_configured_root(self) -> None:
         paths = self.load(MINIMAL).session_paths(SessionKey("beispielgruppe", 42))

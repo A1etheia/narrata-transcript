@@ -28,7 +28,7 @@ from test_transcription import MANIFEST_3, FailingLoad, session_backend
 
 import transcript
 from transcript import __main__ as transcript_main
-from transcript import audio_tools, hints, jsonfile, knowledge, retry
+from transcript import audio_tools, hints, jsonfile, knowledge, retry, uncertainty
 from transcript import manifest as manifest_module
 from transcript.__main__ import main
 from transcript.asr import AudioInputError, BackendUnavailableError, ResourceError
@@ -912,6 +912,44 @@ class TranscribeCommandTest(unittest.TestCase):
         self.assertFalse(self.paths.review_hints(2).exists())
         self.assertNotIn("review hints", stdout)
 
+    def test_passages_are_rated_with_counts_but_no_text(self) -> None:
+        code, stdout, stderr = self.transcribe("--no-diarize")
+
+        self.assertEqual(code, 0, stderr)
+        # The fake backend gives words without confidence or times.
+        self.assertIn(
+            "beispielgruppe/042: passages: 0 confident, 3 needs_review, 0 uncertain",
+            stdout,
+        )
+        stored = uncertainty.load_assessment(self.paths, 2)
+        self.assertEqual(stored.ratings[0].reasons[0].rule, "no_signals")
+        text = self.paths.review_uncertainty(2).read_text(encoding="utf-8")
+        self.assertNotIn(SECRET, stdout + stderr + text)
+
+    def test_ratings_follow_the_diarization(self) -> None:
+        code, stdout, stderr = self.transcribe()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertLess(
+            stdout.index("beispielgruppe/042: diarization"),
+            stdout.index("beispielgruppe/042: passages:"),
+        )
+        stored = uncertainty.load_assessment(self.paths, 1)
+        self.assertNotIn("speaker", stored.ratings[0].missing)
+
+    def test_a_diarization_that_cannot_run_still_leaves_ratings(self) -> None:
+        with mock.patch.object(
+            transcript_main.diarization,
+            "diarize_session",
+            side_effect=jsonfile.DataFileError("broken diarization file"),
+        ):
+            code, stdout, _ = self.transcribe()
+
+        self.assertEqual(code, 2)
+        self.assertIn("beispielgruppe/042: passages:", stdout)
+        stored = uncertainty.load_assessment(self.paths, 1)
+        self.assertIn("speaker", stored.ratings[0].missing)
+
     def test_a_backend_without_biasing_says_so_once(self) -> None:
         data = context()
         data["glossary"] = [glossary_entry()]
@@ -1106,6 +1144,91 @@ class DiarizeCommandTest(unittest.TestCase):
         self.assertEqual(self.diarizers[0].diarized[0][2], 2)
         for secret in (SECRET, "SPEAKER_"):
             self.assertNotIn(secret, stdout + stderr)
+
+    def test_diarize_rates_the_passages_again(self) -> None:
+        code, stdout, stderr = self.diarize()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "beispielgruppe/042: passages: 0 confident, 1 needs_review", stdout
+        )
+        self.assertTrue(self.paths.review_uncertainty(1).is_file())
+        self.assertNotIn(SECRET, stdout + stderr)
+
+    def test_assess_rates_without_any_model(self) -> None:
+        code, stdout, stderr = run(
+            "assess", str(KEY), "--config", str(self.config), "--segment", "1"
+        )
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "beispielgruppe/042: passages: 0 confident, 1 needs_review", stdout
+        )
+        self.assertIn(f"wrote {self.paths.review_dir}", stdout)
+        self.assertEqual(self.diarizers, [])
+        text = self.paths.review_uncertainty(1).read_text(encoding="utf-8")
+        self.assertNotIn(SECRET, stdout + stderr + text)
+
+    def calibrate(self, *extra: str) -> tuple[int, str, str]:
+        return run("calibrate", str(KEY), "--config", str(self.config), *extra)
+
+    def test_calibrate_prints_counts_but_no_text_or_names(self) -> None:
+        hand = self.root / "reference.txt"
+        hand.write_text(f"Sprecherin: Zum {SECRET}.\n", encoding="utf-8")
+
+        code, stdout, stderr = self.calibrate(
+            "--segment", "1", "--reference", str(hand),
+            "--start", "00:00:00.000", "--end", "00:00:02.000",
+        )  # fmt: skip
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("beispielgruppe/042: reference: 2 word(s), recognised: 2", stdout)
+        self.assertIn("errors: 0 (0.0% WER)", stdout)
+        self.assertIn("speaker S1: 2 word(s)", stdout)
+        self.assertFalse(self.paths.review_uncertainty(1).exists())
+        for secret in (SECRET, "Sprecherin", "Zum"):
+            self.assertNotIn(secret, stdout + stderr)
+
+    def test_calibrate_needs_a_complete_measurement(self) -> None:
+        code, _, stderr = self.calibrate("--segment", "1")
+        self.assertEqual(code, 2)
+        self.assertIn(
+            "calibrate needs --segment, --reference, --start and --end", stderr
+        )
+
+        hand = self.root / "reference.txt"
+        hand.write_text("Zum\n", encoding="utf-8")
+        code, _, stderr = self.calibrate(
+            "--segment", "1", "--reference", str(hand),
+            "--start", "00:00:02.000", "--end", "00:00:01.000",
+        )  # fmt: skip
+        self.assertEqual(code, 2)
+        self.assertIn("--end must lie after --start", stderr)
+
+    def test_calibrate_writes_and_reads_a_similar_sheet(self) -> None:
+        code, stdout, stderr = self.calibrate("--similar-sheet")
+
+        self.assertEqual(code, 0, stderr)
+        sheet = self.paths.review_dir / "calibration" / "similar-sheet.csv"
+        self.assertIn("beispielgruppe/042: 0 similar hint(s) to judge", stdout)
+        self.assertIn(f"wrote {sheet}", stdout)
+
+        code, stdout, stderr = self.calibrate("--similar-judged", str(sheet))
+        self.assertEqual(code, 2)
+        self.assertIn("judged sheet lists no hints", stderr)
+
+    def test_assess_reports_problems_with_exit_2(self) -> None:
+        code, _, stderr = run(
+            "assess", str(KEY), "--config", str(self.config), "--segment", "3"
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("error: segment 3 not in the manifest", stderr)
+
+        self.paths.review_hints(1).parent.mkdir(parents=True, exist_ok=True)
+        self.paths.review_hints(1).write_text("{", encoding="utf-8")
+        code, _, stderr = run("assess", str(KEY), "--config", str(self.config))
+        self.assertEqual(code, 2)
+        self.assertIn("review hints is unreadable", stderr)
 
     def test_second_run_reuses_and_force_diarizes_again(self) -> None:
         self.diarize()

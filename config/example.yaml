@@ -71,5 +71,42 @@ knowledge:
     event: 3
     lore: 3
 
+# Review-Signale nach der ASR. Startwerte, kalibriert in TOOL-35; ein fehlender
+# Schlüssel behält seinen Default.
+review:
+  # Wann ein erkanntes Wort einem Glossarbegriff ähnlich ist (Hinweis similar).
+  similar:
+    # Mindestähnlichkeit der Schreibung, 0 bis 1.
+    min_ratio: 0.85
+    # Mindestlänge von Begriff und erkanntem Wort in Buchstaben.
+    min_length: 4
+    # Höchste Längenabweichung als Anteil der Begriffslänge, 0 bis 0.9.
+    max_length_deviation: 0.3
+  # Regeln der Unsicherheitsbewertung pro Passage: confident, needs_review, uncertain.
+  uncertainty:
+    # Ein Wort unter word_low gilt als unsicher; eines unter word_very_low macht die
+    # Passage mindestens needs_review.
+    word_low: 0.5
+    word_very_low: 0.2
+    # Anteil unsicherer Wörter einer Passage für needs_review bzw. uncertain.
+    low_share_review: 0.2
+    low_share_uncertain: 0.5
+    # Segmentsignale von Whisper: ab no_speech_prob, bis avg_logprob, ab compression_ratio.
+    no_speech_prob: 0.6
+    avg_logprob: -1.0
+    compression_ratio: 2.4
+    # Hinweise auf ausgelassene Wörter: längste Pause zwischen zwei Wörtern in ms
+    # und Mindestzahl Wörter pro Sekunde.
+    gap_ms: 2500
+    min_words_per_second: 1.0
+    # Mindestdauer in ms, ab der Übersprechen in einer Passage zählt; kürzeres ist
+    # bei einer Runde am Tisch der Normalfall.
+    crosstalk_ms: 1000
+    # Stufe, auf die ein Hinweis similar die Passage hebt; confident heißt keine.
+    similar_level: needs_review
+    # Dasselbe für similar-Hinweise, die nur über den Klang gefunden wurden. Sie
+    # bleiben in der Hinweisdatei sichtbar, heben die Passage aber nicht an.
+    similar_sound_level: confident
+
 # Schreibt Transkripttext nach work/<gruppe>/<ordinal>/debug.log, nie auf die Konsole.
 debug: false

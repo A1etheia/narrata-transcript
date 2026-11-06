@@ -7,6 +7,7 @@ may hold names of real people.
 import json
 import os
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -74,6 +75,30 @@ def optional_number(
     """An optional JSON number as float; `True` does not count as a number."""
     value = optional_field(data, name, (int, float), path, error)
     return None if value is None else float(value)
+
+
+def one_of(
+    data: Any,
+    name: str,
+    allowed: Sequence[str],
+    path: Path,
+    error: type[DataFileError] = DataFileError,
+) -> Any:
+    """`data[name]` if it is one of the strings in `allowed`."""
+    return check_one_of(field(data, name, str, path, error), allowed, name, path, error)
+
+
+def check_one_of(
+    value: Any,
+    allowed: Sequence[str],
+    name: str,
+    path: Path,
+    error: type[DataFileError] = DataFileError,
+) -> Any:
+    """`value` if it is in `allowed`; the message names `name`, never the value."""
+    if value not in allowed:
+        raise error(f"{path}: field {name!r} invalid")
+    return value
 
 
 def list_of(
