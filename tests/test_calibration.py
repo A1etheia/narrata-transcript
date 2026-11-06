@@ -231,7 +231,17 @@ class SimilarSheetTest(unittest.TestCase):
         with sheet.open(encoding="utf-8", newline="") as handle:
             stored = list(csv.reader(handle))
         self.assertEqual(tuple(stored[0]), SHEET_COLUMNS)
-        self.assertEqual(stored[1][-1], "")
+        self.assertEqual(stored[1][-2:], ["session", ""])
+
+    def test_a_row_takes_the_nearest_tier_of_its_candidates(self) -> None:
+        hint = similar(1)
+        far = Candidate("person", 7, "Grauwald", "name", "name", "archive", False)
+        near = Candidate("place", 8, "Grauwacht", "name", "name", "recent", False)
+        self.store(Hint(**{**hint.__dict__, "candidates": (far, near)}))
+
+        rows = similar_sheet(self.paths, [1])
+
+        self.assertEqual(rows[0].relevance, "recent")
 
     def test_a_long_list_is_spread_evenly_and_the_same_every_time(self) -> None:
         self.store(*(similar(n) for n in range(1, 121)))
@@ -244,45 +254,86 @@ class SimilarSheetTest(unittest.TestCase):
 
     def test_judged_answers_give_precision_per_band(self) -> None:
         sheet = self.root / "judged.csv"
-        rows = [
-            ("1-1", "spelling", "0.870", "ja"),
-            ("1-2", "spelling", "0.870", "n"),
-            ("1-3", "spelling", "0.970", "J"),
-            ("1-4", "sound", "", "nein"),
-            ("1-5", "sound", "", ""),
-        ]
-        with sheet.open("w", encoding="utf-8", newline="") as handle:
-            writer = csv.writer(handle)
-            writer.writerow(SHEET_COLUMNS)
-            for hint, method, score, correct in rows:
-                writer.writerow(
-                    (
-                        hint,
-                        1,
-                        "?",
-                        "Grauwassr",
-                        "Grauwasser",
-                        method,
-                        score,
-                        "nein",
-                        correct,
-                    )
-                )
+        self.write_judged(
+            sheet,
+            SHEET_COLUMNS,
+            [
+                ("1-1", "spelling", "0.870", "recent", "ja"),
+                ("1-2", "spelling", "0.870", "archive", "n"),
+                ("1-3", "spelling", "0.970", "archive", "J"),
+                ("1-4", "sound", "", "archive", "nein"),
+                ("1-5", "sound", "", "recent", ""),
+            ],
+        )
 
         lines = judged_precision(sheet)
 
         self.assertIn("similar spelling <0.9: 1 of 2 right (50.0%)", lines)
         self.assertIn("similar spelling >=0.95: 1 of 1 right (100.0%)", lines)
         self.assertIn("similar sound: 0 of 1 right (0.0%)", lines)
+        self.assertIn("similar spelling / recent: 1 of 1 right (100.0%)", lines)
+        self.assertIn("similar spelling / archive: 1 of 2 right (50.0%)", lines)
+        self.assertIn("similar sound / archive: 0 of 1 right (0.0%)", lines)
+        self.assertNotIn("similar sound / recent", "\n".join(lines))
         self.assertIn("similar all: 2 of 4 right (50.0%)", lines)
         self.assertIn("not judged: 1", lines)
         self.assertNotIn("Grau", "\n".join(lines))
+
+    def test_a_sheet_without_tiers_gives_bands_only(self) -> None:
+        sheet = self.root / "judged.csv"
+        columns = tuple(c for c in SHEET_COLUMNS if c != "relevance")
+        self.write_judged(sheet, columns, [("1-1", "sound", "", None, "ja")])
+
+        lines = judged_precision(sheet)
+
+        self.assertEqual(
+            lines,
+            [
+                "similar sound: 1 of 1 right (100.0%)",
+                "similar all: 1 of 1 right (100.0%)",
+                "not judged: 0",
+            ],
+        )
+
+    def test_an_invalid_tier_names_the_line_but_not_the_value(self) -> None:
+        sheet = self.root / "judged.csv"
+        self.write_judged(sheet, SHEET_COLUMNS, [("1-1", "sound", "", "Ærwyn", "ja")])
+
+        with self.assertRaisesRegex(
+            CalibrationError, "line 2: field 'relevance'"
+        ) as caught:
+            judged_precision(sheet)
+        self.assertNotIn("Ærwyn", str(caught.exception))
+
+    @staticmethod
+    def write_judged(
+        sheet: Path,
+        columns: tuple[str, ...],
+        rows: list[tuple[str, str, str, str | None, str]],
+    ) -> None:
+        with sheet.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(columns)
+            for hint, method, score, tier, correct in rows:
+                fields = {
+                    "hint": hint,
+                    "segment": "1",
+                    "time": "?",
+                    "heard": "Grauwassr",
+                    "candidates": "Grauwasser",
+                    "method": method,
+                    "score": score,
+                    "ambiguous": "nein",
+                    "relevance": tier,
+                    "correct": correct,
+                }
+                writer.writerow(fields[column] for column in columns)
 
     def test_a_sheet_saved_by_a_german_spreadsheet_is_read(self) -> None:
         sheet = self.root / "judged.csv"
         sheet.write_text(
             ";".join((*SHEET_COLUMNS, "note"))
-            + "\r\n1-1;1;?;Grauwassr;Grauwasser;spelling;0,970;nein;ja;x\r\n",
+            + "\r\n1-1;1;?;Grauwassr;Grauwasser;spelling;0,970;nein;pc;ja;x\r\n",
             encoding="utf-8-sig",
         )
 
@@ -294,7 +345,7 @@ class SimilarSheetTest(unittest.TestCase):
         sheet = self.root / "judged.csv"
         sheet.write_text(
             ",".join(SHEET_COLUMNS)
-            + "\n1-1,1,?,Grauwassr,Grauwasser,sound,,nein,Ærwyn\n",
+            + "\n1-1,1,?,Grauwassr,Grauwasser,sound,,nein,pc,Ærwyn\n",
             encoding="utf-8",
         )
 

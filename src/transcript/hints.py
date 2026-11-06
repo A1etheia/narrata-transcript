@@ -94,6 +94,11 @@ class Hint:
     candidates: tuple[Candidate, ...]  # in glossary order
     ambiguous: bool
 
+    @property
+    def nearest_relevance(self) -> Relevance:
+        """The nearest tier among the candidates; a hint has at least one."""
+        return min((c.relevance for c in self.candidates), key=RELEVANCE_TIERS.index)
+
 
 @dataclass(frozen=True)
 class _Token:

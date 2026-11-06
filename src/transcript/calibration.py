@@ -26,15 +26,18 @@ from collections.abc import Iterable, Sequence
 from dataclasses import astuple, dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
+from typing import TypeVar
 
 from transcript.config import LEVELS, Level, UncertaintyThresholds
 from transcript.hints import stored_hints
 from transcript.jsonfile import DataFileError
+from transcript.narrata import RELEVANCE_TIERS, Relevance
 from transcript.reference import Passage, ReferenceTranscript, load_reference
 from transcript.session import SessionPaths
 from transcript.timecode import format_ms
 from transcript.uncertainty import PassageRating, Rule, segment_assessment
 
+_K = TypeVar("_K")
 _TOKEN = re.compile(r"[\w'-]+")
 _LABEL = re.compile(r"^\s*([^\s:]+):")
 _NOTE = re.compile(r"\[[^\]]*\]")
@@ -50,6 +53,7 @@ SHEET_COLUMNS = (
     "method",
     "score",
     "ambiguous",
+    "relevance",
     "correct",
 )
 _YES = {"j", "ja", "y", "yes", "1", "true"}
@@ -416,6 +420,7 @@ class SheetRow:
     method: str
     score: str
     ambiguous: bool
+    relevance: Relevance  # the nearest tier among the candidates
 
 
 def similar_sheet(paths: SessionPaths, indices: Iterable[int]) -> list[SheetRow]:
@@ -436,6 +441,7 @@ def similar_sheet(paths: SessionPaths, indices: Iterable[int]) -> list[SheetRow]
                     method=hint.method or "",
                     score="" if hint.score is None else f"{hint.score:.3f}",
                     ambiguous=hint.ambiguous,
+                    relevance=hint.nearest_relevance,
                 )
             )
     if len(rows) <= SHEET_SIZE:
@@ -460,13 +466,18 @@ def write_sheet(path: Path, rows: Sequence[SheetRow]) -> None:
                     row.method,
                     row.score,
                     "ja" if row.ambiguous else "nein",
+                    row.relevance,
                     "",
                 )
             )
 
 
 def judged_precision(path: Path) -> list[str]:
-    """Precision of the judged `similar` hints per method and score band."""
+    """Precision of the judged `similar` hints per method and score band.
+
+    A sheet with a `relevance` column, written since TOOL-83, also gives the
+    precision per method and relevance tier.
+    """
     try:
         with path.open(encoding="utf-8-sig", newline="") as handle:
             # Spreadsheets in a German locale save with ';'; extra columns are kept.
@@ -482,7 +493,9 @@ def judged_precision(path: Path) -> list[str]:
         raise CalibrationError(f"{path}: judged sheet lacks the columns of a sheet")
     if not rows:
         raise CalibrationError(f"{path}: judged sheet lists no hints")
+    tiered = "relevance" in columns
     groups: dict[str, list[int]] = {}
+    tiers: dict[tuple[str, str], list[int]] = {}
     open_rows = 0
     for number, row in enumerate(rows, start=2):
         answer = (row.get("correct") or "").strip().casefold()
@@ -493,12 +506,24 @@ def judged_precision(path: Path) -> list[str]:
                 )
             open_rows += 1
             continue
-        tally = groups.setdefault(_band(row), [0, 0])
-        tally[0] += 1
-        tally[1] += answer in _YES
+        right = answer in _YES
+        _count(groups, _band(row), right)
+        if tiered:
+            tier = (row.get("relevance") or "").strip()
+            if tier not in RELEVANCE_TIERS:
+                raise CalibrationError(
+                    f"{path}: line {number}: field 'relevance' invalid"
+                )
+            _count(tiers, (_method(row), tier), right)
+    by_tier = sorted(
+        tiers.items(), key=lambda i: (i[0][0], RELEVANCE_TIERS.index(i[0][1]))
+    )
+    named = sorted(groups.items()) + [
+        (f"{method} / {tier}", tally) for (method, tier), tally in by_tier
+    ]
     lines = []
     total = [sum(t[0] for t in groups.values()), sum(t[1] for t in groups.values())]
-    for name, (judged, right) in sorted(groups.items()) + [("all", tuple(total))]:
+    for name, (judged, right) in named + [("all", total)]:
         lines.append(
             f"similar {name}: {right} of {judged} right ({_share(right, judged)})"
         )
@@ -506,8 +531,18 @@ def judged_precision(path: Path) -> list[str]:
     return lines
 
 
+def _count(table: dict[_K, list[int]], key: _K, right: bool) -> None:
+    tally = table.setdefault(key, [0, 0])
+    tally[0] += 1
+    tally[1] += right
+
+
+def _method(row: dict[str, str]) -> str:
+    return (row.get("method") or "").strip() or "unknown"
+
+
 def _band(row: dict[str, str]) -> str:
-    method = (row.get("method") or "").strip() or "unknown"
+    method = _method(row)
     if method != "spelling":
         return method
     try:
