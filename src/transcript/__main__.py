@@ -523,7 +523,9 @@ def _transcribe(
     if run.load_error is not None:
         print(f"error: {run.load_error}", file=sys.stderr)
     try:
-        found = hints.review_session(paths, (o.index for o in run.outcomes), domain)
+        found = hints.review_session(
+            paths, (o.index for o in run.outcomes), domain, config.review_similar
+        )
     except DataFileError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

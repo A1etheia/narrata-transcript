@@ -8,6 +8,7 @@ from pathlib import Path
 from test_glossary import entry, glossary
 from test_reference import minimal
 
+from transcript.config import SimilarThresholds
 from transcript.domain import DomainContext, Origin
 from transcript.hints import (
     Hint,
@@ -160,6 +161,32 @@ class SimilarTest(unittest.TestCase):
 
         self.assertTrue(hint.ambiguous)
         self.assertEqual([c.ref for c in hint.candidates], [first.ref, second.ref])
+
+    def test_the_spelling_threshold_comes_from_the_configuration(self) -> None:
+        place = entry("Grauwasser", entry_id=1)
+        reference = spoken("Grauwasa")
+
+        self.assertEqual(find_hints(reference, domain(place)), ())
+        hint = only(
+            find_hints(reference, domain(place), SimilarThresholds(min_ratio=0.75))
+        )
+        self.assertEqual((hint.signal, hint.method), ("similar", "spelling"))
+
+    def test_the_length_rules_come_from_the_configuration(self) -> None:
+        place = entry("Grauwasser", entry_id=1)
+        reference = spoken("Grauwasserr")
+
+        self.assertEqual(
+            find_hints(reference, domain(place), SimilarThresholds(min_length=11)), ()
+        )
+        self.assertEqual(
+            find_hints(
+                spoken("Grauwasserrrr"),
+                domain(place),
+                SimilarThresholds(min_ratio=0.8, max_length_deviation=0.2),
+            ),
+            (),
+        )
 
     def test_short_or_lowercase_words_give_no_hint(self) -> None:
         place = entry("Graufels", "Ruhe", entry_id=4)

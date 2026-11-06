@@ -1,11 +1,12 @@
 """Base configuration: reads the YAML file and reports problems by file and key."""
 
+import dataclasses
 import math
 import re
 import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar, Literal, get_args
 
 import yaml
 
@@ -22,6 +23,7 @@ _TOP_LEVEL_KEYS = {
     "diarization",
     "narrata",
     "knowledge",
+    "review",
     "debug",
 }
 _PATHS_KEYS = {"root"}
@@ -52,9 +54,72 @@ _LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 _DEVICES = ("auto", "cpu", "cuda")  # for every model-backed step
 MAX_RETRIES = 5  # per segment; the cap rules out endless retry loops
 
+# The tiers of the Narrata contract's `confidence_tier`, from safe to unsafe.
+Level = Literal["confident", "needs_review", "uncertain"]
+LEVELS: tuple[Level, ...] = get_args(Level)
+
 
 class ConfigError(Exception):
     """The configuration is missing or invalid; the message is meant for the user."""
+
+
+@dataclass(frozen=True)
+class SimilarThresholds:
+    """When a recognised span counts as `similar` to a glossary term (TOOL-44)."""
+
+    min_ratio: float = 0.85  # difflib ratio of the spellings
+    min_length: int = 4  # letters a term and a span need
+    max_length_deviation: float = 0.3  # of the term's length
+
+
+@dataclass(frozen=True)
+class UncertaintyThresholds:
+    """The rules that rate a passage (TOOL-35); start values until calibrated."""
+
+    word_low: float = 0.5  # a word below counts as low confidence
+    word_very_low: float = 0.2  # one word below makes the passage needs_review
+    low_share_review: float = 0.2  # share of low words for needs_review
+    low_share_uncertain: float = 0.5  # share of low words for uncertain
+    no_speech_prob: float = 0.6  # at or above: likely not speech
+    avg_logprob: float = -1.0  # at or below: the decoder was unsure
+    compression_ratio: float = 2.4  # at or above: repetitive output
+    gap_ms: int = 1500  # longest silence between two words of a passage
+    min_words_per_second: float = 1.0  # sparser speech may hide omitted words
+    similar_level: Level = "needs_review"  # what a `similar` hint raises to
+
+    # (lower, upper): the first may not exceed the second
+    ORDERED: ClassVar[tuple[tuple[str, str], ...]] = (
+        ("word_very_low", "word_low"),
+        ("low_share_review", "low_share_uncertain"),
+    )
+
+    def __post_init__(self) -> None:
+        for low, high in self.ORDERED:
+            if getattr(self, low) > getattr(self, high):
+                raise ValueError(f"{low} must not exceed {high}")
+
+
+# Per threshold: a choice of values, or a whole number or number within
+# inclusive bounds.
+_Spec = tuple[str, Any, Any]
+_SIMILAR_SPEC: dict[str, _Spec] = {
+    "min_ratio": ("number", 0, 1),
+    "min_length": ("whole", 1, 50),
+    "max_length_deviation": ("number", 0, 0.9),
+}
+_UNCERTAINTY_SPEC: dict[str, _Spec] = {
+    "word_low": ("number", 0, 1),
+    "word_very_low": ("number", 0, 1),
+    "low_share_review": ("number", 0, 1),
+    "low_share_uncertain": ("number", 0, 1),
+    "no_speech_prob": ("number", 0, 1),
+    "avg_logprob": ("number", -10, 0),
+    "compression_ratio": ("number", 1, 10),
+    "gap_ms": ("whole", 100, 60000),
+    "min_words_per_second": ("number", 0, 10),
+    "similar_level": ("choice", LEVELS, None),
+}
+_REVIEW_KEYS = {"similar", "uncertainty"}
 
 
 @dataclass(frozen=True)
@@ -83,6 +148,8 @@ class Config:
     keyword_budget: dict[str, int] = field(
         default_factory=lambda: dict(DEFAULT_KEYWORD_BUDGET)
     )
+    review_similar: SimilarThresholds = SimilarThresholds()
+    review_uncertainty: UncertaintyThresholds = UncertaintyThresholds()
 
     def session_paths(self, key: SessionKey) -> SessionPaths:
         return SessionPaths(key, self.root)
@@ -180,6 +247,22 @@ def load_config(path: Path) -> Config:
     knowledge = _section(path, data, "knowledge", _KNOWLEDGE_KEYS)
     keyword_budget = _keyword_budget(path, knowledge.get("keyword_budget"))
 
+    review = _section(path, data, "review", _REVIEW_KEYS)
+    similar_values = _thresholds(path, review, "review.", "similar", _SIMILAR_SPEC)
+    similar = SimilarThresholds(**similar_values)
+    uncertainty_values = _thresholds(
+        path, review, "review.", "uncertainty", _UNCERTAINTY_SPEC
+    )
+    merged = dataclasses.asdict(UncertaintyThresholds()) | uncertainty_values
+    for low, high in UncertaintyThresholds.ORDERED:
+        if merged[low] > merged[high]:
+            raise _invalid(
+                path,
+                f"review.uncertainty.{low}",
+                f"must not exceed review.uncertainty.{high}",
+            )
+    uncertainty = UncertaintyThresholds(**merged)
+
     return Config(
         language=language,
         root=Path(root),
@@ -201,6 +284,8 @@ def load_config(path: Path) -> Config:
         narrata_recent_sessions=recent_sessions,
         narrata_archive_limit=archive_limit,
         keyword_budget=keyword_budget,
+        review_similar=similar,
+        review_uncertainty=uncertainty,
     )
 
 
@@ -237,6 +322,10 @@ def format_config(config: Config) -> str:
                 "archive_limit": config.narrata_archive_limit,
             },
             "knowledge": {"keyword_budget": dict(config.keyword_budget)},
+            "review": {
+                "similar": dataclasses.asdict(config.review_similar),
+                "uncertainty": dataclasses.asdict(config.review_uncertainty),
+            },
             "debug": config.debug,
         },
         sort_keys=False,
@@ -262,15 +351,35 @@ def _read_mapping(path: Path) -> dict[str, Any]:
 
 
 def _section(
-    path: Path, data: dict[str, Any], key: str, allowed: set[str]
+    path: Path, data: dict[str, Any], key: str, allowed: set[str], prefix: str = ""
 ) -> dict[str, Any]:
+    """The mapping under `key`; `prefix` names its parent in messages, e.g. `review.`."""
+    name = prefix + key
     section = data.get(key)
     if section is None:
         return {}
     if not isinstance(section, dict):
-        raise _invalid(path, key, "must be a mapping")
-    _reject_unknown_keys(path, section, allowed, f"{key}.")
+        raise _invalid(path, name, "must be a mapping")
+    _reject_unknown_keys(path, section, allowed, f"{name}.")
     return section
+
+
+def _thresholds(
+    path: Path, parent: dict[str, Any], prefix: str, key: str, spec: dict[str, _Spec]
+) -> dict[str, Any]:
+    """The values given under `key`, checked against `spec`; absent keys are left out."""
+    section = _section(path, parent, key, set(spec), prefix)
+    name = prefix + key
+    values: dict[str, Any] = {}
+    for item in sorted(k for k, v in section.items() if v is not None):
+        kind, low, high = spec[item]
+        if kind == "choice":
+            values[item] = _choice(path, section, name, item, "", low)
+        elif kind == "whole":
+            values[item] = _bounded_int(path, section, name, item, 0, (low, high))
+        else:
+            values[item] = _bounded_number(path, section, name, item, (low, high))
+    return values
 
 
 def _reject_unknown_keys(
@@ -331,6 +440,23 @@ def _bounded_int(
             f"must be a whole number from {low} to {high}",
         )
     return value
+
+
+def _bounded_number(
+    path: Path,
+    section: dict[str, Any],
+    section_name: str,
+    key: str,
+    bounds: tuple[float, float],
+) -> float:
+    """A present number within inclusive `bounds`, as a float."""
+    value = section[key]
+    low, high = bounds
+    if not _is_number(value, (int, float)) or not low <= value <= high:
+        raise _invalid(
+            path, f"{section_name}.{key}", f"must be a number from {low} to {high}"
+        )
+    return float(value)
 
 
 def _keyword_budget(path: Path, value: Any) -> dict[str, int]:
