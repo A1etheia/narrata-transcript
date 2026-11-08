@@ -29,8 +29,9 @@ from typing import Any, Literal, get_args
 
 from transcript import jsonfile
 from transcript.jsonfile import DataFileError, write_atomic
+from transcript.manifest import Manifest
 from transcript.narrata import Participant, is_narrata_id
-from transcript.reference import ReferenceTranscript
+from transcript.reference import ReferenceTranscript, load_transcribed
 from transcript.session import SessionPaths
 
 ASSIGNMENT_FORMAT_VERSION = 1
@@ -188,6 +189,14 @@ def _labelled(references: Iterable[ReferenceTranscript]) -> dict[int, _Labelled]
         r.segment.index: _Labelled(segment_labels(r), labels_version(r))
         for r in sorted(references, key=lambda r: r.segment.index)
     }
+
+
+def diarized_references(
+    paths: SessionPaths, manifest: Manifest
+) -> tuple[ReferenceTranscript, ...]:
+    """The transcribed and diarized segments of `manifest`, in order."""
+    found = (load_transcribed(paths, segment.index) for segment in manifest.segments)
+    return tuple(r for r in found if r is not None and r.diarization is not None)
 
 
 def check(

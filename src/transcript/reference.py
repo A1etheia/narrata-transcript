@@ -378,6 +378,14 @@ def load_reference(paths: SessionPaths, index: int) -> ReferenceTranscript:
     return reference
 
 
+def load_transcribed(paths: SessionPaths, index: int) -> ReferenceTranscript | None:
+    """The reference of segment `index` if it exists and was transcribed."""
+    if not paths.reference(index).is_file():
+        return None
+    reference = load_reference(paths, index)
+    return reference if reference.status == "transcribed" else None
+
+
 def to_json(reference: ReferenceTranscript) -> dict[str, Any]:
     asr = reference.asr
     diarization = reference.diarization

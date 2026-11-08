@@ -2,6 +2,7 @@ import contextlib
 import csv
 import dataclasses
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -45,7 +46,13 @@ from transcript.asr import AudioInputError, BackendUnavailableError, ResourceErr
 from transcript.asr.fake import FakeBackend
 from transcript.audio_tools import AudioToolError, AudioTools, ToolInfo
 from transcript.config import DEFAULT_KEYWORD_BUDGET
-from transcript.reference import Passage, Word, load_reference, update_reference
+from transcript.reference import (
+    Diarization,
+    Passage,
+    Word,
+    load_reference,
+    update_reference,
+)
 from transcript.session import SessionKey, SessionPaths
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -1515,6 +1522,142 @@ class DiarizeCommandTest(unittest.TestCase):
 
         self.assertEqual((code, stdout), (2, ""))
         self.assertIn("error: pyannote: model not in the local cache", stderr)
+
+
+class SpeakersCommandTest(unittest.TestCase):
+    LABELS = ("SPEAKER_00", "SPEAKER_01")
+
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.config = self.root / "config.yaml"
+        self.config.write_text(
+            f"language: de\npaths:\n  root: {self.root}\n", encoding="utf-8"
+        )
+        self.paths = SessionPaths(KEY, self.root)
+        update_reference(
+            self.paths,
+            minimal(
+                passages=(
+                    Passage(
+                        index=1,
+                        text=f" Zum {SECRET}.",
+                        start_ms=0,
+                        end_ms=9_000,
+                        words=(Word(f" {SECRET}", 0, 9_000, 0.9, "SPEAKER_00"),),
+                        speaker="SPEAKER_00",
+                    ),
+                    Passage(
+                        index=2,
+                        text=" Ja.",
+                        start_ms=9_200,
+                        end_ms=9_400,
+                        words=(Word(" Ja.", 9_200, 9_400, 0.9, "SPEAKER_01"),),
+                        speaker="SPEAKER_01",
+                    ),
+                ),
+                diarization=Diarization(
+                    backend_id="fake", model="fake", labels=self.LABELS
+                ),
+            ),
+        )
+        first = dataclasses.replace(  # the segment `minimal` was transcribed from
+            SEGMENT,
+            index=1,
+            file="segment-01.wav",
+            source=dataclasses.replace(SEGMENT.source, sha256="ab" * 32),
+        )
+        patcher = mock.patch.object(
+            transcript_main.manifest,
+            "load_manifest",
+            return_value=dataclasses.replace(MANIFEST, segments=(first,)),
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.paths.narrata_context.parent.mkdir(parents=True, exist_ok=True)
+        self.paths.narrata_context.write_bytes(encoded(context()))
+        knowledge.build_snapshot(self.paths, DEFAULT_KEYWORD_BUDGET)
+
+    def speakers(self) -> tuple[int, str, str]:
+        return run("speakers", str(KEY), "--config", str(self.config))
+
+    def assert_nothing_secret(self, output: str) -> None:
+        for secret in (SECRET, NAME, "SPEAKER_", "user"):
+            self.assertNotIn(secret, output)
+
+    def test_writes_template_and_samples_and_prints_only_counts(self) -> None:
+        code, stdout, stderr = self.speakers()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "beispielgruppe/042: speakers: 1 segment(s), 2 label(s): "
+            "0 multiple, 2 open, 0 person, 0 unknown",
+            stdout,
+        )
+        self.assertIn("1 label(s) under 3% of their segment's speech time", stdout)
+        self.assertIn(f"wrote template {self.paths.speaker_assignment}", stdout)
+        self.assert_nothing_secret(stdout + stderr)
+        sheet = self.paths.speaker_samples.read_text(encoding="utf-8")
+        self.assertIn(SECRET, sheet)  # in the file, never printed
+        self.assertIn(NAME, sheet)
+
+    def test_keeps_the_assignment_and_reports_entries_that_do_not_fit(self) -> None:
+        self.speakers()
+        data = json.loads(self.paths.speaker_assignment.read_text(encoding="utf-8"))
+        data["entries"][0].update(assigned="person", user_id=3)
+        data["entries"][1].update(assigned="person", user_id=99)  # not a participant
+        self.paths.speaker_assignment.write_text(json.dumps(data), encoding="utf-8")
+        before = self.paths.speaker_assignment.read_bytes()
+
+        code, stdout, stderr = self.speakers()
+
+        self.assertEqual(code, 1, stderr)
+        self.assertIn("1 open, 1 person", stdout)
+        self.assertIn("entry 2 (segment 1) not applied: unknown person", stderr)
+        self.assertNotIn("wrote template", stdout)
+        self.assertEqual(self.paths.speaker_assignment.read_bytes(), before)
+        self.assertNotIn("99", stdout + stderr)
+        self.assert_nothing_secret(stdout + stderr)
+
+    def test_warns_when_two_labels_of_a_segment_are_one_person(self) -> None:
+        self.speakers()
+        data = json.loads(self.paths.speaker_assignment.read_text(encoding="utf-8"))
+        for item in data["entries"]:
+            item.update(assigned="person", user_id=3)
+        self.paths.speaker_assignment.write_text(json.dumps(data), encoding="utf-8")
+
+        code, stdout, stderr = self.speakers()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "warning: segment 1: 2 labels assigned to one person, merged", stdout
+        )
+
+    def test_without_a_snapshot_asks_for_it(self) -> None:
+        self.paths.knowledge_snapshot.unlink()
+
+        code, _, stderr = self.speakers()
+
+        self.assertEqual(code, 2)
+        self.assertIn("run transcript snapshot", stderr)
+        self.assertFalse(self.paths.speaker_assignment.exists())
+
+    def test_without_a_diarized_segment_asks_for_diarize(self) -> None:
+        reference = load_reference(self.paths, 1)
+        update_reference(
+            self.paths,
+            dataclasses.replace(
+                reference,
+                passages=(Passage(index=1, text=" x"),),
+                diarization=None,
+            ),
+        )
+
+        code, _, stderr = self.speakers()
+
+        self.assertEqual(code, 2)
+        self.assertIn("no diarized segment; run transcript diarize", stderr)
 
 
 if __name__ == "__main__":
