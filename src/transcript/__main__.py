@@ -16,12 +16,14 @@ from transcript import (
     audio_tools,
     calibration,
     candidates,
+    decisions,
     diagnosis,
     diarization,
     hints,
     knowledge,
     manifest,
     narrata,
+    review_sheet,
     uncertainty,
 )
 from transcript.asr import BackendError
@@ -188,6 +190,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     calibrate_command.add_argument(
         "--similar-judged", type=Path, help="read a judged sheet of similar hints"
     )
+    review_export_command = commands.add_parser(
+        "review-export",
+        help="Write the review candidates still to decide as a CSV for a spreadsheet.",
+    )
+    review_export_command.add_argument("session", help="session key <group>/<ordinal>")
+    review_export_command.add_argument(
+        "--all",
+        action="store_true",
+        help="list every candidate, decided ones with their decision",
+    )
+    review_export_command.add_argument(
+        "--force",
+        action="store_true",
+        help="replace an existing sheet, with any decisions not imported yet",
+    )
     for command in (
         config_command,
         extract_command,
@@ -198,6 +215,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         diarize_command,
         assess_command,
         calibrate_command,
+        review_export_command,
     ):
         command.add_argument(
             "--config",
@@ -235,6 +253,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _calibrate(args)
         if args.command == "assess":
             return _assess(args.session, args.config, args.segment, args.hints)
+        if args.command == "review-export":
+            return _review_export(args.session, args.config, args.all, args.force)
     parser.print_help()
     return 0
 
@@ -700,6 +720,41 @@ def _measure(
         config.review_uncertainty,
     )
     return report.lines()
+
+
+def _review_export(
+    raw_key: str, config_path: Path, include_all: bool, force: bool
+) -> int:
+    """Only counts and candidate IDs reach the console (TOOL-66). Exit 0 or 2."""
+    try:
+        key = SessionKey.parse(raw_key)
+        paths = _load_config(config_path).session_paths(key)
+        if not paths.review_candidates.is_file():
+            raise ValueError(
+                f"{paths.review_candidates}: review candidates not found; "
+                "run transcript assess"
+            )
+        sheet = review_sheet.review_sheet(
+            candidates.load_candidates(paths),
+            decisions.load_decisions(paths),
+            include_all,
+        )
+        review_sheet.write_sheet(paths, sheet, force)
+    except (ValueError, ConfigError, DataFileError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    by_status = ", ".join(f"{n} {status}" for status, n in sorted(sheet.counts.items()))
+    print(
+        f"{key}: review sheet: {len(sheet.rows)} row(s)"
+        + (f": {by_status}" if by_status else "")
+    )
+    if sheet.stale:
+        print(f"{key}: {len(sheet.stale)} stale decision(s), shown as earlier_decision")
+    if sheet.orphaned:
+        ids = ", ".join(decision.id for decision in sheet.orphaned)
+        print(f"{key}: {len(sheet.orphaned)} orphaned decision(s), not listed: {ids}")
+    print(f"wrote {paths.review_sheet}")
+    return 0
 
 
 def _rate_passages(
