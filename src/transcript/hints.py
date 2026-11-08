@@ -398,6 +398,13 @@ class SegmentHints:
             and self.reference_processed_at == reference.processing.processed_at
         )
 
+    def by_passage(self) -> dict[int, tuple[Hint, ...]]:
+        """The hints per passage index, each in transcript order."""
+        grouped: dict[int, list[Hint]] = defaultdict(list)
+        for hint in self.hints:
+            grouped[hint.passage].append(hint)
+        return {passage: tuple(found) for passage, found in grouped.items()}
+
     def counts(self) -> Counter[str]:
         """Hints per signal, plus `ambiguous` across both."""
         counts = Counter(hint.signal for hint in self.hints)
@@ -497,7 +504,7 @@ def load_hints(paths: SessionPaths, index: int) -> SegmentHints:
         reference_processed_at=_field(reference, "processed_at", str, path),
         keywords_used=_field(data, "keywords_used", int, path),
         hints=tuple(
-            _hint_from(item, number, path)
+            hint_from(item, number, path)
             for number, item in enumerate(
                 jsonfile.list_of(data, "hints", dict, path, HintsError), start=1
             )
@@ -505,7 +512,7 @@ def load_hints(paths: SessionPaths, index: int) -> SegmentHints:
     )
 
 
-def _hint_from(data: dict[str, Any], number: int, path: Path) -> Hint:
+def hint_from(data: dict[str, Any], number: int, path: Path) -> Hint:
     """One hint; an error from it names the hint number."""
     try:
         method = _optional(data, "method", str, path)

@@ -97,18 +97,14 @@ def assess(
 
     Hints made from another version of the transcript are not used.
     """
-    by_passage: dict[int, list[Hint]] | None = None
-    if hints is not None and hints.matches(reference):
-        by_passage = {}
-        for hint in hints.hints:
-            by_passage.setdefault(hint.passage, []).append(hint)
+    used = usable_hints(hints, reference)
     rater = _Rater(
         thresholds,
         timed=reference.asr.delivers_times,
         overlaps=None
         if reference.diarization is None
         else _Overlaps(reference.diarization.overlaps),
-        hints=by_passage,
+        hints=None if used is None else used.by_passage(),
     )
     return tuple(rater.rate(passage) for passage in reference.passages)
 
@@ -141,7 +137,7 @@ class _Rater:
     limits: UncertaintyThresholds
     timed: bool  # the backend can deliver times
     overlaps: _Overlaps | None  # None: no diarization
-    hints: dict[int, list[Hint]] | None  # by passage; None: no usable hints
+    hints: dict[int, tuple[Hint, ...]] | None  # by passage; None: no usable hints
 
     def rate(self, passage: Passage) -> PassageRating:
         span = _span(passage)
@@ -359,13 +355,38 @@ class SegmentAssessment:
         counts.update(rating.level for rating in self.ratings)
         return counts
 
+    def matches(self, reference: ReferenceTranscript) -> bool:
+        """Whether this rating was made from this version of `reference`."""
+        return (
+            self.segment == reference.segment.index
+            and self.reference_processed_at == reference.processing.processed_at
+        )
+
+    def used_hints(self, hints: SegmentHints | None) -> SegmentHints | None:
+        """`hints` if this rating was made with them, else `None`."""
+        if (
+            hints is None
+            or hints.segment != self.segment
+            or hints.reference_processed_at != self.reference_processed_at
+            or hints.knowledge_snapshot_id != self.knowledge_snapshot_id
+        ):
+            return None
+        return hints
+
+
+def usable_hints(
+    hints: SegmentHints | None, reference: ReferenceTranscript
+) -> SegmentHints | None:
+    """`hints` if they were made from this version of `reference`, else `None`."""
+    return hints if hints is not None and hints.matches(reference) else None
+
 
 def segment_assessment(
     reference: ReferenceTranscript,
     hints: SegmentHints | None,
     thresholds: UncertaintyThresholds,
 ) -> SegmentAssessment:
-    used = hints if hints is not None and hints.matches(reference) else None
+    used = usable_hints(hints, reference)
     return SegmentAssessment(
         segment=reference.segment.index,
         reference_processed_at=reference.processing.processed_at,
@@ -421,15 +442,7 @@ def write_assessment(
             "thresholds": dataclasses.asdict(assessment.thresholds),
             # an overview for people reading the file; `load_assessment` ignores it
             "counts": dict(assessment.counts()),
-            "passages": [
-                {
-                    "passage": rating.passage,
-                    "level": rating.level,
-                    "reasons": [dataclasses.asdict(r) for r in rating.reasons],
-                    "missing": list(rating.missing),
-                }
-                for rating in assessment.ratings
-            ],
+            "passages": [rating_json(rating) for rating in assessment.ratings],
         },
     )
 
@@ -451,7 +464,7 @@ def load_assessment(paths: SessionPaths, index: int) -> SegmentAssessment:
         knowledge_snapshot_id=_optional(data, "knowledge_snapshot_id", str, path),
         thresholds=_thresholds_from(_field(data, "thresholds", dict, path), path),
         ratings=tuple(
-            _rating_from(item, number, path)
+            rating_from(item, number, path)
             for number, item in enumerate(
                 jsonfile.list_of(data, "passages", dict, path, UncertaintyError),
                 start=1,
@@ -470,7 +483,17 @@ def _thresholds_from(data: dict[str, Any], path: Path) -> UncertaintyThresholds:
         raise UncertaintyError(f"{path}: field 'thresholds' invalid") from None
 
 
-def _rating_from(data: dict[str, Any], number: int, path: Path) -> PassageRating:
+def rating_json(rating: PassageRating) -> dict[str, Any]:
+    """The JSON fields of a rating; review candidates store the same ones."""
+    return {
+        "passage": rating.passage,
+        "level": rating.level,
+        "reasons": [dataclasses.asdict(r) for r in rating.reasons],
+        "missing": list(rating.missing),
+    }
+
+
+def rating_from(data: dict[str, Any], number: int, path: Path) -> PassageRating:
     """One passage rating; an error from it names the entry number."""
     try:
         return PassageRating(
