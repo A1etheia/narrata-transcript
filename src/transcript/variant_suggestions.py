@@ -209,6 +209,20 @@ def write_suggestions(paths: SessionPaths, suggestions: VariantSuggestions) -> N
     )
 
 
-def remove_suggestions(paths: SessionPaths) -> None:
-    """Remove the suggestion file, which without knowledge would be stale."""
-    paths.review_variant_suggestions.unlink(missing_ok=True)
+def review_session(
+    paths: SessionPaths,
+    found: SessionCandidates,
+    decisions: SessionDecisions,
+    domain: DomainContext | None,
+) -> VariantSuggestions | None:
+    """Write the session's suggestions; what was written.
+
+    Without knowledge there is nothing to suggest for: an older file is removed
+    and the result is `None`.
+    """
+    if domain is None:
+        paths.review_variant_suggestions.unlink(missing_ok=True)
+        return None
+    suggestions = suggest(found, decisions, domain)
+    write_suggestions(paths, suggestions)
+    return suggestions

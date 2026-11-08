@@ -27,6 +27,7 @@ from transcript import (
     review_import,
     review_sheet,
     uncertainty,
+    variant_suggestions,
 )
 from transcript.asr import BackendError
 from transcript.asr.whisper import WhisperBackend
@@ -209,7 +210,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     review_import_command = commands.add_parser(
         "review-import",
-        help="Read the decisions filled into the review sheet into decisions.json.",
+        help="Read the decisions filled into the review sheet into decisions.json "
+        "and suggest new ASR misrecognitions from the corrections.",
     )
     review_import_command.add_argument("session", help="session key <group>/<ordinal>")
     for command in (
@@ -762,16 +764,17 @@ def _review_export(
 def _review_import(raw_key: str, config_path: Path) -> int:
     """Only counts, rows, IDs and fields reach the console (TOOL-66).
 
-    Exit 0, or 2 if the sheet is refused or a row was left out; the valid rows
-    are stored either way.
+    Exit 0, or 2 if the sheet is refused, a row was left out or the suggestions
+    of new misrecognitions could not be made; the valid rows are stored either way.
     """
     try:
         key = SessionKey.parse(raw_key)
         paths = _load_config(config_path).session_paths(key)
         _require(paths.review_candidates, "review candidates", "assess")
         _require(paths.review_sheet, "review sheet", "review-export")
+        found = candidates.load_candidates(paths)
         result = review_import.import_rows(
-            candidates.load_candidates(paths),
+            found,
             decisions.load_decisions(paths),
             review_import.read_review_sheet(paths.review_sheet),
         )
@@ -789,7 +792,39 @@ def _review_import(raw_key: str, config_path: Path) -> int:
     )
     if result.changed:
         print(f"wrote {paths.review_decisions}")
-    return 2 if result.problems else 0
+    suggested = _suggest_variants(key, paths, found, result.decisions)
+    return 2 if result.problems or not suggested else 0
+
+
+def _suggest_variants(
+    key: SessionKey,
+    paths: SessionPaths,
+    found: candidates.SessionCandidates,
+    made: decisions.SessionDecisions,
+) -> bool:
+    """Write the suggested misrecognitions; counts only (TOOL-66). False on a problem.
+
+    Without a snapshot there is nothing to suggest for, and an older file goes.
+    """
+    try:
+        suggested = variant_suggestions.review_session(
+            paths, found, made, _domain(paths)
+        )
+    except DataFileError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return False
+    if suggested is None:
+        print(
+            f"{key}: no knowledge snapshot, no asr variant suggestions; "
+            "run transcript snapshot"
+        )
+        return True
+    print(
+        f"{key}: asr variant suggestions: {len(suggested.suggestions)} new, "
+        f"{suggested.known} known, {suggested.no_term} without glossary term"
+    )
+    print(f"wrote {paths.review_variant_suggestions}")
+    return True
 
 
 def _require(path: Path, what: str, command: str) -> None:

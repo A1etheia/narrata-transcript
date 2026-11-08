@@ -16,7 +16,7 @@ from transcript.variant_suggestions import (
     DecisionRef,
     OtherName,
     SuggestedEntry,
-    remove_suggestions,
+    review_session,
     suggest,
     write_suggestions,
 )
@@ -225,14 +225,23 @@ class SuggestionFileTest(_Case):
             [{"candidate": "s01-p0001", "decided_at": DECIDED}],
         )
 
-    def test_an_empty_list_is_still_written_and_can_be_removed(self) -> None:
-        write_suggestions(
-            self.paths, suggest(self.found, SessionDecisions(), domain(QUENDOLIN))
+    def test_an_empty_list_is_still_written(self) -> None:
+        written = review_session(
+            self.paths, self.found, SessionDecisions(), domain(QUENDOLIN)
         )
 
+        assert written is not None
+        self.assertEqual(written.suggestions, ())
         data = json.loads(self.paths.review_variant_suggestions.read_text("utf-8"))
         self.assertEqual(data["suggestions"], [])
 
-        remove_suggestions(self.paths)
-        remove_suggestions(self.paths)
+    def test_without_knowledge_an_older_file_is_removed(self) -> None:
+        review_session(self.paths, self.found, SessionDecisions(), domain(QUENDOLIN))
+
+        self.assertIsNone(
+            review_session(self.paths, self.found, SessionDecisions(), None)
+        )
         self.assertFalse(self.paths.review_variant_suggestions.exists())
+        self.assertIsNone(
+            review_session(self.paths, self.found, SessionDecisions(), None)
+        )
