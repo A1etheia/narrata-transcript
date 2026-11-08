@@ -30,7 +30,7 @@ In TOOL-35 lag die Präzision von `similar` über den Klang bei 29 %, über die 
 - Fixtures: *handled* — nur die fiktiven Begriffe der bestehenden Tests (`Grauwasser`).
 
 ## Contract-Check
-- Lesen des Kontexts: *handled* — IOA-1278 ändert laut Ticket-Kommentar nur den Inhalt, nicht die Form. Contract 1.1 gilt weiter, die Pipeline braucht keine Änderung. `event` bleibt in `ENTRY_TYPES` (`narrata.py:84`) zulässig, es kommt nur nicht mehr vor.
+- Lesen des Kontexts: *handled* — IOA-1278 ändert laut Ticket-Kommentar nur den Inhalt, nicht die Form. Narrata liefert inzwischen Contract 1.2. Die Pipeline akzeptiert jede 1.x, die Prüfung beim Abruf lief durch, die Pipeline braucht keine Änderung. `event` bleibt in `ENTRY_TYPES` (`narrata.py:84`) zulässig, es kommt nur nicht mehr vor.
 - Narrata-Änderung: *N/A, weil* keine nötig ist. Fällt die Entscheidung auf Abwarten, trägt IOA-1279 den Rest.
 - Messfehler durch Eigenbezug: *handled* — IOA-1278 lässt die aktuelle Sitzung im Fenster, wenn sie eine Quelle hat. Liegt in Narrata schon ein Transkript der Messsitzung, kämen ihre eigenen Begriffe nach `recent`. Der Bericht hält die Stufenzahlen des neuen Snapshots fest. Weichen sie von 3 / 0 / 113 / 86 ab, wird der Grund vor der Auswertung geklärt.
 
@@ -70,13 +70,16 @@ In TOOL-35 lag die Präzision von `similar` über den Klang bei 29 %, über die 
 - Verify: `scripts/check`, bei Regeländerung zusätzlich `assess` und `--similar-judged` am Bogen wiederholen
 - AC: Die Entscheidung ist begründet. Bei einer Regeländerung sind Konfiguration, Defaults und README nachgezogen.
 
+Umsetzung: Die Entscheidung fiel auf (a), keine Regeländerung. Chunk 4 ist damit reine Doku und wurde mit Chunk 3 in einem Commit zusammengelegt.
+
 ## Folge-Tickets
-- Kalibrierung nach IOA-1279 wiederholen, falls die Entscheidung auf Abwarten fällt: `[kein Ticket: entsteht erst mit der Entscheidung in Chunk 4, sonst entfällt es]`. Wird abgewartet, wird es vor dem Abschluss angelegt.
+- Kalibrierung nach IOA-1279 wiederholen: `[kein Ticket: entfällt, die Entscheidung wartet nicht auf IOA-1279]`
+- Archiv-Schreibtreffer am vollen Pilotlauf nach Methode und Stufe nachmessen: TOOL-60
+- `recent`-Fenster entlang der Datumsachse statt nach Ordinal (Befund während der Messung): IOA-1284
 
 ## Chunk-Tabelle
 | Chunk | Scope | Clear context after? |
 | --- | --- | --- |
 | 1 | Bogen: Spalte `relevance`, Präzision je Stufe | no |
 | 2 | `assess --hints` | yes |
-| 3 | Neumessung, Bericht | no |
-| 4 | Entscheidung, ggf. Regeländerung | no |
+| 3 + 4 | Neumessung, Bericht, Entscheidung (keine Regeländerung) | no |

@@ -95,9 +95,52 @@ Ein Teil der Fehlalarme kommt vom Glossar. Narrata hat für diese Sitzung keinen
 - [IOA-1278](https://alethe1a.atlassian.net/browse/IOA-1278) wählt das Fenster nach Sitzungen mit Quelle (Tagebuch oder Transkript) und nimmt Ereignisse aus dem Glossar.
 - [IOA-1279](https://alethe1a.atlassian.net/browse/IOA-1279) bringt ein Ausschluss-Kennzeichen für tote Begriffe und eine Pflege pro Sitzung.
 
-Ob Archiv-Treffer danach noch strenger behandelt werden müssen, misst [TOOL-83](https://alethe1a.atlassian.net/browse/TOOL-83) nach IOA-1278 mit einem neuen Bogen.
+Ob Archiv-Treffer danach noch strenger behandelt werden müssen, hat [TOOL-83](https://alethe1a.atlassian.net/browse/TOOL-83) nach IOA-1278 nachgemessen, siehe [Neumessung nach Relevanz-Stufe](#neumessung-nach-relevanz-stufe-tool-83). Ergebnis: Eine eigene Archiv-Regel lohnt sich nicht.
 
 `known_variant` ließ sich nicht messen, weil der Snapshot keine `asr_variants` enthält.
+
+## Neumessung nach Relevanz-Stufe (TOOL-83)
+
+Stand 2026-11-08. Nach [IOA-1278](https://alethe1a.atlassian.net/browse/IOA-1278) wählt Narrata das Fenster für `recent` nach Sitzungen mit Quelle und nimmt Ereignisse aus dem Glossar. Gemessen wurde dieselbe Sitzung mit derselben ASR. Kontext und Snapshot wurden neu geholt, die Hinweise mit `transcript assess --hints` neu erzeugt, ohne neu zu transkribieren.
+
+| | TOOL-35 | TOOL-83 |
+| --- | --- | --- |
+| Snapshot | `685c0402a061…`, Contract 1.1 | `186e030dc24e…`, Contract 1.2 |
+| Glossar (pc / session / recent / archive) | 3 / 0 / 0 / 199 | 3 / 0 / 92 / 50 |
+| `similar`-Hinweise, davon mehrdeutig | 413, 22 | 413, 22 |
+| Passagen `confident` / `needs_review` / `uncertain` | 2472 / 1170 / 201 | 2472 / 1170 / 201 |
+
+Die 57 Einträge weniger sind die Ereignisse. Ohne sie ergeben die Zahlen aus IOA-1278 (113 `recent`, 86 `archive`) genau die gemessenen. Ereignisse waren schon in TOOL-35 nie Kandidat eines Hinweises, ihre Titel sind Beschreibungen und keine Namen. Deshalb bleiben Hinweise und Bewertung gleich. Geändert hat sich nur die Stufe der Kandidaten. In Narrata lag noch kein Transkript der Sitzung, `recent` stammt also nur aus dem Tagebuch, und die Sitzung bewertet sich nicht selbst.
+
+In der Session verteilen sich die Hinweise so (Stufe = die nächste unter den Kandidaten):
+
+| Methode | `pc` | `recent` | `archive` |
+| --- | --- | --- | --- |
+| Klang | 7 | 267 | 38 |
+| Schreibung | 7 | 77 | 17 |
+
+**Bogen.** Der neue Bogen enthält wieder 50 Hinweise. 45 davon stehen inhaltlich gleich im Bogen aus TOOL-35, ihre Urteile wurden übernommen: Die Zeilen wurden maschinell verglichen, der Agent sah dabei nur Zählwerte. Die übrigen 5 Hinweise und einer, der damals offen geblieben war, wurden neu angehört.
+
+| Methode | `pc` | `recent` | `archive` | gesamt |
+| --- | --- | --- | --- | --- |
+| Klang | 1 von 2 | 10 von 32 (31 %) | 0 von 5 | 11 von 39 (28 %) |
+| Schreibung | — | 8 von 10 (80 %) | 0 von 1 | 8 von 11 (73 %) |
+| gesamt | 1 von 2 | 18 von 42 (43 %) | 0 von 6 | 19 von 50 (38 %) |
+
+Nach Score-Band ist die Schreibung zu 67 % (< 0,9; 2 von 3), 71 % (0,9–0,95; 5 von 7) und 100 % (≥ 0,95; 1 von 1) richtig.
+
+### Entscheidung
+
+**Keine eigene Regel für Archiv-Treffer, kein strengeres `min_ratio`. Auf IOA-1279 wird nicht gewartet.**
+
+- **Die Methode trennt, nicht die Stufe.** Klang-Treffer sind auch bei `recent` nur zu 31 % richtig. Seit TOOL-35 heben sie eine Passage nicht mehr an (`similar_sound_level: confident`). Die 38 Archiv-Klang-Treffer wirken sich also schon heute nicht auf die Bewertung aus.
+- **Archiv-Schreibung hat kaum Wirkung.** Nur 15 Passagen haben ausschließlich Archiv-Schreibtreffer, 5 davon sind auch aus anderem Grund markiert. Eine Archiv-Regel würde höchstens 10 der 1371 markierten Passagen ändern (0,7 %).
+- **Zu wenig Daten.** Für die Archiv-Schreibung gibt es einen beurteilten Hinweis. Darauf lässt sich keine Schwelle stützen.
+- **Das Archiv ist schon kleiner.** IOA-1278 hat den größten Teil der veralteten Treffer beseitigt: Archiv-Treffer sind 13 % der Hinweise, vorher jeder außer bei Spielfiguren.
+
+[IOA-1279](https://alethe1a.atlassian.net/browse/IOA-1279) bringt das Ausschluss-Kennzeichen trotzdem. Es räumt die Hinweisdatei für die Review auf ([TOOL-36](https://alethe1a.atlassian.net/browse/TOOL-36)), an der Bewertung ändert es nichts. [TOOL-60](https://alethe1a.atlassian.net/browse/TOOL-60) misst am vollen Pilotlauf erneut nach Methode und Stufe. Zeigen sich dort genug Archiv-Schreibtreffer mit schlechter Präzision, wird die Regel dann nachgezogen.
+
+Ein Nebenbefund betrifft Narrata: Das `recent`-Fenster folgt dem Ordinal, nicht dem Sitzungsdatum. Eine nachträglich erfasste, früher datierte Sitzung käme damit an der falschen Stelle ins Fenster. Das behebt [IOA-1284](https://alethe1a.atlassian.net/browse/IOA-1284), für diese Messung spielt es keine Rolle.
 
 ## Parakeet als Zweitlauf
 
@@ -121,5 +164,6 @@ Der Mundartsprecher hat eine dreimal so hohe Fehlerquote. Die Diarisierungs-Labe
 
 - **Repräsentativität:** ein Clip, zwei Sprecher, eine Sitzung. TOOL-60 misst mit `transcript calibrate` nach.
 - **Trefferquote von `similar`:** Dafür bräuchte es eine Handreferenz mit vielen Namen.
+- **Archiv-Schreibtreffer:** nach TOOL-83 nur ein beurteilter Hinweis, TOOL-60 misst nach.
 - **`known_variant`:** erst messbar, wenn Narrata `asr_variants` pflegt.
 - **Hotwords:** Nach TOOL-81 muss die Kalibrierung mit Hotwords wiederholt werden.
