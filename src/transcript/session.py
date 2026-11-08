@@ -120,6 +120,11 @@ class SessionPaths:
         return self.review_dir / f"{segment_name(index)}.uncertainty.json"
 
     @property
+    def review_candidates(self) -> Path:
+        """Review candidates of the whole session (TOOL-36)."""
+        return self.review_dir / "candidates.json"
+
+    @property
     def manifest(self) -> Path:
         return self.work_dir / "manifest.json"
 

@@ -15,6 +15,7 @@ from transcript import (
     audio,
     audio_tools,
     calibration,
+    candidates,
     diagnosis,
     diarization,
     hints,
@@ -704,15 +705,21 @@ def _measure(
 def _rate_passages(
     key: SessionKey, paths: SessionPaths, config: Config, indices: Sequence[int]
 ) -> bool:
-    """Write the ratings of `indices` and print their counts; False on a problem."""
+    """Write the ratings of `indices` and the session's review candidates.
+
+    Prints their counts only (TOOL-66); False on a problem.
+    """
     try:
         counts = uncertainty.assess_session(paths, indices, config.review_uncertainty)
+        found = candidates.session_candidates(paths, manifest.load_manifest(paths))
     except DataFileError as error:
         print(f"error: {error}", file=sys.stderr)
         return False
     print(
         f"{key}: passages: " + ", ".join(f"{counts[level]} {level}" for level in LEVELS)
     )
+    rate = "" if found.per_hour is None else f" ({found.per_hour} per hour of audio)"
+    print(f"{key}: review candidates: {len(found.candidates)}{rate}")
     print(f"wrote {paths.review_dir}")
     return True
 

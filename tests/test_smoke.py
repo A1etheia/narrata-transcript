@@ -28,7 +28,15 @@ from test_transcription import MANIFEST_3, FailingLoad, session_backend
 
 import transcript
 from transcript import __main__ as transcript_main
-from transcript import audio_tools, hints, jsonfile, knowledge, retry, uncertainty
+from transcript import (
+    audio_tools,
+    candidates,
+    hints,
+    jsonfile,
+    knowledge,
+    retry,
+    uncertainty,
+)
 from transcript import manifest as manifest_module
 from transcript.__main__ import main
 from transcript.asr import AudioInputError, BackendUnavailableError, ResourceError
@@ -1139,9 +1147,13 @@ class DiarizeCommandTest(unittest.TestCase):
                 )
             ),
         )
-        self.manifest = dataclasses.replace(
-            MANIFEST, segments=(dataclasses.replace(SEGMENT, index=1),)
+        first = dataclasses.replace(  # the segment `minimal` was transcribed from
+            SEGMENT,
+            index=1,
+            file="segment-01.wav",
+            source=dataclasses.replace(SEGMENT.source, sha256="ab" * 32),
         )
+        self.manifest = dataclasses.replace(MANIFEST, segments=(first,))
         self.diarizers: list[FakeDiarizer] = []
         for patcher in (
             mock.patch.object(retry, "RETRY_DELAY_S", 0),
@@ -1202,6 +1214,19 @@ class DiarizeCommandTest(unittest.TestCase):
         self.assertEqual(self.diarizers, [])
         text = self.paths.review_uncertainty(1).read_text(encoding="utf-8")
         self.assertNotIn(SECRET, stdout + stderr + text)
+
+    def test_assess_writes_the_review_candidates_and_prints_only_counts(self) -> None:
+        code, stdout, stderr = run("assess", str(KEY), "--config", str(self.config))
+
+        self.assertEqual(code, 0, stderr)
+        self.assertRegex(
+            stdout,
+            r"beispielgruppe/042: review candidates: 1 \(\d+\.\d per hour of audio\)",
+        )
+        found = candidates.load_candidates(self.paths)
+        self.assertEqual([c.level for c in found.candidates], ["needs_review"])
+        self.assertIn(SECRET, found.candidates[0].text)  # in the file, never printed
+        self.assertNotIn(SECRET, stdout + stderr)
 
     def calibrate(self, *extra: str) -> tuple[int, str, str]:
         return run("calibrate", str(KEY), "--config", str(self.config), *extra)
