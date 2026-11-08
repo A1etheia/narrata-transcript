@@ -1,5 +1,6 @@
 """Command-line entry point: `config`, `doctor`, `extract`, `context`, `snapshot`,
-`manifest`, `transcribe`, `diarize`, `assess`, `calibrate`."""
+`manifest`, `transcribe`, `diarize`, `assess`, `calibrate`, `review-export`,
+`review-import`."""
 
 import argparse
 import collections
@@ -7,7 +8,7 @@ import contextlib
 import logging
 import os
 import sys
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 
 from transcript import (
@@ -23,6 +24,7 @@ from transcript import (
     knowledge,
     manifest,
     narrata,
+    review_import,
     review_sheet,
     uncertainty,
 )
@@ -205,6 +207,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="replace an existing sheet, with any decisions not imported yet",
     )
+    review_import_command = commands.add_parser(
+        "review-import",
+        help="Read the decisions filled into the review sheet into decisions.json.",
+    )
+    review_import_command.add_argument("session", help="session key <group>/<ordinal>")
     for command in (
         config_command,
         extract_command,
@@ -216,6 +223,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         assess_command,
         calibrate_command,
         review_export_command,
+        review_import_command,
     ):
         command.add_argument(
             "--config",
@@ -255,6 +263,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _assess(args.session, args.config, args.segment, args.hints)
         if args.command == "review-export":
             return _review_export(args.session, args.config, args.all, args.force)
+        if args.command == "review-import":
+            return _review_import(args.session, args.config)
     parser.print_help()
     return 0
 
@@ -729,11 +739,7 @@ def _review_export(
     try:
         key = SessionKey.parse(raw_key)
         paths = _load_config(config_path).session_paths(key)
-        if not paths.review_candidates.is_file():
-            raise ValueError(
-                f"{paths.review_candidates}: review candidates not found; "
-                "run transcript assess"
-            )
+        _require(paths.review_candidates, "review candidates", "assess")
         sheet = review_sheet.review_sheet(
             candidates.load_candidates(paths),
             decisions.load_decisions(paths),
@@ -743,11 +749,7 @@ def _review_export(
     except (ValueError, ConfigError, DataFileError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
-    by_status = ", ".join(f"{n} {status}" for status, n in sorted(sheet.counts.items()))
-    print(
-        f"{key}: review sheet: {len(sheet.rows)} row(s)"
-        + (f": {by_status}" if by_status else "")
-    )
+    print(f"{key}: review sheet: {len(sheet.rows)} row(s){_by_status(sheet.counts)}")
     if sheet.stale:
         print(f"{key}: {len(sheet.stale)} stale decision(s), shown as earlier_decision")
     if sheet.orphaned:
@@ -755,6 +757,51 @@ def _review_export(
         print(f"{key}: {len(sheet.orphaned)} orphaned decision(s), not listed: {ids}")
     print(f"wrote {paths.review_sheet}")
     return 0
+
+
+def _review_import(raw_key: str, config_path: Path) -> int:
+    """Only counts, rows, IDs and fields reach the console (TOOL-66).
+
+    Exit 0, or 2 if the sheet is refused or a row was left out; the valid rows
+    are stored either way.
+    """
+    try:
+        key = SessionKey.parse(raw_key)
+        paths = _load_config(config_path).session_paths(key)
+        _require(paths.review_candidates, "review candidates", "assess")
+        _require(paths.review_sheet, "review sheet", "review-export")
+        result = review_import.import_rows(
+            candidates.load_candidates(paths),
+            decisions.load_decisions(paths),
+            review_import.read_review_sheet(paths.review_sheet),
+        )
+        if result.changed:
+            decisions.write_decisions(paths, result.decisions)
+    except (ValueError, ConfigError, DataFileError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    for problem in result.problems:
+        print(f"error: {paths.review_sheet}: {problem}", file=sys.stderr)
+    print(
+        f"{key}: review import: {result.imported.total()} decision(s)"
+        f"{_by_status(result.imported)}, {result.unchanged} unchanged, "
+        f"{len(result.problems)} left out"
+    )
+    if result.changed:
+        print(f"wrote {paths.review_decisions}")
+    return 2 if result.problems else 0
+
+
+def _require(path: Path, what: str, command: str) -> None:
+    """`ValueError` pointing at the command that writes `path`, if it is missing."""
+    if not path.is_file():
+        raise ValueError(f"{path}: {what} not found; run transcript {command}")
+
+
+def _by_status(counts: Mapping[str, int]) -> str:
+    """`": 1 corrected, 2 kept"`, or nothing without counts."""
+    listed = ", ".join(f"{n} {status}" for status, n in sorted(counts.items()))
+    return f": {listed}" if listed else ""
 
 
 def _rate_passages(
