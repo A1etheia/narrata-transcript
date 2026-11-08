@@ -154,6 +154,11 @@ class SessionPaths:
         return self.review_dir / "review.csv"
 
     @property
+    def working_transcript(self) -> Path:
+        """Working version: reference, decisions and speakers applied (TOOL-49)."""
+        return self.work_dir / "working" / "transcript.json"
+
+    @property
     def manifest(self) -> Path:
         return self.work_dir / "manifest.json"
 

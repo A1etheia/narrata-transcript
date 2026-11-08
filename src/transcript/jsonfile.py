@@ -88,6 +88,18 @@ def one_of(
     return check_one_of(field(data, name, str, path, error), allowed, name, path, error)
 
 
+def optional_one_of(
+    data: Any,
+    name: str,
+    allowed: Sequence[str],
+    path: Path,
+    error: type[DataFileError] = DataFileError,
+) -> Any:
+    """Like `one_of`, but an absent or null value yields `None`."""
+    value = optional_field(data, name, str, path, error)
+    return None if value is None else check_one_of(value, allowed, name, path, error)
+
+
 def check_one_of(
     value: Any,
     allowed: Sequence[str],

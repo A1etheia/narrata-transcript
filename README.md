@@ -273,7 +273,7 @@ Der Befehl schreibt zwei Dateien unter `work/<gruppe>/<ordinal>/speakers/`:
 - **`effort_minutes`** hält von Hand fest, wie viele Minuten die Zuordnung gedauert hat; der Bericht (TOOL-59) wertet das aus.
 - **Zusammenführen:** Zwei Labels eines Segments dürfen derselben Person gehören, wenn die Diarisierung eine Person geteilt hat. Der Befehl warnt dann und führt sie zusammen.
 - **Nicht angewendet** werden Einträge zu einem unbekannten Segment, einem unbekannten Label oder einer Person, die nicht im Snapshot steht. Dasselbe gilt für veraltete Einträge: `labels_version` ist ein Fingerabdruck der Labels des Segments und ändert sich, wenn das Segment neu transkribiert oder mit anderem Ergebnis neu diarisiert wird. Solche Einträge bleiben in der Datei, werden mit Eintragsnummer gemeldet, und der Befehl endet mit Exit-Code 1.
-- **Nie geraten:** Was nicht gültig einer Person zugeordnet ist, bleibt ein Label, ebenso Wörter ohne Label. Das Referenztranskript bleibt unverändert. Die Arbeitsfassung (TOOL-49) und der Export (TOOL-69) lesen die Zuordnung über `speakers.check(...).resolve(segment, label)` und tragen dann Label und Person.
+- **Nie geraten:** Was nicht gültig einer Person zugeordnet ist, bleibt ein Label, ebenso Wörter ohne Label. Das Referenztranskript bleibt unverändert. Die [Arbeitsfassung](#arbeitsfassung) trägt pro Passage Label und Person.
 
 Die Konsole zeigt nur Zähler, Segment- und Eintragsnummern, nie Labels, Namen, User-IDs oder Text. Beide Dateien enthalten User-IDs, die Hörliste auch Namen und Text; sie bleiben unter `work/`.
 
@@ -353,7 +353,7 @@ Nach jeder [Unsicherheitsbewertung](#unsicherheitsbewertung) entsteht die Prüfl
 
 - **Reihenfolge:** erst `uncertain`, dann `needs_review`. Innerhalb einer Stufe kommen Passagen mit einem bekannten Hörfehler (`known_variant`) oder einem mehrdeutigen Hinweis zuerst, danach gilt die Aufnahmereihenfolge.
 - **Domänenwissen** löst einen Kandidaten aus, wenn ein Hinweis die Stufe hebt, und verstärkt ihn, weil seine Hinweise mit Kandidaten aus Narrata am Kandidaten hängen. Korrigiert wird nichts. Ein `similar`-Hinweis nur über den Klang hebt nach Default nicht an und macht deshalb keinen Kandidaten, er bleibt in der Hinweisdatei sichtbar.
-- **Pro Kandidat:** Kennung (`s01-p0042` für Segment 1, Passage 42), Stufe, Gründe mit Werten und Schwellen, `missing`, der erkannte Text unverändert, das Sprecher-Label (ohne Person; die kommt erst in der Arbeitsfassung, TOOL-49), die Session-Zeit (siehe [Referenzformat](docs/referenzformat.md), `null`, wenn das Backend keine Zeit lieferte) und die Hinweise, mit denen die Passage bewertet wurde.
+- **Pro Kandidat:** Kennung (`s01-p0042` für Segment 1, Passage 42), Stufe, Gründe mit Werten und Schwellen, `missing`, der erkannte Text unverändert, das Sprecher-Label (ohne Person; die kommt erst in der [Arbeitsfassung](#arbeitsfassung)), die Session-Zeit (siehe [Referenzformat](docs/referenzformat.md), `null`, wenn das Backend keine Zeit lieferte) und die Hinweise, mit denen die Passage bewertet wurde.
 - **Kennzahl:** Kandidaten pro Stunde Audio, gerechnet nur über die bewerteten Segmente. Segmente ohne Transkript oder mit Fehlschlag stehen unter `not_rated`.
 - **Aktualität:** Passt eine Bewertung nicht mehr zu ihrem Referenztranskript, bricht der Schritt mit `run transcript assess` ab, statt auf veralteten Text zu zeigen.
 
@@ -375,7 +375,7 @@ Was beim Anhören eines Kandidaten entschieden wird, steht in einer eigenen Date
 - **Pro Eintrag:** Kandidaten-ID, Segment, Passage, die Fassung des Transkripts, auf die sich die Entscheidung bezieht (`reference_processed_at`), Status, Zeitpunkt, optional `target_text` und `note`. Einen `target_text` gibt es nur bei `corrected`, dort ist er Pflicht. Ein Eintrag pro Kandidat, ein späterer ersetzt den früheren.
 - **Veraltet:** Ist das Segment seitdem neu transkribiert, gilt die Entscheidung nicht mehr, und der Kandidat ist wieder offen. Eine neue Bewertung bei gleichem Transkript ändert nichts, denn die Entscheidung betrifft den Text.
 - **Verwaist:** Ist der Kandidat verschwunden, etwa weil die Passage nach neuer Kalibrierung sicher ist, bleibt die Entscheidung ebenfalls in der Datei stehen.
-- Veraltete und verwaiste Entscheidungen werden gemeldet, nie gelöscht und nie angewendet. Angewendet wird eine Entscheidung erst in der Arbeitsfassung (TOOL-49).
+- Veraltete und verwaiste Entscheidungen werden gemeldet, nie gelöscht und nie angewendet. Angewendet wird eine Entscheidung erst in der [Arbeitsfassung](#arbeitsfassung).
 
 Die Datei enthält Zieltexte und Notizen und bleibt deshalb unter `work/`. Die [Review-CSV](#review-csv) liest sie, der [Review-Import](#review-import) schreibt sie.
 
@@ -436,6 +436,41 @@ Nach jedem erfolgreichen [Review-Import](#review-import) sammelt `transcript rev
 - **Ohne Snapshot** entsteht keine Datei, eine vorhandene wird entfernt, und die Konsole verweist auf `transcript snapshot`. Der Import endet trotzdem normal. Ist der Snapshot ungültig, bleiben die importierten Entscheidungen gespeichert, der Befehl meldet den Fehler und endet mit Exit-Code 2.
 
 Die Datei enthält erkannten Text und Archivnamen und bleibt unter `work/`. Die Konsole zeigt nur Zahlen, etwa `asr variant suggestions: 2 new, 1 known, 3 without glossary term`. Ein Import der Datei in Narrata folgt mit IOA-1285.
+
+## Arbeitsfassung
+
+`transcript working <gruppe>/<ordinal>` leitet aus Referenztranskript, [Review-Entscheidungen](#review-entscheidungen) und [Sprecherzuordnung](#sprecherzuordnung) die Arbeitsfassung der Session ab (`transcript.working`). Sie ist die Grundlage des Exports (TOOL-69). Gelesen werden die Referenztranskripte, die Bewertungen, `decisions.json`, `speakers/assignment.json` und der [Wissens-Snapshot](#wissens-snapshot). Keine dieser Dateien wird verändert. Passt eine Bewertung nicht zum Transkript, verweist der Befehl auf `transcript assess`. Fehlt der Snapshot, verweist er auf `transcript snapshot`.
+
+```bash
+transcript working beispielgruppe/042
+```
+
+Jede Passage des Referenztranskripts wird ein Block, in Aufnahmereihenfolge:
+
+| `origin` | Wann | `text` |
+| --- | --- | --- |
+| `automatic` | die Passage ist kein Review-Kandidat | erkannter Text |
+| `decided` | eine geltende Entscheidung `confirmed` oder `kept` | erkannter Text |
+| `decided` | eine geltende Entscheidung `corrected` | `target_text` |
+| `decided` | eine geltende Entscheidung `unintelligible` | `null` |
+| `open` | Kandidat ohne geltende Entscheidung, oder `open`/`deferred` | erkannter Text |
+
+- **Pro Block:**
+  - `segment`, `passage`
+  - `start_ms`, `end_ms` (segmentlokal wie im Referenztranskript; die Session-Zeit bildet der Export)
+  - `level` (die Stufe der [Unsicherheitsbewertung](#unsicherheitsbewertung))
+  - `origin`, `status` (`null` bei `automatic`)
+  - `asr_text` (immer der erkannte Text, unverändert), `text`
+  - `speaker` mit `label`, `assigned` und `user_id`
+- **Sprecher:** Das Label bleibt immer stehen. Eine gültig zugeordnete Person kommt mit `assigned: person` und `user_id` dazu. Alles andere bleibt `open`, `unknown` oder `multiple` ohne `user_id`. Ohne `assignment.json` sind alle Labels `open`, und die Konsole verweist auf `transcript speakers`. Segmente ohne Diarisierung tragen `label: null`.
+- **Nie angewendet:** veraltete und verwaiste Entscheidungen, nicht anwendbare Einträge der Sprecherzuordnung und Segmente ohne Transkript. Sie stehen unter `findings` mit `kind`:
+  - `stale_decision` und `orphaned_decision`, mit Segment und Passage;
+  - `speaker_entry`, mit Eintragsnummer und `speaker_kind`;
+  - `missing_segment`.
+- **Gleiche Eingaben, gleiche Datei:** Es gibt keinen Zeitstempel. Unter `inputs` stehen Snapshot-Kennung, pro Segment `reference_processed_at` und `labels_version` sowie die SHA-256 von `decisions.json` und `assignment.json` (`null` ohne Datei). Ein erneuter Lauf mit unveränderten Eingaben ergibt byteweise dieselbe Datei.
+- **Exit-Code:** `0` heißt geschrieben ohne Funde, `1` geschrieben mit Funden, `2` Fehler. Offene Blöcke sind kein Fund. Sie werden nur gezählt.
+
+Die Datei `work/<gruppe>/<ordinal>/working/transcript.json` (`format_version: 1`) enthält Text und User-IDs und bleibt unter `work/`. Die Konsole zeigt nur Zahlen sowie Segment-, Passagen- und Eintragsnummern, etwa `working version: 539 block(s): 482 automatic, 41 decided, 16 open`.
 
 ## Konfiguration
 
@@ -513,6 +548,7 @@ work/beispielgruppe/042/
   diarization/                 segment-NN.json (Sprecher-Turns von pyannote)
   review/                      segment-NN.hints.json (Review-Hinweise aus dem Wissen), segment-NN.uncertainty.json (Unsicherheitsbewertung), candidates.json (Review-Kandidaten der Session), decisions.json (Review-Entscheidungen), review.csv (Review-CSV)
   speakers/                    assignment.json (Sprecherzuordnung, von Hand), samples.md (Hörliste pro Label)
+  working/                     transcript.json (Arbeitsfassung: Entscheidungen und Sprecher angewendet)
   debug.log                    nur im Debug-Modus
 output/beispielgruppe/042/     JSON-Export, TXT, DOCX
 ```

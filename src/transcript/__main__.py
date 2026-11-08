@@ -1,6 +1,6 @@
 """Command-line entry point: `config`, `doctor`, `extract`, `context`, `snapshot`,
 `manifest`, `transcribe`, `diarize`, `assess`, `calibrate`, `review-export`,
-`review-import`, `speakers`."""
+`review-import`, `speakers`, `working`."""
 
 import argparse
 import collections
@@ -30,6 +30,7 @@ from transcript import (
     speakers,
     uncertainty,
     variant_suggestions,
+    working,
 )
 from transcript.asr import BackendError
 from transcript.asr.whisper import WhisperBackend
@@ -222,6 +223,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "template if there is none, and check the assignment.",
     )
     speakers_command.add_argument("session", help="session key <group>/<ordinal>")
+    working_command = commands.add_parser(
+        "working",
+        help="Apply the review decisions and the speaker assignment to the "
+        "reference transcripts and write the working version.",
+    )
+    working_command.add_argument("session", help="session key <group>/<ordinal>")
     for command in (
         config_command,
         extract_command,
@@ -235,6 +242,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         review_export_command,
         review_import_command,
         speakers_command,
+        working_command,
     ):
         command.add_argument(
             "--config",
@@ -278,6 +286,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _review_import(args.session, args.config)
         if args.command == "speakers":
             return _speakers(args.session, args.config)
+        if args.command == "working":
+            return _working(args.session, args.config)
     parser.print_help()
     return 0
 
@@ -847,8 +857,7 @@ def _speakers(raw_key: str, config_path: Path) -> int:
         )
     for finding in applied.findings:
         print(
-            f"{key}: entry {finding.entry} (segment {finding.segment}) not applied: "
-            f"{finding.kind.replace('_', ' ')}",
+            f"{key}: {_speaker_finding(finding.entry, finding.segment, finding.kind)}",
             file=sys.stderr,
         )
     if created:
@@ -886,6 +895,51 @@ def _suggest_variants(
     )
     print(f"wrote {paths.review_variant_suggestions}")
     return True
+
+
+def _working(raw_key: str, config_path: Path) -> int:
+    """Only counts, segment, passage and entry numbers reach the console (TOOL-66).
+
+    Exit 0, 1 if something was not applied or a segment is missing, 2 on an error.
+    """
+    try:
+        key = SessionKey.parse(raw_key)
+        paths = _load_config(config_path).session_paths(key)
+        result = working.compose(paths, manifest.load_manifest(paths))
+        working.write_working(paths, result)
+    except (ValueError, ConfigError, DataFileError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    print(
+        f"{key}: working version: {len(result.blocks)} block(s)"
+        f"{_by_status(result.counts())}"
+    )
+    if result.inputs.assignment_sha256 is None:
+        print(
+            f"{key}: no speaker assignment, every label stays open; "
+            "run transcript speakers"
+        )
+    for finding in result.findings:
+        print(f"{key}: {_working_finding(finding)}", file=sys.stderr)
+    print(f"wrote {paths.working_transcript}")
+    return 1 if result.findings else 0
+
+
+def _working_finding(finding: working.WorkingFinding) -> str:
+    where = f"segment {finding.segment}"
+    if finding.kind == "missing_segment":
+        return f"{where}: no transcript, left out"
+    if finding.kind == "speaker_entry":
+        assert finding.entry is not None and finding.speaker_kind is not None
+        found = _speaker_finding(finding.entry, finding.segment, finding.speaker_kind)
+        return f"speaker {found}"
+    reason = "stale" if finding.kind == "stale_decision" else "orphaned"
+    return f"{where}, passage {finding.passage}: decision not applied: {reason}"
+
+
+def _speaker_finding(entry: int, segment: int, kind: speakers.FindingKind) -> str:
+    """`"entry 2 (segment 1) not applied: unknown person"`; no label, no id."""
+    return f"entry {entry} (segment {segment}) not applied: {kind.replace('_', ' ')}"
 
 
 def _require(path: Path, what: str, command: str) -> None:

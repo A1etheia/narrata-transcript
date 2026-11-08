@@ -45,7 +45,7 @@ from transcript.__main__ import main
 from transcript.asr import AudioInputError, BackendUnavailableError, ResourceError
 from transcript.asr.fake import FakeBackend
 from transcript.audio_tools import AudioToolError, AudioTools, ToolInfo
-from transcript.config import DEFAULT_KEYWORD_BUDGET
+from transcript.config import DEFAULT_KEYWORD_BUDGET, UncertaintyThresholds
 from transcript.reference import (
     Diarization,
     Passage,
@@ -1524,7 +1524,9 @@ class DiarizeCommandTest(unittest.TestCase):
         self.assertIn("error: pyannote: model not in the local cache", stderr)
 
 
-class SpeakersCommandTest(unittest.TestCase):
+class _DiarizedSession(unittest.TestCase):
+    """A diarized segment of two labels, with a knowledge snapshot."""
+
     LABELS = ("SPEAKER_00", "SPEAKER_01")
 
     def setUp(self) -> None:
@@ -1586,6 +1588,8 @@ class SpeakersCommandTest(unittest.TestCase):
         for secret in (SECRET, NAME, "SPEAKER_", "user"):
             self.assertNotIn(secret, output)
 
+
+class SpeakersCommandTest(_DiarizedSession):
     def test_writes_template_and_samples_and_prints_only_counts(self) -> None:
         code, stdout, stderr = self.speakers()
 
@@ -1658,6 +1662,58 @@ class SpeakersCommandTest(unittest.TestCase):
 
         self.assertEqual(code, 2)
         self.assertIn("no diarized segment; run transcript diarize", stderr)
+
+
+class WorkingCommandTest(_DiarizedSession):
+    def working(self) -> tuple[int, str, str]:
+        return run("working", str(KEY), "--config", str(self.config))
+
+    def assessed(self) -> None:
+        uncertainty.assess_session(self.paths, [1], UncertaintyThresholds())
+
+    def test_writes_the_working_version_and_prints_only_counts(self) -> None:
+        self.assessed()
+
+        code, stdout, stderr = self.working()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "beispielgruppe/042: working version: 2 block(s): "
+            "1 automatic, 0 decided, 1 open",
+            stdout,
+        )
+        self.assertIn("no speaker assignment, every label stays open", stdout)
+        self.assertIn(f"wrote {self.paths.working_transcript}", stdout)
+        self.assert_nothing_secret(stdout + stderr)
+        self.assertIn(SECRET, self.paths.working_transcript.read_text("utf-8"))
+
+    def test_reports_what_was_not_applied(self) -> None:
+        self.assessed()
+        self.speakers()
+        data = json.loads(self.paths.speaker_assignment.read_text(encoding="utf-8"))
+        data["entries"][1].update(assigned="person", user_id=99)  # not a participant
+        self.paths.speaker_assignment.write_text(json.dumps(data), encoding="utf-8")
+        stale = decisions.ReviewDecision(
+            1, 1, "2026-01-01T00:00:00+01:00", "corrected", "2026-11-08T10:00:00+01:00",
+            target_text=f"Zum {SECRET}!",
+        )  # fmt: skip
+        decisions.write_decisions(self.paths, decisions.SessionDecisions((stale,)))
+
+        code, stdout, stderr = self.working()
+
+        self.assertEqual(code, 1, stderr)
+        self.assertNotIn("no speaker assignment", stdout)
+        self.assertIn("segment 1, passage 1: decision not applied: stale", stderr)
+        self.assertIn("speaker entry 2 (segment 1) not applied: unknown person", stderr)
+        self.assertNotIn("99", stdout + stderr)
+        self.assert_nothing_secret(stdout + stderr)
+
+    def test_without_a_rating_asks_for_assess(self) -> None:
+        code, _, stderr = self.working()
+
+        self.assertEqual(code, 2)
+        self.assertIn("run transcript assess", stderr)
+        self.assertFalse(self.paths.working_transcript.exists())
 
 
 if __name__ == "__main__":

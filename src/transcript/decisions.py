@@ -38,6 +38,10 @@ ReviewStatus = Literal[
     "deferred",  # to be checked later
 ]
 STATUSES: tuple[ReviewStatus, ...] = get_args(ReviewStatus)
+# the statuses that settle a candidate; `open` and `deferred` leave it unresolved
+SETTLED: frozenset[ReviewStatus] = frozenset(
+    {"confirmed", "corrected", "unintelligible", "kept"}
+)
 
 
 class DecisionsError(DataFileError):
