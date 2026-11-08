@@ -319,6 +319,18 @@ Für `similar` gibt es einen Bogen zum Anhören. `transcript calibrate <session>
 
 Die Defaults der Schwellen stammen aus der ersten Kalibrierung, siehe [TOOL-35-Bericht](docs/spikes/TOOL-35-kalibrierung.md).
 
+## Review-Kandidaten
+
+Nach jeder [Unsicherheitsbewertung](#unsicherheitsbewertung) entsteht die Prüfliste der Session neu (`transcript.candidates`): jede Passage mit der Stufe `needs_review` oder `uncertain` aus allen bewerteten Segmenten. Sichere Passagen erscheinen nicht. Eine eigene Regel hat die Liste nicht, sie übernimmt die Bewertung. Läuft `transcript assess --segment N`, entsteht die Liste trotzdem für die ganze Session.
+
+- **Reihenfolge:** erst `uncertain`, dann `needs_review`. Innerhalb einer Stufe kommen Passagen mit einem bekannten Hörfehler (`known_variant`) oder einem mehrdeutigen Hinweis zuerst, danach gilt die Aufnahmereihenfolge.
+- **Domänenwissen** löst einen Kandidaten aus, wenn ein Hinweis die Stufe hebt, und verstärkt ihn, weil seine Hinweise mit Kandidaten aus Narrata am Kandidaten hängen. Korrigiert wird nichts. Ein `similar`-Hinweis nur über den Klang hebt nach Default nicht an und macht deshalb keinen Kandidaten, er bleibt in der Hinweisdatei sichtbar.
+- **Pro Kandidat:** Kennung (`s01-p0042` für Segment 1, Passage 42), Stufe, Gründe mit Werten und Schwellen, `missing`, der erkannte Text unverändert, das Sprecher-Label (bis TOOL-68 keine Person), die Session-Zeit (siehe [Referenzformat](docs/referenzformat.md), `null`, wenn das Backend keine Zeit lieferte) und die Hinweise, mit denen die Passage bewertet wurde.
+- **Kennzahl:** Kandidaten pro Stunde Audio, gerechnet nur über die bewerteten Segmente. Segmente ohne Transkript oder mit Fehlschlag stehen unter `not_rated`.
+- **Aktualität:** Passt eine Bewertung nicht mehr zu ihrem Referenztranskript, bricht der Schritt mit `run transcript assess` ab, statt auf veralteten Text zu zeigen.
+
+Die Datei `work/<gruppe>/<ordinal>/review/candidates.json` (`format_version: 1`) enthält erkannten Text und Archivnamen und bleibt deshalb unter `work/`. Die Konsole zeigt nur Zahlen, etwa `review candidates: 57 (12.3 per hour of audio)`. Das Review-Datenmodell (TOOL-46) und die Review-CSV (TOOL-47) lesen diese Datei. Überlappende Segmenttranskriptionen sind kein Signal: Ohne eigene Segmentierung ([TOOL-62](docs/spikes/TOOL-62-asr-vergleich.md)) gibt es sie nicht.
+
 ## Konfiguration
 
 Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht im Repo, ebenso alles andere unter `config/` außer `config/example.yaml`. `transcript config` zeigt die wirksamen Werte, `transcript config --config <pfad>` liest eine andere Datei. Fehlende Pflichtwerte, ungültige Werte und unbekannte Schlüssel enden mit einer Meldung, die Datei und Schlüssel nennt.
@@ -393,7 +405,7 @@ work/beispielgruppe/042/
   audio/                       segment-NN.wav (Arbeitsformat, eine pro Aufnahme), audio.json (Audio-Metadaten)
   asr/                         segment-NN.json (Referenztranskript), segment-NN.raw.json (Backend-Rohantwort)
   diarization/                 segment-NN.json (Sprecher-Turns von pyannote)
-  review/                      segment-NN.hints.json (Review-Hinweise aus dem Wissen), segment-NN.uncertainty.json (Unsicherheitsbewertung), später Review-Kandidaten, CSV
+  review/                      segment-NN.hints.json (Review-Hinweise aus dem Wissen), segment-NN.uncertainty.json (Unsicherheitsbewertung), candidates.json (Review-Kandidaten der Session), später CSV
   speakers/                    Sprecherzuordnung
   debug.log                    nur im Debug-Modus
 output/beispielgruppe/042/     JSON-Export, TXT, DOCX
