@@ -29,7 +29,7 @@ from typing import Any, Literal, get_args
 from transcript import jsonfile
 from transcript.config import SimilarThresholds
 from transcript.domain import DomainContext, TermHit
-from transcript.glossary import MatchKind, normalize
+from transcript.glossary import MatchKind, normalize, word_key
 from transcript.jsonfile import DataFileError, write_atomic
 from transcript.narrata import (
     ENTRY_TYPES,
@@ -301,21 +301,12 @@ class _Matcher:
 def _tokens(passage: Passage) -> list[_Token]:
     if passage.words:
         return [
-            _Token(word.text, _key(word.text), n, word.start_ms, word.end_ms)
+            _Token(word.text, word_key(word.text), n, word.start_ms, word.end_ms)
             for n, word in enumerate(passage.words)
         ]
-    return [_Token(text, _key(text), None, None, None) for text in passage.text.split()]
-
-
-def _key(text: str) -> str:
-    """`normalize` without punctuation or symbols at either edge."""
-    key = normalize(text)
-    start, end = 0, len(key)
-    while start < end and unicodedata.category(key[start])[0] in "PS":
-        start += 1
-    while end > start and unicodedata.category(key[end - 1])[0] in "PS":
-        end -= 1
-    return key[start:end]
+    return [
+        _Token(text, word_key(text), None, None, None) for text in passage.text.split()
+    ]
 
 
 def _rank(found: _Found) -> int:

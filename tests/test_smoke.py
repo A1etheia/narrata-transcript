@@ -1356,6 +1356,62 @@ class DiarizeCommandTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("review sheet not found; run transcript review-export", stderr)
 
+    def with_snapshot(self, **entry: object) -> None:
+        data = context()
+        data["glossary"] = [glossary_entry(**entry)]
+        self.paths.narrata_context.parent.mkdir(parents=True, exist_ok=True)
+        self.paths.narrata_context.write_bytes(encoded(data))
+        knowledge.build_snapshot(self.paths, DEFAULT_KEYWORD_BUDGET)
+
+    def test_review_import_suggests_the_misheard_name_without_printing_it(
+        self,
+    ) -> None:
+        self.with_snapshot(name="Quendolin", aliases=[], asr_variants=[])
+        self.fill_in_sheet({"status": "corrected", "target_text": "Zum Quendolin."})
+
+        code, stdout, stderr = self.review_import()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "beispielgruppe/042: asr variant suggestions: 1 new, 0 known, "
+            "0 without glossary term",
+            stdout,
+        )
+        self.assertIn(f"wrote {self.paths.review_variant_suggestions}", stdout)
+        data = jsonfile.read_object(self.paths.review_variant_suggestions, "file")
+        (suggestion,) = data["suggestions"]
+        self.assertEqual(suggestion["variant"], SECRET)
+        self.assertEqual(suggestion["entries"][0]["term"], "Quendolin")
+        for secret in (SECRET, "Quendolin"):
+            self.assertNotIn(secret, stdout + stderr)
+
+    def test_review_import_without_a_snapshot_removes_old_suggestions(self) -> None:
+        self.fill_in_sheet({"status": "corrected", "target_text": "Zum Quendolin."})
+        self.paths.review_variant_suggestions.parent.mkdir(parents=True, exist_ok=True)
+        self.paths.review_variant_suggestions.write_text("{}", encoding="utf-8")
+
+        code, stdout, stderr = self.review_import()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("no asr variant suggestions; run transcript snapshot", stdout)
+        self.assertFalse(self.paths.review_variant_suggestions.exists())
+        self.assertEqual(len(decisions.load_decisions(self.paths).decisions), 1)
+
+    def test_review_import_keeps_the_decisions_if_the_snapshot_is_broken(
+        self,
+    ) -> None:
+        self.fill_in_sheet({"status": "corrected", "target_text": "Zum Quendolin."})
+        self.paths.knowledge_snapshot.parent.mkdir(parents=True, exist_ok=True)
+        self.paths.knowledge_snapshot.write_text("{", encoding="utf-8")
+
+        code, stdout, stderr = self.review_import()
+
+        self.assertEqual(code, 2)
+        self.assertIn(str(self.paths.knowledge_snapshot), stderr)
+        self.assertIn(f"wrote {self.paths.review_decisions}", stdout)
+        self.assertEqual(len(decisions.load_decisions(self.paths).decisions), 1)
+        self.assertNotIn("Quendolin", stdout + stderr)
+
     def calibrate(self, *extra: str) -> tuple[int, str, str]:
         return run("calibrate", str(KEY), "--config", str(self.config), *extra)
 

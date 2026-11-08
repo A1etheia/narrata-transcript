@@ -39,6 +39,21 @@ def tidy(term: str) -> str:
     return _WHITESPACE.sub(" ", visible).strip()
 
 
+def trim_edges(text: str) -> str:
+    """`text` without punctuation or symbols at either edge; inner ones stay."""
+    start, end = 0, len(text)
+    while start < end and unicodedata.category(text[start])[0] in "PS":
+        start += 1
+    while end > start and unicodedata.category(text[end - 1])[0] in "PS":
+        end -= 1
+    return text[start:end]
+
+
+def word_key(text: str) -> str:
+    """The comparison key of a recognised word: `normalize`, edges trimmed."""
+    return trim_edges(normalize(text))
+
+
 @dataclass(frozen=True)
 class Match:
     entry: GlossaryEntry
