@@ -112,6 +112,10 @@ P = [
         ("IOA-1222", "Transkript als Extraktionsquelle, polymorphe Provenienz", 3.0, "größte Migration des Epics"),
         ("IOA-1224", "IT/OT-Flächen + Statistik", 2.0, ""),
     ]),
+    ("Phase 8 — Öffnung für andere Nutzer",
+     "M8 — Entscheidung, ob und wie andere Narrata-Nutzer ihre Aufnahmen transkribieren können. Reflexionspunkt, kein Umsetzungsblock.", [
+        ("TOOL-85", "Entscheidung: Transkription für andere Narrata-Nutzer öffnen?", 0.5, "Wege: Nutzer rechnen lokal, eigener Worker getrennt vom Prod-VPS, externer ASR-Dienst, nichts tun; Datenschutz der Mitspielenden und Betriebsgrenzen klären; Erkenntnisse aus TOOL-59 und TOOL-60 einbeziehen; bei „ja“ Folge-Tickets"),
+    ]),
 ]
 
 CONDITIONAL = {"TOOL-73", "TOOL-78"}
@@ -187,7 +191,8 @@ def main() -> None:
     o.append("| M3 | Trägt der Contract den Import ohne Rückfragen? | IOA-1218 gegen TOOL-69 | Contract-Minor-Bump vor Phase 4, nicht danach |")
     o.append("| M4 | Trägt die Kernhypothese (Konfidenz grenzt Review ein)? Aufwand pro Abend alltagstauglich? | TOOL-60 | Go/No-Go Phase 6; Review-Kanal CSV vs. Narrata-UI (→ ggf. neues IOA-Ticket); TOOL-14 |")
     o.append("| Phase 6, Tag 2 | Reicht ein lokales LLM für IT/OT? Bringt der zweite Durchlauf messbar etwas? | TOOL-70 | TOOL-73 bleibt oder entfällt; ggf. Remote-Option |")
-    o.append("| M7 | Welche Fragen aus der Zielliste sind jetzt beantwortbar, welche nicht? | Retro, kein Ticket | V0.2-Backlog beider Projekte |\n")
+    o.append("| M7 | Welche Fragen aus der Zielliste sind jetzt beantwortbar, welche nicht? | Retro, kein Ticket | V0.2-Backlog beider Projekte |")
+    o.append("| M8 | Öffnen wir die Transkription für andere Nutzer, und auf welchem Weg? | TOOL-85 | Entscheidung; bei „ja“ Folge-Tickets |\n")
     o.append("## Arbeitsfolge\n")
     o.append("Start/Ende sind in Jira als Start date / Due date gespiegelt.\n")
     for p in phases:

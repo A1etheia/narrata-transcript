@@ -7,7 +7,7 @@ Stand 2026-11-08, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 - **Eine Person, ein Zeitbudget.** TOOL- und IOA-Tickets konkurrieren um dieselben Tage; der Plan ist deshalb eine *lineare* Folge. Echte Parallelität gibt es nur dort, wo ASR-Läufe oder Modell-Downloads im Hintergrund laufen — dann wird am Narrata-Ticket derselben Phase gearbeitet.
 - **Kapazität: 3 Entwicklungstage pro Woche**, Start 02.11.2026, Pause 21.12.2026–03.01.2027. Das ist der Umrechnungsfaktor für die Kalenderspalte, nicht Teil des Plans — ändert sich die Kapazität, verschieben sich nur die Daten, nicht die Reihenfolge.
 - **Aufwände sind Entwicklungstage in 0,5er-Schritten**, grob geschätzt aus den Ticket-Beschreibungen. Sie dienen der Reihenfolge und den Meilenstein-Abständen; keine Zusage.
-- **Gesamtumfang: 70 Entwicklungstage** ≈ 26 Wochen inkl. Pause → letzter Meilenstein 26.04.2027. Davon 2 Tage bedingt (TOOL-73, TOOL-78).
+- **Gesamtumfang: 70.5 Entwicklungstage** ≈ 26 Wochen inkl. Pause → letzter Meilenstein 27.04.2027. Davon 2 Tage bedingt (TOOL-73, TOOL-78).
 - **Neu terminiert am 02.11.2026:** Vom Plan des 03.10. war noch kein Ticket begonnen (alle TOOL- und IOA-Tickets To Do, kein Python-Repo, keine Transkript-Commits). Die 3 Tage pro Woche sind damit unbelegt; Reihenfolge belastbar, Daten nur bei dieser Kapazität.
 - Nicht eingeplant: TOOL-14 (Remote-Backend, geparkt), die Epics selbst, verworfene Tickets (TOOL-21–32, 34; TOOL-3, 7; TOOL-11, 33 nach TOOL-62).
 
@@ -32,6 +32,7 @@ Stand 2026-11-08, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 | M5 | Transkript per Chat/MCP befragbar, in Narrata durchsuchbar, lesbar, verlinkt | Phase 5 | 09.03.2027 – 29.03.2027 | 8 |
 | M6 | IT/OT-Schicht im Export, Statistik im Bericht | Phase 6 | 29.03.2027 – 13.04.2027 | 7.5 |
 | M7 | Erste Welt-Archiv-Einträge mit Transkript-Provenienz; IT/OT-Statistik und Abendvergleich sichtbar | Phase 7 | 15.04.2027 – 26.04.2027 | 5 |
+| M8 | Entscheidung, ob und wie andere Narrata-Nutzer ihre Aufnahmen transkribieren können | Phase 8 | 27.04.2027 – 27.04.2027 | 0.5 |
 
 ## Reflexionspunkte
 
@@ -44,6 +45,7 @@ Stand 2026-11-08, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 | M4 | Trägt die Kernhypothese (Konfidenz grenzt Review ein)? Aufwand pro Abend alltagstauglich? | TOOL-60 | Go/No-Go Phase 6; Review-Kanal CSV vs. Narrata-UI (→ ggf. neues IOA-Ticket); TOOL-14 |
 | Phase 6, Tag 2 | Reicht ein lokales LLM für IT/OT? Bringt der zweite Durchlauf messbar etwas? | TOOL-70 | TOOL-73 bleibt oder entfällt; ggf. Remote-Option |
 | M7 | Welche Fragen aus der Zielliste sind jetzt beantwortbar, welche nicht? | Retro, kein Ticket | V0.2-Backlog beider Projekte |
+| M8 | Öffnen wir die Transkription für andere Nutzer, und auf welchem Weg? | TOOL-85 | Entscheidung; bei „ja“ Folge-Tickets |
 
 ## Arbeitsfolge
 
@@ -169,6 +171,14 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 |---|---|---|---|---|---|
 | IOA-1222 | Transkript als Extraktionsquelle, polymorphe Provenienz | 3 | 15.04.2027 | 20.04.2027 | größte Migration des Epics |
 | IOA-1224 | IT/OT-Flächen + Statistik | 2 | 22.04.2027 | 26.04.2027 |  |
+
+### Phase 8 — Öffnung für andere Nutzer
+
+**M8 — Entscheidung, ob und wie andere Narrata-Nutzer ihre Aufnahmen transkribieren können. Reflexionspunkt, kein Umsetzungsblock.**
+
+| Ticket | Inhalt | Tage | Start | Ende | Hinweis |
+|---|---|---|---|---|---|
+| TOOL-85 | Entscheidung: Transkription für andere Narrata-Nutzer öffnen? | 0.5 | 27.04.2027 | 27.04.2027 | Wege: Nutzer rechnen lokal, eigener Worker getrennt vom Prod-VPS, externer ASR-Dienst, nichts tun; Datenschutz der Mitspielenden und Betriebsgrenzen klären; Erkenntnisse aus TOOL-59 und TOOL-60 einbeziehen; bei „ja“ Folge-Tickets |
 
 ## Pflege
 
