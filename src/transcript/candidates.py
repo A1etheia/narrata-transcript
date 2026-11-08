@@ -51,6 +51,11 @@ class CandidatesError(DataFileError):
     """The candidates cannot be built, or their file is missing or invalid."""
 
 
+def candidate_id(segment: int, passage: int) -> str:
+    """The stable review ID of a passage, e.g. `s01-p0042`."""
+    return f"s{segment:02d}-p{passage:04d}"
+
+
 @dataclass(frozen=True)
 class ReviewCandidate:
     segment: int
@@ -70,7 +75,7 @@ class ReviewCandidate:
 
     @property
     def id(self) -> str:
-        return f"s{self.segment:02d}-p{self.passage:04d}"
+        return candidate_id(self.segment, self.passage)
 
     @property
     def strong_hint(self) -> bool:
