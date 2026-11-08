@@ -108,6 +108,20 @@ class SessionPaths:
         return self.diarization_dir / f"{segment_name(index)}.json"
 
     @property
+    def speakers_dir(self) -> Path:
+        return self.work_dir / "speakers"
+
+    @property
+    def speaker_assignment(self) -> Path:
+        """Manual assignment of speaker labels to participants (TOOL-68)."""
+        return self.speakers_dir / "assignment.json"
+
+    @property
+    def speaker_samples(self) -> Path:
+        """Passages to listen to per speaker label, rebuilt on every run (TOOL-68)."""
+        return self.speakers_dir / "samples.md"
+
+    @property
     def review_dir(self) -> Path:
         return self.work_dir / "review"
 

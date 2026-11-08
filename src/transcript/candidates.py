@@ -24,7 +24,7 @@ from transcript.config import LEVELS, Level
 from transcript.hints import Hint, hint_from, stored_hints
 from transcript.jsonfile import DataFileError, write_atomic
 from transcript.manifest import Manifest, Segment
-from transcript.reference import ReferenceTranscript, load_reference
+from transcript.reference import ReferenceTranscript, load_transcribed
 from transcript.session import SessionPaths
 from transcript.session_time import (
     Granularity,
@@ -133,7 +133,7 @@ def collect(paths: SessionPaths, manifest: Manifest) -> SessionCandidates:
     not_rated: list[int] = []
     found: list[ReviewCandidate] = []
     for entry in manifest.segments:
-        reference = _transcribed(paths, entry.index)
+        reference = load_transcribed(paths, entry.index)
         if reference is None:
             not_rated.append(entry.index)
             continue
@@ -150,13 +150,6 @@ def collect(paths: SessionPaths, manifest: Manifest) -> SessionCandidates:
         found += _segment_candidates(paths, segment, reference, assessment)
     found.sort(key=_review_order)
     return SessionCandidates(tuple(rated), tuple(not_rated), tuple(found))
-
-
-def _transcribed(paths: SessionPaths, index: int) -> ReferenceTranscript | None:
-    if not paths.reference(index).is_file():
-        return None
-    reference = load_reference(paths, index)
-    return reference if reference.status == "transcribed" else None
 
 
 def _current_assessment(

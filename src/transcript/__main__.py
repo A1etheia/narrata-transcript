@@ -1,6 +1,6 @@
 """Command-line entry point: `config`, `doctor`, `extract`, `context`, `snapshot`,
 `manifest`, `transcribe`, `diarize`, `assess`, `calibrate`, `review-export`,
-`review-import`."""
+`review-import`, `speakers`."""
 
 import argparse
 import collections
@@ -26,6 +26,8 @@ from transcript import (
     narrata,
     review_import,
     review_sheet,
+    speaker_samples,
+    speakers,
     uncertainty,
     variant_suggestions,
 )
@@ -214,6 +216,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "and suggest new ASR misrecognitions from the corrections.",
     )
     review_import_command.add_argument("session", help="session key <group>/<ordinal>")
+    speakers_command = commands.add_parser(
+        "speakers",
+        help="List passages to listen to per speaker label, write the assignment "
+        "template if there is none, and check the assignment.",
+    )
+    speakers_command.add_argument("session", help="session key <group>/<ordinal>")
     for command in (
         config_command,
         extract_command,
@@ -226,6 +234,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         calibrate_command,
         review_export_command,
         review_import_command,
+        speakers_command,
     ):
         command.add_argument(
             "--config",
@@ -267,6 +276,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _review_export(args.session, args.config, args.all, args.force)
         if args.command == "review-import":
             return _review_import(args.session, args.config)
+        if args.command == "speakers":
+            return _speakers(args.session, args.config)
     parser.print_help()
     return 0
 
@@ -794,6 +805,56 @@ def _review_import(raw_key: str, config_path: Path) -> int:
         print(f"wrote {paths.review_decisions}")
     suggested = _suggest_variants(key, paths, found, result.decisions)
     return 2 if result.problems or not suggested else 0
+
+
+def _speakers(raw_key: str, config_path: Path) -> int:
+    """Only counts, segment and entry numbers reach the console (TOOL-66).
+
+    Exit 0, 1 if an entry of the assignment is not applied, 2 on an error.
+    """
+    try:
+        key = SessionKey.parse(raw_key)
+        paths = _load_config(config_path).session_paths(key)
+        found_manifest = manifest.load_manifest(paths)
+        participants = knowledge.load_snapshot(paths).participants
+        references = speakers.diarized_references(paths, found_manifest)
+        if not references:
+            raise ValueError(f"{key}: no diarized segment; run transcript diarize")
+        created = speakers.write_template(paths, references)
+        assignment = speakers.load_assignment(paths) or speakers.SpeakerAssignment()
+        applied = speakers.check(assignment, references, participants)
+        labels = speaker_samples.label_samples(found_manifest, references)
+        speaker_samples.write_samples(
+            paths, speaker_samples.render(key, labels, participants, applied)
+        )
+    except (ValueError, ConfigError, DataFileError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    print(
+        f"{key}: speakers: {len(references)} segment(s), {len(applied.labels)} "
+        f"label(s){_by_status(applied.counts())}"
+    )
+    merge = sum(found.merge_candidate for found in labels)
+    if merge:
+        print(
+            f"{key}: {merge} label(s) under {speaker_samples.MERGE_SHARE:.0%} "
+            "of their segment's speech time, candidates for merging"
+        )
+    for split in applied.splits:
+        print(
+            f"warning: segment {split.segment}: {split.labels} labels assigned to "
+            "one person, merged"
+        )
+    for finding in applied.findings:
+        print(
+            f"{key}: entry {finding.entry} (segment {finding.segment}) not applied: "
+            f"{finding.kind.replace('_', ' ')}",
+            file=sys.stderr,
+        )
+    if created:
+        print(f"wrote template {paths.speaker_assignment}")
+    print(f"wrote {paths.speaker_samples}")
+    return 1 if applied.findings else 0
 
 
 def _suggest_variants(
