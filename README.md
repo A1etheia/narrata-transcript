@@ -329,7 +329,27 @@ Nach jeder [Unsicherheitsbewertung](#unsicherheitsbewertung) entsteht die Prüfl
 - **Kennzahl:** Kandidaten pro Stunde Audio, gerechnet nur über die bewerteten Segmente. Segmente ohne Transkript oder mit Fehlschlag stehen unter `not_rated`.
 - **Aktualität:** Passt eine Bewertung nicht mehr zu ihrem Referenztranskript, bricht der Schritt mit `run transcript assess` ab, statt auf veralteten Text zu zeigen.
 
-Die Datei `work/<gruppe>/<ordinal>/review/candidates.json` (`format_version: 1`) enthält erkannten Text und Archivnamen und bleibt deshalb unter `work/`. Die Konsole zeigt nur Zahlen, etwa `review candidates: 57 (12.3 per hour of audio)`. Das Review-Datenmodell (TOOL-46) und die Review-CSV (TOOL-47) lesen diese Datei. Überlappende Segmenttranskriptionen sind kein Signal: Ohne eigene Segmentierung ([TOOL-62](docs/spikes/TOOL-62-asr-vergleich.md)) gibt es sie nicht.
+Die Datei `work/<gruppe>/<ordinal>/review/candidates.json` (`format_version: 1`) enthält erkannten Text und Archivnamen und bleibt deshalb unter `work/`. Die Konsole zeigt nur Zahlen, etwa `review candidates: 57 (12.3 per hour of audio)`. Die [Review-Entscheidungen](#review-entscheidungen) und die Review-CSV (TOOL-47) lesen diese Datei. Überlappende Segmenttranskriptionen sind kein Signal: Ohne eigene Segmentierung ([TOOL-62](docs/spikes/TOOL-62-asr-vergleich.md)) gibt es sie nicht.
+
+## Review-Entscheidungen
+
+Was beim Anhören eines Kandidaten entschieden wird, steht in einer eigenen Datei (`transcript.decisions`): `work/<gruppe>/<ordinal>/review/decisions.json` (`format_version: 1`). Die Kandidatendatei bleibt rein automatisch und entsteht bei jeder Bewertung neu. Die Entscheidungsdatei entsteht nur von Hand. So überschreibt keine Seite die andere, und Text, Stufe, Gründe und Hinweise des Kandidaten bleiben, wie die Pipeline sie erzeugt hat.
+
+| Status | Bedeutung |
+| --- | --- |
+| `open` | noch nicht entschieden; das gilt auch für jeden Kandidaten ohne Eintrag |
+| `confirmed` | der erkannte Wortlaut stimmt |
+| `corrected` | der Wortlaut ist falsch; der richtige steht in `target_text` |
+| `unintelligible` | nicht zu verstehen |
+| `kept` | bewusst unverändert gelassen, auch wenn er falsch sein kann |
+| `deferred` | später prüfen |
+
+- **Pro Eintrag:** Kandidaten-ID, Segment, Passage, die Fassung des Transkripts, auf die sich die Entscheidung bezieht (`reference_processed_at`), Status, Zeitpunkt, optional `target_text` und `note`. Einen `target_text` gibt es nur bei `corrected`, dort ist er Pflicht. Ein Eintrag pro Kandidat, ein späterer ersetzt den früheren.
+- **Veraltet:** Ist das Segment seitdem neu transkribiert, gilt die Entscheidung nicht mehr, und der Kandidat ist wieder offen. Eine neue Bewertung bei gleichem Transkript ändert nichts, denn die Entscheidung betrifft den Text.
+- **Verwaist:** Ist der Kandidat verschwunden, etwa weil die Passage nach neuer Kalibrierung sicher ist, bleibt die Entscheidung ebenfalls in der Datei stehen.
+- Veraltete und verwaiste Entscheidungen werden gemeldet, nie gelöscht und nie angewendet. Angewendet wird eine Entscheidung erst in der Arbeitsfassung (TOOL-49).
+
+Die Datei enthält Zieltexte und Notizen und bleibt deshalb unter `work/`. Einen eigenen Befehl gibt es noch nicht: Die Review-CSV (TOOL-47) und ihr Reimport (TOOL-48) lesen und schreiben sie.
 
 ## Konfiguration
 
@@ -405,7 +425,7 @@ work/beispielgruppe/042/
   audio/                       segment-NN.wav (Arbeitsformat, eine pro Aufnahme), audio.json (Audio-Metadaten)
   asr/                         segment-NN.json (Referenztranskript), segment-NN.raw.json (Backend-Rohantwort)
   diarization/                 segment-NN.json (Sprecher-Turns von pyannote)
-  review/                      segment-NN.hints.json (Review-Hinweise aus dem Wissen), segment-NN.uncertainty.json (Unsicherheitsbewertung), candidates.json (Review-Kandidaten der Session), später CSV
+  review/                      segment-NN.hints.json (Review-Hinweise aus dem Wissen), segment-NN.uncertainty.json (Unsicherheitsbewertung), candidates.json (Review-Kandidaten der Session), decisions.json (Review-Entscheidungen), später CSV
   speakers/                    Sprecherzuordnung
   debug.log                    nur im Debug-Modus
 output/beispielgruppe/042/     JSON-Export, TXT, DOCX
