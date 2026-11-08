@@ -125,6 +125,11 @@ class SessionPaths:
         return self.review_dir / "candidates.json"
 
     @property
+    def review_decisions(self) -> Path:
+        """Manual review decisions of the whole session (TOOL-46)."""
+        return self.review_dir / "decisions.json"
+
+    @property
     def manifest(self) -> Path:
         return self.work_dir / "manifest.json"
 
