@@ -64,7 +64,7 @@ Der Befehl holt den Transkriptionskontext einer Sitzung vom Narrata-Endpoint `GE
 
 **Abrufparameter.** Jeder Abruf sendet `n` (`narrata.recent_sessions`, Default 3) und `archive_limit` (`narrata.archive_limit`, Default 500) ausdrücklich mit, das Ergebnis hängt also nicht an Server-Defaults.
 
-**Teilnehmende.** Spätere Schritte (Wissens-Snapshot TOOL-41, Sprecherzuordnung TOOL-68) lesen die Teilnehmenden über `transcript.narrata.read_participants`: Narrata-User-ID, Anzeigename, Rolle, `is_former` und die Spielfiguren mit Archiv-ID, Name und Aliasen, in der Reihenfolge aus Narrata und mit Datei, Contract-Version und `play_session_id` als Herkunft. Ehemalige Mitglieder sind enthalten. Wer an der Sitzung anwesend war, führt Narrata noch nicht (IOA-1271), die Anwesenheit ist deshalb unbekannt (`present = None`). Die Konsole zeigt nur Zähler: Teilnehmende, davon Spielleitung und ehemalig, und Spielfiguren.
+**Teilnehmende.** Der Wissens-Snapshot (TOOL-41) liest die Teilnehmenden über `transcript.narrata.read_participants`, die Sprecherzuordnung (TOOL-68) nimmt sie aus dem Snapshot: Narrata-User-ID, Anzeigename, Rolle, `is_former` und die Spielfiguren mit Archiv-ID, Name und Aliasen, in der Reihenfolge aus Narrata und mit Datei, Contract-Version und `play_session_id` als Herkunft. Ehemalige Mitglieder sind enthalten. Wer an der Sitzung anwesend war, führt Narrata noch nicht (IOA-1271), die Anwesenheit ist deshalb unbekannt (`present = None`). Die Konsole zeigt nur Zähler: Teilnehmende, davon Spielleitung und ehemalig, und Spielfiguren.
 
 **Glossar.** Eigennamen und Begriffe kommen aus dem Welt-Archiv in Narrata, eine eigene Glossardatei gibt es nicht. `transcript.narrata.read_glossary` liest jeden Eintrag mit Typ (`place`, `person`, `artifact`, `organisation`, `event`, `lore`), Archiv-ID, Name, Aliassen, bekannten ASR-Hörfehlern (`asr_variants`), Kurzbeschreibung und Relevanzstufe (`pc`, `session`, `recent`, `archive`), in der Reihenfolge aus Narrata und mit Datei, Contract-Version und `play_session_id` als Herkunft. Dazu kommen die Archiv-Kappung (`glossary_meta`) und die Hörfehler, die mehrere Einträge teilen (`asr_ambiguities`, ab Contract 1.1). Die Prüfung beim Speichern verlangt Typ, ID, Name und Relevanz, eindeutige Paare aus Typ und ID und Mehrdeutigkeiten, die auf mindestens zwei ausgelieferte Einträge zeigen. Ein unbekannter Typ oder eine unbekannte Stufe bricht mit dem Hinweis ab, narrata-transcript zu aktualisieren. `transcript.glossary.GlossaryIndex` findet Einträge über Name, Alias oder Hörfehler, unabhängig von Groß-/Kleinschreibung, Unicode-Normalform und Leerraum. Teilen sich mehrere Einträge einen Begriff, kommen alle zurück, eine Auswahl trifft erst das Review. `transcript.glossary.keyword_terms` liefert Namen und Aliasse als Kandidaten für ASR-Hinweise, ohne Hörfehler und ohne Dubletten. Welche Einträge ein Lauf als Keywords nutzt, legt der [Wissens-Snapshot](#wissens-snapshot) fest, die Kappung auf das Token-Budget des Backends kommt mit TOOL-44. Die Konsole zeigt Einträge je Stufe, die Archiv-Kappung und die Zahl der Mehrdeutigkeiten, keine Namen.
 
@@ -235,7 +235,7 @@ transcript diarize beispielgruppe/042 --force          # neu rechnen statt wiede
 
 Pro Segment entsteht `work/<gruppe>/<ordinal>/diarization/segment-NN.json` mit den Turns des Modells. Danach trägt jedes Wort im Referenztranskript das Label des Turns, in dem seine Mitte liegt, jede Passage das Mehrheitslabel; Wörter ohne Turn bleiben ohne Label. Text, Zeiten und Confidence bleiben unverändert. Ein zweiter Lauf verwendet die gespeicherten Turns wieder, solange WAV, Modell-Revision, Einstellungen und `--num-speakers` gleich sind, und lädt dann kein Modell. Die Konsole zeigt nur Zähler und Laufzeiten, nie Labels oder Text.
 
-**Labels gelten pro Segment.** `SPEAKER_00` der ersten Aufnahme ist nicht automatisch dieselbe Person wie `SPEAKER_00` der zweiten. Die Zuordnung zu Personen kommt mit TOOL-68.
+**Labels gelten pro Segment.** `SPEAKER_00` der ersten Aufnahme ist nicht automatisch dieselbe Person wie `SPEAKER_00` der zweiten. Die Zuordnung zu Personen geschieht von Hand, siehe [Sprecherzuordnung](#sprecherzuordnung).
 
 **Hardware.** Auf 5 h unter 4 GB VRAM, bis 13,8 GB RAM und etwa 4 Minuten auf der GPU des Testrechners. Nicht gleichzeitig mit Whisper laufen lassen; `transcript transcribe` gibt Whisper vorher frei. Ohne GPU läuft es auf der CPU, deutlich langsamer.
 
@@ -248,6 +248,34 @@ Pro Segment entsteht `work/<gruppe>/<ordinal>/diarization/segment-NN.json` mit d
 ```bash
 TRANSCRIPT_DIARIZATION_SMOKE=1 python -m unittest discover -s tests -p test_diarization_smoke.py -v
 ```
+
+## Sprecherzuordnung
+
+Wer hinter einem Label steckt, wird von Hand festgelegt (`transcript.speakers`, TOOL-68). Pro Abend dauert das wenige Minuten: je Label ein paar Sekunden anhören. Voraussetzung sind Manifest, [Wissens-Snapshot](#wissens-snapshot) und mindestens ein diarisiertes Segment.
+
+```bash
+transcript speakers beispielgruppe/042
+```
+
+Der Befehl schreibt zwei Dateien unter `work/<gruppe>/<ordinal>/speakers/`:
+
+- **`samples.md`**, die Hörliste. Sie wird bei jedem Lauf neu geschrieben und nie zurückgelesen. Oben stehen die Teilnehmenden aus dem Snapshot mit User-ID, Anzeigename, Rolle und Mitgliedschaft (aktive zuerst, Ehemalige wählbar). Danach folgt pro Segment und Label die Redezeit mit ihrem Anteil am Segment und der aktuellen Zuordnung. Darunter stehen die fünf Passagen, in denen das Label am längsten spricht, jeweils mit Session-Zeit, Zeit im Segment-WAV und Text. Redezeit ist die Summe der Wortdauern des Labels; ohne Wortzeiten zählt die Passage ganz für ihr Mehrheitslabel. Ein Label unter 3 % der Redezeit seines Segments ist als **Kandidat für Zusammenlegung** markiert, wahrscheinlich ein abgespaltenes Stück einer anderen Person.
+- **`assignment.json`**, die Zuordnung (`format_version: 1`). Fehlt die Datei, entsteht sie als Vorlage mit einem `open`-Eintrag pro Segment und Label. Danach schreibt das Werkzeug sie nie wieder, sie ist Handarbeit.
+
+| `assigned` | Bedeutung |
+| --- | --- |
+| `person` | eine Teilnehmer\*in aus dem Snapshot, `user_id` ist Pflicht |
+| `unknown` | nicht zu erkennen |
+| `multiple` | mehrere Personen, etwa bei Übersprechen |
+| `open` | noch nicht zugeordnet; das gilt auch für ein Label ohne Eintrag |
+
+- **Pro Eintrag:** `segment`, `label`, `labels_version`, `assigned` und bei `person` die `user_id`. Labels gelten pro Segment, deshalb ist der Schlüssel Segment plus Label. Mehrere Aufnahmen einer Session werden zusammengeführt, indem ihre Labels derselben Person zugeordnet werden.
+- **`effort_minutes`** hält von Hand fest, wie viele Minuten die Zuordnung gedauert hat; der Bericht (TOOL-59) wertet das aus.
+- **Zusammenführen:** Zwei Labels eines Segments dürfen derselben Person gehören, wenn die Diarisierung eine Person geteilt hat. Der Befehl warnt dann und führt sie zusammen.
+- **Nicht angewendet** werden Einträge zu einem unbekannten Segment, einem unbekannten Label oder einer Person, die nicht im Snapshot steht. Dasselbe gilt für veraltete Einträge: `labels_version` ist ein Fingerabdruck der Labels des Segments und ändert sich, wenn das Segment neu transkribiert oder mit anderem Ergebnis neu diarisiert wird. Solche Einträge bleiben in der Datei, werden mit Eintragsnummer gemeldet, und der Befehl endet mit Exit-Code 1.
+- **Nie geraten:** Was nicht gültig einer Person zugeordnet ist, bleibt ein Label, ebenso Wörter ohne Label. Das Referenztranskript bleibt unverändert. Die Arbeitsfassung (TOOL-49) und der Export (TOOL-69) lesen die Zuordnung über `speakers.check(...).resolve(segment, label)` und tragen dann Label und Person.
+
+Die Konsole zeigt nur Zähler, Segment- und Eintragsnummern, nie Labels, Namen, User-IDs oder Text. Beide Dateien enthalten User-IDs, die Hörliste auch Namen und Text; sie bleiben unter `work/`.
 
 ## Review-Hinweise
 
@@ -292,7 +320,7 @@ Die Stufe einer Passage ist die höchste ihrer Gründe. Die Schwellen stehen unt
 
 - **Fehlende Daten werden nie ersetzt.** Fehlt einer Passage eine Signalart, greifen ihre Regeln nicht, und die Art steht unter `missing`: `word_confidence`, `segment_signals`, `word_times`, `speaker` (keine Diarisierung) oder `hints` (keine Hinweisdatei, oder sie passt nicht zum Referenztranskript). Sicher wird eine Passage nur durch Confidence oder Whisper-Signale. Zeiten, Sprecher und Hinweise können eine Stufe nur anheben.
 - **Gleiche Eingabe, gleiche Stufen:** Die Regeln sind deterministisch und lesen nur Referenztranskript, Hinweisdatei und Konfiguration. Beide Dateien bleiben unverändert.
-- **Sprecher und Mundart:** Labels gelten pro Segment und sind bis TOOL-68 keiner Person zugeordnet. Schwellen pro Person gibt es deshalb nicht.
+- **Sprecher und Mundart:** Labels gelten pro Segment. Die Bewertung kennt keine Personen, auch wenn eine [Sprecherzuordnung](#sprecherzuordnung) besteht. Schwellen pro Person gibt es deshalb nicht.
 
 Die Datei `work/<gruppe>/<ordinal>/review/segment-NN.uncertainty.json` (`format_version: 1`) enthält pro Passage Index, Stufe, Gründe (`rule`, `level`, gesehener `value`, `threshold`, Wortpositionen `words`) und `missing`. Dazu kommen im Kopf die verwendeten Schwellen, das gelesene Referenztranskript und die Snapshot-Kennung der Hinweise. Text enthält sie nicht. Ein fehlgeschlagenes Segment verliert seine Datei. Die Konsole zeigt nur Zahlen, etwa `passages: 412 confident, 96 needs_review, 31 uncertain`.
 
@@ -325,7 +353,7 @@ Nach jeder [Unsicherheitsbewertung](#unsicherheitsbewertung) entsteht die Prüfl
 
 - **Reihenfolge:** erst `uncertain`, dann `needs_review`. Innerhalb einer Stufe kommen Passagen mit einem bekannten Hörfehler (`known_variant`) oder einem mehrdeutigen Hinweis zuerst, danach gilt die Aufnahmereihenfolge.
 - **Domänenwissen** löst einen Kandidaten aus, wenn ein Hinweis die Stufe hebt, und verstärkt ihn, weil seine Hinweise mit Kandidaten aus Narrata am Kandidaten hängen. Korrigiert wird nichts. Ein `similar`-Hinweis nur über den Klang hebt nach Default nicht an und macht deshalb keinen Kandidaten, er bleibt in der Hinweisdatei sichtbar.
-- **Pro Kandidat:** Kennung (`s01-p0042` für Segment 1, Passage 42), Stufe, Gründe mit Werten und Schwellen, `missing`, der erkannte Text unverändert, das Sprecher-Label (bis TOOL-68 keine Person), die Session-Zeit (siehe [Referenzformat](docs/referenzformat.md), `null`, wenn das Backend keine Zeit lieferte) und die Hinweise, mit denen die Passage bewertet wurde.
+- **Pro Kandidat:** Kennung (`s01-p0042` für Segment 1, Passage 42), Stufe, Gründe mit Werten und Schwellen, `missing`, der erkannte Text unverändert, das Sprecher-Label (ohne Person; die kommt erst in der Arbeitsfassung, TOOL-49), die Session-Zeit (siehe [Referenzformat](docs/referenzformat.md), `null`, wenn das Backend keine Zeit lieferte) und die Hinweise, mit denen die Passage bewertet wurde.
 - **Kennzahl:** Kandidaten pro Stunde Audio, gerechnet nur über die bewerteten Segmente. Segmente ohne Transkript oder mit Fehlschlag stehen unter `not_rated`.
 - **Aktualität:** Passt eine Bewertung nicht mehr zu ihrem Referenztranskript, bricht der Schritt mit `run transcript assess` ab, statt auf veralteten Text zu zeigen.
 
@@ -366,7 +394,7 @@ Die Datei enthält Zieltexte und Notizen und bleibt deshalb unter `work/`. Die [
 | `id` | Kandidaten-ID, z. B. `s01-p0042` |
 | `start`, `end` | Session-Zeit `HH:MM:SS.mmm`, leer ohne Zeit |
 | `segment`, `segment_start` | Segment und Zeit im Segment-WAV, zum Suchen im Audio |
-| `speaker` | Sprecher-Label (bis TOOL-68 keine Person) |
+| `speaker` | Sprecher-Label, ohne Person |
 | `level` | `needs_review` oder `uncertain` |
 | `order` | Position in der Review-Reihenfolge |
 | `reasons` | Gründe mit gesehenem Wert und Schwelle, z. B. `low_confidence 0.333/0.2` |
@@ -484,7 +512,7 @@ work/beispielgruppe/042/
   asr/                         segment-NN.json (Referenztranskript), segment-NN.raw.json (Backend-Rohantwort)
   diarization/                 segment-NN.json (Sprecher-Turns von pyannote)
   review/                      segment-NN.hints.json (Review-Hinweise aus dem Wissen), segment-NN.uncertainty.json (Unsicherheitsbewertung), candidates.json (Review-Kandidaten der Session), decisions.json (Review-Entscheidungen), review.csv (Review-CSV)
-  speakers/                    Sprecherzuordnung
+  speakers/                    assignment.json (Sprecherzuordnung, von Hand), samples.md (Hörliste pro Label)
   debug.log                    nur im Debug-Modus
 output/beispielgruppe/042/     JSON-Export, TXT, DOCX
 ```
