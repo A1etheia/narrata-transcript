@@ -1,22 +1,44 @@
 import dataclasses
+import json
+from typing import Any
 
 from test_candidates import ONLY_FIRST, _SessionCase
 from test_decisions import MOMENT, NONE
+from test_narrata import context, encoded, participant
 from test_session_time import MANIFEST
 from test_speakers import PARTICIPANTS, entry
 from test_uncertainty import PROCESSED_AT, diarized, passage, transcript, words
 
 from transcript.candidates import candidate_id, collect
+from transcript.config import DEFAULT_KEYWORD_BUDGET
 from transcript.decisions import (
     ReviewDecision,
     ReviewStatus,
     SessionDecisions,
     decide,
+    write_decisions,
 )
+from transcript.jsonfile import DataFileError
+from transcript.knowledge import build_snapshot
 from transcript.manifest import Manifest
+from transcript.narrata import store_context
 from transcript.reference import Passage, Processing, ReferenceTranscript
-from transcript.speakers import SpeakerAssignment, SpeakerMap, SpeakerRef, check
-from transcript.working import WorkingFinding, WorkingTranscript, build
+from transcript.speakers import (
+    SpeakerAssignment,
+    SpeakerMap,
+    SpeakerRef,
+    check,
+    write_assignment,
+)
+from transcript.working import (
+    WorkingError,
+    WorkingFinding,
+    WorkingTranscript,
+    build,
+    compose,
+    load_working,
+    write_working,
+)
 
 UNSURE = (0.3, 0.9, 0.9)  # needs_review
 SURE = (0.9, 0.9, 0.9)  # confident
@@ -225,3 +247,111 @@ class SpeakerTest(_WorkingCase):
             [SpeakerRef(1, None, "open", None)],
         )
         self.assertIsNone(result.inputs.segments[0].labels_version)
+
+
+class WorkingFileTest(_WorkingCase):
+    def setUp(self) -> None:
+        super().setUp()
+        store_context(
+            self.paths, encoded(context(participants=[participant(user_id=11)]))
+        )
+        build_snapshot(self.paths, DEFAULT_KEYWORD_BUDGET)
+
+    def written(self) -> bytes:
+        write_working(self.paths, compose(self.paths, ONLY_FIRST))
+        return self.paths.working_transcript.read_bytes()
+
+    def stored(self) -> dict[str, Any]:
+        return json.loads(self.paths.working_transcript.read_text(encoding="utf-8"))
+
+    def test_equal_inputs_give_an_equal_file(self) -> None:
+        write_decisions(self.paths, self.decided((2, "corrected", "Grauwasser")))
+
+        first = self.written()
+
+        self.assertEqual(self.written(), first)
+
+    def test_the_stored_version_loads_as_written(self) -> None:
+        write_decisions(self.paths, self.decided((2, "unintelligible", None)))
+        working = compose(self.paths, ONLY_FIRST)
+
+        write_working(self.paths, working)
+
+        self.assertEqual(load_working(self.paths), working)
+
+    def test_a_new_decision_changes_its_block_and_the_inputs_only(self) -> None:
+        before = self.stored_after(NONE)
+        after = self.stored_after(self.decided((3, "kept", None)))
+
+        pairs = zip(before["blocks"], after["blocks"], strict=True)
+        changed = [b["passage"] for a, b in pairs if a != b]
+        self.assertEqual(changed, [3])
+        self.assertIsNone(before["inputs"]["decisions_sha256"])
+        self.assertIsNotNone(after["inputs"]["decisions_sha256"])
+        self.assertEqual(before["findings"], after["findings"])
+
+    def stored_after(self, decisions: SessionDecisions) -> dict[str, Any]:
+        self.paths.review_decisions.unlink(missing_ok=True)
+        if decisions.decisions:
+            write_decisions(self.paths, decisions)
+        self.written()
+        return self.stored()
+
+    def test_the_reference_stays_unchanged(self) -> None:
+        reference = self.paths.reference(1).read_bytes()
+        write_decisions(self.paths, self.decided((2, "corrected", "Grauwasser")))
+
+        self.written()
+
+        self.assertEqual(self.paths.reference(1).read_bytes(), reference)
+
+    def test_the_assignment_is_recorded_by_its_bytes(self) -> None:
+        self.assertIsNone(compose(self.paths, ONLY_FIRST).inputs.assignment_sha256)
+        write_assignment(
+            self.paths, SpeakerAssignment((entry(self.reference, "SPEAKER_00", 11),))
+        )
+
+        working = compose(self.paths, ONLY_FIRST)
+
+        self.assertIsNotNone(working.inputs.assignment_sha256)
+        self.assertEqual(working.blocks[0].speaker.user_id, 11)
+
+    def test_without_snapshot_nothing_is_composed(self) -> None:
+        self.paths.knowledge_snapshot.unlink()
+
+        with self.assertRaisesRegex(DataFileError, "run transcript snapshot"):
+            compose(self.paths, ONLY_FIRST)
+
+    def test_a_file_of_another_version_or_session_is_rejected(self) -> None:
+        for key, value, message in (
+            ("format_version", 99, "unsupported format_version"),
+            ("session", "andere/001", "belongs to another session"),
+        ):
+            with self.subTest(key=key):
+                data = self.fresh()
+                data[key] = value
+                self.save(data)
+
+                with self.assertRaisesRegex(WorkingError, message):
+                    load_working(self.paths)
+
+    def test_an_invalid_block_is_named_by_number(self) -> None:
+        for field, value, message in (
+            ("origin", "guessed", "'origin' invalid"),
+            ("speaker", {"assigned": "open", "user_id": 11}, "'user_id' only allowed"),
+        ):
+            with self.subTest(field=field):
+                data = self.fresh()
+                data["blocks"][1][field] = value
+                self.save(data)
+
+                with self.assertRaisesRegex(WorkingError, f"block 2: field {message}"):
+                    load_working(self.paths)
+
+    def fresh(self) -> dict[str, Any]:
+        """The working version as just written, to change by hand."""
+        self.written()
+        return self.stored()
+
+    def save(self, data: dict[str, Any]) -> None:
+        self.paths.working_transcript.write_text(json.dumps(data))

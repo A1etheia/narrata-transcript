@@ -15,25 +15,56 @@ speaker label stays; a validly assigned person is added to it.
 A decision or speaker entry that does not fit the transcript any more, and a
 segment without a transcript, is a finding: reported, never applied. Equal
 inputs give an equal result, so nothing in it depends on when it was made.
+
+`write_working` stores `working/transcript.json`. It holds text and user ids,
+so it stays under `work/`; this module logs nothing, and its error messages
+name file, block and field only.
 """
 
+import dataclasses
+import functools
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from typing import Literal, get_args
+from pathlib import Path
+from typing import Any, Literal, TypeVar, get_args
 
-from transcript.candidates import SessionCandidates
-from transcript.config import Level
+from transcript import jsonfile
+from transcript.audio import sha256_file
+from transcript.candidates import SessionCandidates, collect
+from transcript.config import LEVELS, Level
 from transcript.decisions import (
     SETTLED,
+    STATUSES,
     ReviewItem,
     ReviewStatus,
     SessionDecisions,
+    load_decisions,
     review_items,
 )
-from transcript.reference import Passage, ReferenceTranscript
+from transcript.jsonfile import DataFileError, write_atomic
+from transcript.knowledge import load_snapshot
+from transcript.manifest import Manifest
+from transcript.reference import Passage, ReferenceTranscript, load_transcribed
+from transcript.session import SessionPaths
+from transcript.speakers import (
+    ASSIGNED,
+    SpeakerAssignment,
+    SpeakerMap,
+    SpeakerRef,
+    check,
+    labels_version,
+    load_assignment,
+)
 from transcript.speakers import FindingKind as SpeakerFindingKind
-from transcript.speakers import SpeakerMap, SpeakerRef, labels_version
+
+WORKING_FORMAT_VERSION = 1
+_T = TypeVar("_T")
+
+
+class WorkingError(DataFileError):
+    """The working version file is missing or invalid."""
+
 
 Origin = Literal[
     "automatic",  # no candidate: taken over as recognised
@@ -214,3 +245,150 @@ def _outcome(
 
 def _order(finding: WorkingFinding) -> tuple[int, str, int, int]:
     return (finding.segment, finding.kind, finding.passage or 0, finding.entry or 0)
+
+
+def compose(paths: SessionPaths, manifest: Manifest) -> WorkingTranscript:
+    """The working version of the session, from the files under `work/`.
+
+    A rating of another transcript version, a missing snapshot or an invalid
+    decisions or assignment file is a `DataFileError`.
+    """
+    found = collect(paths, manifest)
+    loaded = (load_transcribed(paths, segment.index) for segment in manifest.segments)
+    references = [reference for reference in loaded if reference is not None]
+    snapshot = load_snapshot(paths)
+    speakers = check(
+        load_assignment(paths) or SpeakerAssignment(),
+        [reference for reference in references if reference.diarization is not None],
+        snapshot.participants,
+    )
+    return build(
+        references,
+        found,
+        load_decisions(paths),
+        speakers,
+        knowledge_snapshot_id=snapshot.snapshot_id,
+        decisions_sha256=_sha256(paths.review_decisions),
+        assignment_sha256=_sha256(paths.speaker_assignment),
+    )
+
+
+def _sha256(path: Path) -> str | None:
+    return sha256_file(path) if path.is_file() else None
+
+
+def write_working(paths: SessionPaths, working: WorkingTranscript) -> None:
+    """Replace the session's working version atomically."""
+    write_atomic(
+        paths.working_transcript,
+        {
+            "format_version": WORKING_FORMAT_VERSION,
+            "session": str(paths.key),
+            "inputs": dataclasses.asdict(working.inputs),
+            "findings": [dataclasses.asdict(found) for found in working.findings],
+            "blocks": [_block_json(block) for block in working.blocks],
+        },
+    )
+
+
+def _block_json(block: Block) -> dict[str, Any]:
+    data = dataclasses.asdict(block)
+    del data["speaker"]["segment"]  # the block's own
+    return data
+
+
+def load_working(paths: SessionPaths) -> WorkingTranscript:
+    """The stored working version; `WorkingError` if absent or invalid."""
+    path = paths.working_transcript
+    data = jsonfile.read_object(path, "working version", WorkingError)
+    if data.get("format_version") != WORKING_FORMAT_VERSION:
+        raise WorkingError(
+            f"{path}: unsupported format_version; run transcript working again"
+        )
+    if data.get("session") != str(paths.key):
+        raise WorkingError(f"{path}: belongs to another session")
+    return WorkingTranscript(
+        inputs=_inputs_from(_field(data, "inputs", dict, path), path),
+        blocks=tuple(
+            _numbered(_block_from, "block", item, n, path)
+            for n, item in enumerate(_list(data, "blocks", dict, path), start=1)
+        ),
+        findings=tuple(
+            _numbered(_finding_from, "finding", item, n, path)
+            for n, item in enumerate(_list(data, "findings", dict, path), start=1)
+        ),
+    )
+
+
+def _inputs_from(data: dict[str, Any], path: Path) -> Inputs:
+    return Inputs(
+        knowledge_snapshot_id=_field(data, "knowledge_snapshot_id", str, path),
+        decisions_sha256=_optional(data, "decisions_sha256", str, path),
+        assignment_sha256=_optional(data, "assignment_sha256", str, path),
+        segments=tuple(
+            SegmentInput(
+                segment=_field(item, "segment", int, path),
+                reference_processed_at=_field(
+                    item, "reference_processed_at", str, path
+                ),
+                labels_version=_optional(item, "labels_version", str, path),
+            )
+            for item in _list(data, "segments", dict, path)
+        ),
+    )
+
+
+def _numbered(
+    read: Callable[[dict[str, Any], Path], _T],
+    what: str,
+    data: dict[str, Any],
+    number: int,
+    path: Path,
+) -> _T:
+    """`read(data, path)`; an error from it names the entry number."""
+    try:
+        return read(data, path)
+    except (DataFileError, ValueError) as error:
+        detail = str(error).removeprefix(f"{path}: ")
+        raise WorkingError(f"{path}: {what} {number}: {detail}") from None
+
+
+def _block_from(data: dict[str, Any], path: Path) -> Block:
+    segment = _field(data, "segment", int, path)
+    speaker = _field(data, "speaker", dict, path)
+    return Block(
+        segment=segment,
+        passage=_field(data, "passage", int, path),
+        start_ms=_optional(data, "start_ms", int, path),
+        end_ms=_optional(data, "end_ms", int, path),
+        level=_one_of(data, "level", LEVELS, path),
+        origin=_one_of(data, "origin", ORIGINS, path),
+        status=_optional_one_of(data, "status", STATUSES, path),
+        asr_text=_field(data, "asr_text", str, path),
+        text=_optional(data, "text", str, path),
+        speaker=SpeakerRef(  # checks `user_id` itself
+            segment=segment,
+            label=_optional(speaker, "label", str, path),
+            assigned=_one_of(speaker, "assigned", ASSIGNED, path),
+            user_id=speaker.get("user_id"),
+        ),
+    )
+
+
+def _finding_from(data: dict[str, Any], path: Path) -> WorkingFinding:
+    return WorkingFinding(
+        kind=_one_of(data, "kind", get_args(FindingKind), path),
+        segment=_field(data, "segment", int, path),
+        passage=_optional(data, "passage", int, path),
+        entry=_optional(data, "entry", int, path),
+        speaker_kind=_optional_one_of(
+            data, "speaker_kind", get_args(SpeakerFindingKind), path
+        ),
+    )
+
+
+_field = functools.partial(jsonfile.field, error=WorkingError)
+_optional = functools.partial(jsonfile.optional_field, error=WorkingError)
+_one_of = functools.partial(jsonfile.one_of, error=WorkingError)
+_optional_one_of = functools.partial(jsonfile.optional_one_of, error=WorkingError)
+_list = functools.partial(jsonfile.list_of, error=WorkingError)

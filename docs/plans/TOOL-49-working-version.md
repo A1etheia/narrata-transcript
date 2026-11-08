@@ -63,8 +63,7 @@ Heute liegen diese Teile nur getrennt vor, deshalb hat TOOL-69 keine Grundlage f
 - **Determinismus:** Die Datei enthält keine Zeitstempel des Laufs. Gleiche Eingaben ergeben eine byte-gleiche Datei. Statt eines Zeitstempels hält `inputs` die Eingaben fest:
   - `knowledge_snapshot_id`;
   - pro Segment `reference_processed_at` und `labels_version` (oder `null`);
-  - `decisions_updated_at`;
-  - `assignment_sha256` über die Dateibytes, `null` ohne Datei.
+  - `decisions_sha256` und `assignment_sha256` über die Dateibytes, `null` ohne Datei. (Ursprünglich `decisions_updated_at`; `load_decisions` gibt `updated_at` nicht heraus, und mit dem Hash gilt für beide Dateien dieselbe Regel.)
 - **Pfad:** `work/<s>/working/transcript.json` (`SessionPaths.working_transcript`). Die Datei enthält Text und User-IDs und gehört deshalb nach `work/`, nicht nach `output/`.
 - **Exit-Codes:**
 

@@ -66,13 +66,7 @@ class AssignmentEntry:
             raise ValueError("field 'segment' invalid")
         if not self.label:
             raise ValueError("field 'label' empty")
-        if self.assigned not in ASSIGNED:
-            raise ValueError("field 'assigned' invalid")
-        if self.assigned == "person":
-            if not is_narrata_id(self.user_id):
-                raise ValueError("field 'user_id' required for person")
-        elif self.user_id is not None:
-            raise ValueError("field 'user_id' only allowed for person")
+        _check_person(self.assigned, self.user_id)
 
     @property
     def key(self) -> LabelKey:
@@ -117,6 +111,20 @@ class SpeakerRef:
     label: str | None  # None: no turn covered the words
     assigned: Assigned
     user_id: UserId | None  # set exactly when `assigned` is `person`
+
+    def __post_init__(self) -> None:
+        _check_person(self.assigned, self.user_id)
+
+
+def _check_person(assigned: Assigned, user_id: UserId | None) -> None:
+    """`ValueError` unless `user_id` is a Narrata id exactly for `person`."""
+    if assigned not in ASSIGNED:
+        raise ValueError("field 'assigned' invalid")
+    if assigned == "person":
+        if not is_narrata_id(user_id):
+            raise ValueError("field 'user_id' required for person")
+    elif user_id is not None:
+        raise ValueError("field 'user_id' only allowed for person")
 
 
 @dataclass(frozen=True)
