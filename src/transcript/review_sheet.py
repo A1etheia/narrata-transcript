@@ -55,7 +55,7 @@ SHEET_COLUMNS = (
     "version",  # the transcript version the row shows
 )
 PENDING: frozenset[ReviewStatus] = frozenset({"open", "deferred"})
-_FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
+FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 
 
 class SheetError(DataFileError):
@@ -162,7 +162,7 @@ def _text(value: str | None) -> str:
     """A free-text cell; one that starts like a formula gets a leading `'`."""
     if not value:
         return ""
-    return f"'{value}" if value.startswith(_FORMULA_START) else value
+    return f"'{value}" if value.startswith(FORMULA_START) else value
 
 
 def render(sheet: ReviewSheet) -> bytes:
