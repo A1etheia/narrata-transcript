@@ -8,8 +8,9 @@ passages never appear, since they are no candidates.
 The file is made for a spreadsheet in a German locale: `;` between cells, UTF-8
 with a byte order mark, CRLF between rows. A free-text cell starting like a
 formula gets a leading `'`, so that "- Ja, genau" stays text; the reimport
-(TOOL-48) reads `id`, `status`, `target_text`, `note` and `version` and removes
-that mark again. The recognised text itself is never read back.
+(`transcript.review_import`, TOOL-48) reads `id`, `status`, `target_text`,
+`note` and `version` and removes that mark again. The recognised text itself is
+never read back.
 
 The sheet holds recognised text, archive names and notes, so it stays under
 `work/`; this module logs nothing, and its errors name the file only.
