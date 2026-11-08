@@ -83,6 +83,8 @@ class NarrataParticipants:
 
 EntryType = Literal["place", "person", "artifact", "organisation", "event", "lore"]
 ENTRY_TYPES: tuple[EntryType, ...] = get_args(EntryType)
+# Narrata keeps aliases and misrecognitions on these only, never on events
+VARIANT_TYPES: tuple[EntryType, ...] = tuple(t for t in ENTRY_TYPES if t != "event")
 Relevance = Literal["pc", "session", "recent", "archive"]
 RELEVANCE_TIERS: tuple[Relevance, ...] = get_args(Relevance)  # nearest first
 EntryRef = tuple[EntryType, int | str]  # unique within a glossary
