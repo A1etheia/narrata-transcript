@@ -349,7 +349,7 @@ Was beim Anhören eines Kandidaten entschieden wird, steht in einer eigenen Date
 - **Verwaist:** Ist der Kandidat verschwunden, etwa weil die Passage nach neuer Kalibrierung sicher ist, bleibt die Entscheidung ebenfalls in der Datei stehen.
 - Veraltete und verwaiste Entscheidungen werden gemeldet, nie gelöscht und nie angewendet. Angewendet wird eine Entscheidung erst in der Arbeitsfassung (TOOL-49).
 
-Die Datei enthält Zieltexte und Notizen und bleibt deshalb unter `work/`. Die [Review-CSV](#review-csv) liest sie, der Reimport (TOOL-48) wird sie schreiben.
+Die Datei enthält Zieltexte und Notizen und bleibt deshalb unter `work/`. Die [Review-CSV](#review-csv) liest sie, der [Review-Import](#review-import) schreibt sie.
 
 ## Review-CSV
 
@@ -358,7 +358,7 @@ Die Datei enthält Zieltexte und Notizen und bleibt deshalb unter `work/`. Die [
 - **Umfang:** standardmäßig die Status `open` und `deferred`. Ein Kandidat mit veralteter Entscheidung zählt als `open`. Mit `--all` kommen alle Kandidaten dazu, entschiedene mit Status, Zieltext und Notiz. Sichere Passagen erscheinen nie, sie sind keine Kandidaten.
 - **Reihenfolge:** chronologisch nach Segment und Passage. Gleiche Daten ergeben byteweise dieselbe Datei, sie enthält keinen Exportzeitpunkt. Die Spalte `order` nennt die Position in der Review-Reihenfolge der Kandidaten (`uncertain` und starke Hinweise zuerst). Wer nach ihr sortiert, hört die wichtigsten Stellen zuerst.
 - **Format für deutsches Excel:** Trennzeichen `;`, UTF-8 mit BOM, Zeilenende CRLF. Die Datei öffnet per Doppelklick mit richtigen Spalten und Umlauten. Mehrzeilige Zellen stehen in Anführungszeichen. LibreOffice liest das ebenso.
-- **Formelschutz:** Eine Freitextzelle (`text`, `hints`, `target_text`, `note`), die mit `=`, `+`, `-` oder `@` beginnt, bekommt ein führendes `'`, damit Excel sie nicht als Formel liest. Der Reimport entfernt das Zeichen wieder. Das Transkript selbst bleibt unverändert, `text` ist nur eine Anzeigekopie.
+- **Formelschutz:** Eine Freitextzelle (`text`, `hints`, `target_text`, `note`), die mit `=`, `+`, `-` oder `@` beginnt, bekommt ein führendes `'`, damit Excel sie nicht als Formel liest. Der [Review-Import](#review-import) entfernt das Zeichen wieder. Das Transkript selbst bleibt unverändert, `text` ist nur eine Anzeigekopie.
 - **Kein stilles Überschreiben:** Eine vorhandene `review.csv` kann ausgefüllte, noch nicht importierte Entscheidungen enthalten. Der Befehl bricht dann ab, `--force` ersetzt sie.
 
 | Spalte | Inhalt |
@@ -379,7 +379,19 @@ Die Datei enthält Zieltexte und Notizen und bleibt deshalb unter `work/`. Die [
 | `earlier_decision` | eine veraltete Entscheidung zu älterem Transkript, etwa `corrected 2027-02-01T…, older transcript`; ihr Zieltext wird nicht übernommen |
 | `version` | Fassung des Transkripts, die die Zeile zeigt |
 
-Der Reimport (TOOL-48) liest nur `id`, `status`, `target_text`, `note` und `version`. Alle anderen Spalten dienen der Anzeige. An `version` erkennt er eine Datei, die vor einer Neutranskription exportiert wurde. Verwaiste Entscheidungen haben keinen Kandidaten mehr und stehen deshalb nicht in der Tabelle. Die Konsole nennt ihre IDs, sonst zeigt sie nur Zahlen, etwa `review sheet: 61 row(s): 7 deferred, 54 open`. Die Datei enthält erkannten Text, Archivnamen und Notizen und bleibt unter `work/`.
+Der [Review-Import](#review-import) liest nur `id`, `status`, `target_text`, `note` und `version`. Alle anderen Spalten dienen der Anzeige. Verwaiste Entscheidungen haben keinen Kandidaten mehr und stehen deshalb nicht in der Tabelle. Die Konsole nennt ihre IDs, sonst zeigt sie nur Zahlen, etwa `review sheet: 61 row(s): 7 deferred, 54 open`. Die Datei enthält erkannten Text, Archivnamen und Notizen und bleibt unter `work/`.
+
+## Review-Import
+
+`transcript review-import <gruppe>/<ordinal>` liest die ausgefüllte `review/review.csv` zurück und speichert die Entscheidungen in `review/decisions.json` (`transcript.review_import`). `candidates.json` und das Transkript werden nur gelesen. Fehlt die Kandidatendatei, verweist der Befehl auf `transcript assess`, fehlt die Tabelle, auf `transcript review-export`. Danach lassen sich die Entscheidungen ohne die CSV laden.
+
+- **Gelesen:** nur `id`, `status`, `target_text`, `note` und `version`. Reihenfolge und weitere Spalten sind egal, das Trennzeichen (`;` oder `,`) wird an der Kopfzeile erkannt. Zellen werden getrimmt, ein leerer Status gilt als `open`, Groß- und Kleinschreibung des Status zählt nicht. Leere Zeilen, auch `;;;`-Zeilen, werden übersprungen.
+- **Unverändert ist keine Entscheidung:** Stimmen Status, Zieltext und Notiz einer Zeile mit der geltenden Entscheidung überein (ohne Entscheidung: `open` und leer), bleibt alles, wie es ist, samt Zeitpunkt. Eine unverändert zurückgelesene Tabelle ändert nichts. Wer dieselbe Datei zweimal importiert, ändert beim zweiten Mal ebenfalls nichts.
+- **Fehlerhafte Zeilen:** Sie werden gemeldet und ausgelassen. Die übrigen Zeilen werden trotzdem gespeichert, der Befehl endet mit Exit-Code 2. Fehler sind: fehlende oder unbekannte ID, ungültiger Status, `corrected` ohne Zieltext, ein Zieltext bei anderem Status und eine geänderte Zeile, deren `version` nicht mehr die aktuelle Fassung des Transkripts ist. In diesem letzten Fall neu exportieren. Unberührte Zeilen eines älteren Exports sind kein Fehler.
+- **Ganze Tabelle abgelehnt:** wenn sie unlesbar ist, eine der fünf Spalten fehlt oder eine ID zweimal vorkommt. Dann ist unklar, welche Zeile gilt. `decisions.json` bleibt unverändert.
+- **Formelschutz:** Ein führendes `'` vor `=`, `+`, `-` oder `@` in `target_text` und `note` wird entfernt. Ein anderes führendes `'` bleibt stehen.
+- **Konsole:** Fehlermeldungen nennen Datei, Tabellenzeile (Kopfzeile = 1), ID und Feld, nie einen Zellinhalt, etwa `row 7 (s01-p0042): field 'target_text' required for corrected`. Eine Zelle, die nicht wie eine ID aussieht, erscheint als `invalid id`. Die Zusammenfassung zeigt nur Zahlen, etwa `review import: 3 decision(s): 1 confirmed, 2 corrected, 58 unchanged, 1 left out`. `decisions.json` wird nur bei einer Änderung geschrieben, atomar.
+- `review.csv` bleibt nach dem Import liegen. Ein neuer Export braucht deshalb `--force`.
 
 ## Konfiguration
 

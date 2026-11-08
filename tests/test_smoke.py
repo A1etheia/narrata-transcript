@@ -1,4 +1,5 @@
 import contextlib
+import csv
 import dataclasses
 import io
 import os
@@ -1280,6 +1281,80 @@ class DiarizeCommandTest(unittest.TestCase):
 
         self.assertEqual(code, 2)
         self.assertIn("review candidates not found; run transcript assess", stderr)
+
+    def review_import(self) -> tuple[int, str, str]:
+        return run("review-import", str(KEY), "--config", str(self.config))
+
+    def fill_in_sheet(self, *changes: dict[str, str]) -> None:
+        """Export the sheet and save it with its one row once per change."""
+        run("assess", str(KEY), "--config", str(self.config))
+        self.review_export()
+        text = self.paths.review_sheet.read_bytes().decode("utf-8-sig")
+        (row,) = csv.DictReader(io.StringIO(text, newline=""), delimiter=";")
+        buffer = io.StringIO(newline="")
+        writer = csv.DictWriter(buffer, list(row), delimiter=";")
+        writer.writeheader()
+        writer.writerows({**row, **change} for change in changes)
+        self.paths.review_sheet.write_bytes(buffer.getvalue().encode("utf-8-sig"))
+
+    def test_review_import_stores_the_decision_and_prints_only_counts(self) -> None:
+        self.fill_in_sheet({"status": "corrected", "target_text": SECRET})
+        before = self.paths.review_candidates.read_bytes()
+
+        code, stdout, stderr = self.review_import()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "beispielgruppe/042: review import: 1 decision(s): 1 corrected, "
+            "0 unchanged, 0 left out",
+            stdout,
+        )
+        self.assertIn(f"wrote {self.paths.review_decisions}", stdout)
+        (made,) = decisions.load_decisions(self.paths).decisions
+        self.assertEqual((made.id, made.target_text), ("s01-p0001", SECRET))
+        self.assertEqual(self.paths.review_candidates.read_bytes(), before)
+        self.assertNotIn(SECRET, stdout + stderr)
+
+    def test_review_import_of_an_unchanged_sheet_writes_nothing(self) -> None:
+        self.fill_in_sheet({})
+
+        code, stdout, stderr = self.review_import()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("0 decision(s), 1 unchanged, 0 left out", stdout)
+        self.assertFalse(self.paths.review_decisions.exists())
+
+    def test_review_import_reports_bad_rows_and_keeps_the_good_ones(self) -> None:
+        self.fill_in_sheet(
+            {"status": "kept", "note": SECRET},
+            {"id": "s01-p0099", "status": "Ærwyn"},
+        )
+
+        code, stdout, stderr = self.review_import()
+
+        self.assertEqual(code, 2)
+        self.assertIn("review.csv: row 3 (s01-p0099): no such candidate", stderr)
+        self.assertIn("1 decision(s): 1 kept, 0 unchanged, 1 left out", stdout)
+        self.assertEqual(len(decisions.load_decisions(self.paths).decisions), 1)
+        self.assertNotIn(SECRET, stdout + stderr)
+        self.assertNotIn("Ærwyn", stdout + stderr)
+
+    def test_review_import_refuses_a_sheet_with_an_id_twice(self) -> None:
+        self.fill_in_sheet({"status": "kept"}, {"status": "confirmed"})
+
+        code, _, stderr = self.review_import()
+
+        self.assertEqual(code, 2)
+        self.assertIn("rows 2 and 3: s01-p0001 appears twice", stderr)
+        self.assertFalse(self.paths.review_decisions.exists())
+
+    def test_review_import_without_a_sheet_asks_for_the_export(self) -> None:
+        run("assess", str(KEY), "--config", str(self.config))
+
+        code, _, stderr = self.review_import()
+
+        self.assertEqual(code, 2)
+        self.assertIn("review sheet not found; run transcript review-export", stderr)
 
     def calibrate(self, *extra: str) -> tuple[int, str, str]:
         return run("calibrate", str(KEY), "--config", str(self.config), *extra)

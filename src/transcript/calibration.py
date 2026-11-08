@@ -34,6 +34,7 @@ from transcript.jsonfile import DataFileError
 from transcript.narrata import RELEVANCE_TIERS, Relevance
 from transcript.reference import Passage, ReferenceTranscript, load_reference
 from transcript.session import SessionPaths
+from transcript.sheetfile import read_sheet
 from transcript.timecode import format_ms
 from transcript.uncertainty import PassageRating, Rule, segment_assessment
 
@@ -478,17 +479,7 @@ def judged_precision(path: Path) -> list[str]:
     A sheet with a `relevance` column, written since TOOL-83, also gives the
     precision per method and relevance tier.
     """
-    try:
-        with path.open(encoding="utf-8-sig", newline="") as handle:
-            # Spreadsheets in a German locale save with ';'; extra columns are kept.
-            header = handle.readline()
-            handle.seek(0)
-            delimiter = ";" if header.count(";") > header.count(",") else ","
-            reader = csv.DictReader(handle, delimiter=delimiter)
-            rows = list(reader)
-            columns = set(reader.fieldnames or ())
-    except (OSError, UnicodeDecodeError, csv.Error):
-        raise CalibrationError(f"{path}: judged sheet is unreadable") from None
+    columns, rows = read_sheet(path, "judged sheet", CalibrationError)
     if not {"correct", "method", "score"} <= columns:
         raise CalibrationError(f"{path}: judged sheet lacks the columns of a sheet")
     if not rows:
@@ -497,8 +488,8 @@ def judged_precision(path: Path) -> list[str]:
     groups: dict[str, list[int]] = {}
     tiers: dict[tuple[str, str], list[int]] = {}
     open_rows = 0
-    for number, row in enumerate(rows, start=2):
-        answer = (row.get("correct") or "").strip().casefold()
+    for number, row in rows:
+        answer = row["correct"].casefold()
         if answer not in _YES | _NO:
             if answer:
                 raise CalibrationError(
@@ -509,7 +500,7 @@ def judged_precision(path: Path) -> list[str]:
         right = answer in _YES
         _count(groups, _band(row), right)
         if tiered:
-            tier = (row.get("relevance") or "").strip()
+            tier = row["relevance"]
             if tier not in RELEVANCE_TIERS:
                 raise CalibrationError(
                     f"{path}: line {number}: field 'relevance' invalid"
@@ -538,7 +529,7 @@ def _count(table: dict[_K, list[int]], key: _K, right: bool) -> None:
 
 
 def _method(row: dict[str, str]) -> str:
-    return (row.get("method") or "").strip() or "unknown"
+    return row["method"] or "unknown"
 
 
 def _band(row: dict[str, str]) -> str:
@@ -546,7 +537,7 @@ def _band(row: dict[str, str]) -> str:
     if method != "spelling":
         return method
     try:
-        score = float((row.get("score") or "").replace(",", "."))
+        score = float(row["score"].replace(",", "."))
     except ValueError:
         return "spelling"
     low, high = SCORE_BANDS
