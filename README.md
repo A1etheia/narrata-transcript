@@ -329,7 +329,7 @@ Nach jeder [Unsicherheitsbewertung](#unsicherheitsbewertung) entsteht die Prüfl
 - **Kennzahl:** Kandidaten pro Stunde Audio, gerechnet nur über die bewerteten Segmente. Segmente ohne Transkript oder mit Fehlschlag stehen unter `not_rated`.
 - **Aktualität:** Passt eine Bewertung nicht mehr zu ihrem Referenztranskript, bricht der Schritt mit `run transcript assess` ab, statt auf veralteten Text zu zeigen.
 
-Die Datei `work/<gruppe>/<ordinal>/review/candidates.json` (`format_version: 1`) enthält erkannten Text und Archivnamen und bleibt deshalb unter `work/`. Die Konsole zeigt nur Zahlen, etwa `review candidates: 57 (12.3 per hour of audio)`. Die [Review-Entscheidungen](#review-entscheidungen) und die Review-CSV (TOOL-47) lesen diese Datei. Überlappende Segmenttranskriptionen sind kein Signal: Ohne eigene Segmentierung ([TOOL-62](docs/spikes/TOOL-62-asr-vergleich.md)) gibt es sie nicht.
+Die Datei `work/<gruppe>/<ordinal>/review/candidates.json` (`format_version: 1`) enthält erkannten Text und Archivnamen und bleibt deshalb unter `work/`. Die Konsole zeigt nur Zahlen, etwa `review candidates: 57 (12.3 per hour of audio)`. Die [Review-Entscheidungen](#review-entscheidungen) und die [Review-CSV](#review-csv) lesen diese Datei. Überlappende Segmenttranskriptionen sind kein Signal: Ohne eigene Segmentierung ([TOOL-62](docs/spikes/TOOL-62-asr-vergleich.md)) gibt es sie nicht.
 
 ## Review-Entscheidungen
 
@@ -349,7 +349,37 @@ Was beim Anhören eines Kandidaten entschieden wird, steht in einer eigenen Date
 - **Verwaist:** Ist der Kandidat verschwunden, etwa weil die Passage nach neuer Kalibrierung sicher ist, bleibt die Entscheidung ebenfalls in der Datei stehen.
 - Veraltete und verwaiste Entscheidungen werden gemeldet, nie gelöscht und nie angewendet. Angewendet wird eine Entscheidung erst in der Arbeitsfassung (TOOL-49).
 
-Die Datei enthält Zieltexte und Notizen und bleibt deshalb unter `work/`. Einen eigenen Befehl gibt es noch nicht: Die Review-CSV (TOOL-47) und ihr Reimport (TOOL-48) lesen und schreiben sie.
+Die Datei enthält Zieltexte und Notizen und bleibt deshalb unter `work/`. Die [Review-CSV](#review-csv) liest sie, der Reimport (TOOL-48) wird sie schreiben.
+
+## Review-CSV
+
+`transcript review-export <gruppe>/<ordinal> [--all] [--force]` schreibt die Kandidaten, die noch zu entscheiden sind, als Tabelle nach `work/<gruppe>/<ordinal>/review/review.csv` (`transcript.review_sheet`). Gelesen werden `candidates.json` und `decisions.json`, beide bleiben unverändert. Fehlt die Kandidatendatei, verweist der Befehl auf `transcript assess`.
+
+- **Umfang:** standardmäßig die Status `open` und `deferred`. Ein Kandidat mit veralteter Entscheidung zählt als `open`. Mit `--all` kommen alle Kandidaten dazu, entschiedene mit Status, Zieltext und Notiz. Sichere Passagen erscheinen nie, sie sind keine Kandidaten.
+- **Reihenfolge:** chronologisch nach Segment und Passage. Gleiche Daten ergeben byteweise dieselbe Datei, sie enthält keinen Exportzeitpunkt. Die Spalte `order` nennt die Position in der Review-Reihenfolge der Kandidaten (`uncertain` und starke Hinweise zuerst). Wer nach ihr sortiert, hört die wichtigsten Stellen zuerst.
+- **Format für deutsches Excel:** Trennzeichen `;`, UTF-8 mit BOM, Zeilenende CRLF. Die Datei öffnet per Doppelklick mit richtigen Spalten und Umlauten. Mehrzeilige Zellen stehen in Anführungszeichen. LibreOffice liest das ebenso.
+- **Formelschutz:** Eine Freitextzelle (`text`, `hints`, `target_text`, `note`), die mit `=`, `+`, `-` oder `@` beginnt, bekommt ein führendes `'`, damit Excel sie nicht als Formel liest. Der Reimport entfernt das Zeichen wieder. Das Transkript selbst bleibt unverändert, `text` ist nur eine Anzeigekopie.
+- **Kein stilles Überschreiben:** Eine vorhandene `review.csv` kann ausgefüllte, noch nicht importierte Entscheidungen enthalten. Der Befehl bricht dann ab, `--force` ersetzt sie.
+
+| Spalte | Inhalt |
+| --- | --- |
+| `id` | Kandidaten-ID, z. B. `s01-p0042` |
+| `start`, `end` | Session-Zeit `HH:MM:SS.mmm`, leer ohne Zeit |
+| `segment`, `segment_start` | Segment und Zeit im Segment-WAV, zum Suchen im Audio |
+| `speaker` | Sprecher-Label (bis TOOL-68 keine Person) |
+| `level` | `needs_review` oder `uncertain` |
+| `order` | Position in der Review-Reihenfolge |
+| `reasons` | Gründe mit gesehenem Wert und Schwelle, z. B. `low_confidence 0.333/0.2` |
+| `missing` | fehlende Signalarten |
+| `hints` | je Hinweis Signal, gehörte Wörter und Archiv-Einträge mit Typ, ID, Begriff, Art und Stufe, `ambiguous` bei mehreren |
+| `text` | erkannter Text, unverändert |
+| `status` | Review-Status (siehe [Review-Entscheidungen](#review-entscheidungen)) |
+| `target_text` | richtiger Wortlaut, nur bei `corrected` |
+| `note` | Notiz |
+| `earlier_decision` | eine veraltete Entscheidung zu älterem Transkript, etwa `corrected 2027-02-01T…, older transcript`; ihr Zieltext wird nicht übernommen |
+| `version` | Fassung des Transkripts, die die Zeile zeigt |
+
+Der Reimport (TOOL-48) liest nur `id`, `status`, `target_text`, `note` und `version`. Alle anderen Spalten dienen der Anzeige. An `version` erkennt er eine Datei, die vor einer Neutranskription exportiert wurde. Verwaiste Entscheidungen haben keinen Kandidaten mehr und stehen deshalb nicht in der Tabelle. Die Konsole nennt ihre IDs, sonst zeigt sie nur Zahlen, etwa `review sheet: 61 row(s): 7 deferred, 54 open`. Die Datei enthält erkannten Text, Archivnamen und Notizen und bleibt unter `work/`.
 
 ## Konfiguration
 
@@ -425,7 +455,7 @@ work/beispielgruppe/042/
   audio/                       segment-NN.wav (Arbeitsformat, eine pro Aufnahme), audio.json (Audio-Metadaten)
   asr/                         segment-NN.json (Referenztranskript), segment-NN.raw.json (Backend-Rohantwort)
   diarization/                 segment-NN.json (Sprecher-Turns von pyannote)
-  review/                      segment-NN.hints.json (Review-Hinweise aus dem Wissen), segment-NN.uncertainty.json (Unsicherheitsbewertung), candidates.json (Review-Kandidaten der Session), decisions.json (Review-Entscheidungen), später CSV
+  review/                      segment-NN.hints.json (Review-Hinweise aus dem Wissen), segment-NN.uncertainty.json (Unsicherheitsbewertung), candidates.json (Review-Kandidaten der Session), decisions.json (Review-Entscheidungen), review.csv (Review-CSV)
   speakers/                    Sprecherzuordnung
   debug.log                    nur im Debug-Modus
 output/beispielgruppe/042/     JSON-Export, TXT, DOCX

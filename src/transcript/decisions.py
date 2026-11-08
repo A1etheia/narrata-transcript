@@ -106,7 +106,7 @@ def decide(
     decision = ReviewDecision(
         segment=match.segment,
         passage=match.passage,
-        reference_processed_at=_processed_at(found)[match.segment],
+        reference_processed_at=found.processed_at[match.segment],
         status=status,
         decided_at=_timestamp(now),
         target_text=target_text,
@@ -114,10 +114,6 @@ def decide(
     )
     others = (d for d in decisions.decisions if d.id != candidate)
     return _ordered([*others, decision])
-
-
-def _processed_at(found: SessionCandidates) -> dict[int, str]:
-    return {rated.segment: rated.reference_processed_at for rated in found.rated}
 
 
 def _timestamp(now: datetime.datetime | None) -> str:
@@ -131,6 +127,7 @@ class ReviewItem:
 
     candidate: ReviewCandidate  # unchanged
     decision: ReviewDecision | None
+    earlier: ReviewDecision | None = None  # stale, made on another transcript
 
     @property
     def status(self) -> ReviewStatus:
@@ -146,21 +143,23 @@ class ReviewState:
 
 def review_items(found: SessionCandidates, decisions: SessionDecisions) -> ReviewState:
     """Pair each candidate with its decision; set aside those that no longer fit."""
-    processed_at = _processed_at(found)
+    processed_at = found.processed_at
     ids = {candidate.id for candidate in found.candidates}
     current: dict[str, ReviewDecision] = {}
-    stale: list[ReviewDecision] = []
+    stale: dict[str, ReviewDecision] = {}
     orphaned: list[ReviewDecision] = []
     for decision in decisions.decisions:
         if decision.id not in ids:
             orphaned.append(decision)
         elif processed_at[decision.segment] != decision.reference_processed_at:
-            stale.append(decision)
+            stale[decision.id] = decision
         else:
             current[decision.id] = decision
     return ReviewState(
-        items=tuple(ReviewItem(c, current.get(c.id)) for c in found.candidates),
-        stale=tuple(stale),
+        items=tuple(
+            ReviewItem(c, current.get(c.id), stale.get(c.id)) for c in found.candidates
+        ),
+        stale=tuple(stale.values()),
         orphaned=tuple(orphaned),
     )
 

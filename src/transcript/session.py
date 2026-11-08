@@ -130,6 +130,11 @@ class SessionPaths:
         return self.review_dir / "decisions.json"
 
     @property
+    def review_sheet(self) -> Path:
+        """Review sheet of the open candidates, for a spreadsheet (TOOL-47)."""
+        return self.review_dir / "review.csv"
+
+    @property
     def manifest(self) -> Path:
         return self.work_dir / "manifest.json"
 

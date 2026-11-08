@@ -31,6 +31,7 @@ from transcript import __main__ as transcript_main
 from transcript import (
     audio_tools,
     candidates,
+    decisions,
     hints,
     jsonfile,
     knowledge,
@@ -1227,6 +1228,58 @@ class DiarizeCommandTest(unittest.TestCase):
         self.assertEqual([c.level for c in found.candidates], ["needs_review"])
         self.assertIn(SECRET, found.candidates[0].text)  # in the file, never printed
         self.assertNotIn(SECRET, stdout + stderr)
+
+    def review_export(self, *extra: str) -> tuple[int, str, str]:
+        return run("review-export", str(KEY), "--config", str(self.config), *extra)
+
+    def test_review_export_writes_the_sheet_and_prints_only_counts(self) -> None:
+        run("assess", str(KEY), "--config", str(self.config))
+
+        code, stdout, stderr = self.review_export()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("beispielgruppe/042: review sheet: 1 row(s): 1 open", stdout)
+        self.assertIn(f"wrote {self.paths.review_sheet}", stdout)
+        sheet = self.paths.review_sheet.read_bytes().decode("utf-8-sig")
+        self.assertIn(SECRET, sheet)  # in the file, never printed
+        self.assertNotIn(SECRET, stdout + stderr)
+
+    def test_review_export_never_replaces_a_sheet_unasked(self) -> None:
+        run("assess", str(KEY), "--config", str(self.config))
+        self.review_export()
+        first = self.paths.review_sheet.read_bytes()
+
+        code, _, stderr = self.review_export()
+        self.assertEqual(code, 2)
+        self.assertIn("use --force", stderr)
+
+        code, _, stderr = self.review_export("--force")
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(self.paths.review_sheet.read_bytes(), first)
+
+    def test_review_export_reports_orphaned_decisions_by_id(self) -> None:
+        run("assess", str(KEY), "--config", str(self.config))
+        found = candidates.load_candidates(self.paths)
+        made = decisions.decide(
+            decisions.SessionDecisions(), found, "s01-p0001", "kept", note=SECRET
+        )
+        decisions.write_decisions(self.paths, made)
+        candidates.write_candidates(
+            self.paths, dataclasses.replace(found, candidates=())
+        )
+
+        code, stdout, stderr = self.review_export("--all")
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("review sheet: 0 row(s)", stdout)
+        self.assertIn("1 orphaned decision(s), not listed: s01-p0001", stdout)
+        self.assertNotIn(SECRET, stdout + stderr)
+
+    def test_review_export_without_candidates_asks_for_assess(self) -> None:
+        code, _, stderr = self.review_export()
+
+        self.assertEqual(code, 2)
+        self.assertIn("review candidates not found; run transcript assess", stderr)
 
     def calibrate(self, *extra: str) -> tuple[int, str, str]:
         return run("calibrate", str(KEY), "--config", str(self.config), *extra)
