@@ -19,7 +19,7 @@ import pathlib
 START = dt.date(2026, 11, 2)  # a Monday
 WORKDAYS = [0, 1, 3]  # Mon, Tue, Thu -> 3 dev-days per week
 PAUSES = [(dt.date(2026, 12, 21), dt.date(2027, 1, 3))]  # inclusive ranges, no work
-GENERATED = "2026-11-06"
+GENERATED = "2026-11-08"
 
 # (phase title, milestone sentence, [(key, title, dev-days, note)])
 P = [
@@ -64,7 +64,7 @@ P = [
     ]),
     ("Phase 3 — Review, Sprecherzuordnung, Export",
      "M3 — JSON-Export (Contract v1) einer Session importiert lokal in Narrata und rendert dort als Rohliste.", [
-        ("TOOL-35", "Konfidenz-/Unsicherheitsregeln kalibrieren", 1.5, "erledigt: `transcript assess`/`calibrate`, Bericht `docs/spikes/TOOL-35-kalibrierung.md` (85 % der Fehler in 46 % der Session-Zeit); Folge-Tickets außerhalb der Roadmap: TOOL-81 (Hotwords verschlucken Wörter), TOOL-82 (Parakeet-Zweitlauf), TOOL-83 (`similar` nach Relevanz-Stufe, nach IOA-1278)"),
+        ("TOOL-35", "Konfidenz-/Unsicherheitsregeln kalibrieren", 1.5, "erledigt: `transcript assess`/`calibrate`, Bericht `docs/spikes/TOOL-35-kalibrierung.md` (85 % der Fehler in 46 % der Session-Zeit); Folge-Tickets außerhalb der Roadmap: TOOL-81 (Hotwords verschlucken Wörter), TOOL-82 (Parakeet-Zweitlauf), TOOL-83 (`similar` nach Relevanz-Stufe, erledigt: keine Archiv-Regel, Abschnitt im Bericht)"),
         ("TOOL-36", "Review-Kandidaten", 1.0, "aus TOOL-44: Review-Kandidaten lesen `review/segment-NN.hints.json`; `known_variant` und `ambiguous` gehen bevorzugt in die Auswahl; aus TOOL-35: `review/segment-NN.uncertainty.json` lesen, `uncertain` vor `needs_review`; Gewichtung pro Sprecher, sobald TOOL-68 Labels Personen zuordnet"),
         ("TOOL-46", "Review-Datenmodell", 0.5, "aus TOOL-44: Hinweise ins Review-Datenmodell übernehmen, das Format der Hinweisdatei ist Eingang dafür"),
         ("TOOL-47", "Review-CSV", 0.5, ""),
@@ -89,7 +89,7 @@ P = [
         ("TOOL-59", "Laufzeit/Ressourcen/Aufwand auswerten", 0.5, "aus TOOL-18: entscheidet, ob TOOL-78 (Versuche pro Segment im Referenzformat) gebraucht wird"),
         ("TOOL-78", "Versuche pro Segment im Referenzformat", 0.5, "entfällt, wenn TOOL-59 keine Fehlerraten auswerten will; braucht eine neue `format_version`"),
         ("TOOL-61", "E2E-Workflow dokumentieren", 0.5, ""),
-        ("TOOL-60", "V0.1 bewerten, Entscheidungen, V0.2-Backlog", 1.0, "Go/No-Go für Phase 6; aus TOOL-35: am vollen Pilotlauf mit `transcript calibrate` prüfen, ob die Eingrenzung aus dem Bericht hält"),
+        ("TOOL-60", "V0.1 bewerten, Entscheidungen, V0.2-Backlog", 1.0, "Go/No-Go für Phase 6; aus TOOL-35: am vollen Pilotlauf mit `transcript calibrate` prüfen, ob die Eingrenzung aus dem Bericht hält; aus TOOL-83: Archiv-Schreibtreffer am vollen Pilotlauf nach Methode und Stufe nachmessen (`--similar-judged`), bisher nur ein beurteilter Hinweis"),
     ]),
     ("Phase 5 — Narrata-Oberflächen",
      "M5 — Transkript per Chat/MCP befragbar, in Narrata durchsuchbar, lesbar, verlinkt.", [

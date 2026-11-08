@@ -1,6 +1,6 @@
 # Transkript-Projekt — Roadmap (TOOL + IOA-1213)
 
-Stand 2026-11-06, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwände stehen dort). Verbindliche Reihenfolge und Meilensteine für das gesamte Transkript-Vorhaben: die lokale Pipeline (Jira-Projekt **TOOL**, eigenes Python-Repo) und ihr Narrata-Gegenstück (Epic **IOA-1213**). Jira-Gesamtsicht: `project in (TOOL, IOA) AND labels = transcript`.
+Stand 2026-11-08, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwände stehen dort). Verbindliche Reihenfolge und Meilensteine für das gesamte Transkript-Vorhaben: die lokale Pipeline (Jira-Projekt **TOOL**, eigenes Python-Repo) und ihr Narrata-Gegenstück (Epic **IOA-1213**). Jira-Gesamtsicht: `project in (TOOL, IOA) AND labels = transcript`.
 
 ## Annahmen
 
@@ -106,7 +106,7 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| TOOL-35 | Konfidenz-/Unsicherheitsregeln kalibrieren | 1.5 | 25.01.2027 | 26.01.2027 | erledigt: `transcript assess`/`calibrate`, Bericht `docs/spikes/TOOL-35-kalibrierung.md` (85 % der Fehler in 46 % der Session-Zeit); Folge-Tickets außerhalb der Roadmap: TOOL-81 (Hotwords verschlucken Wörter), TOOL-82 (Parakeet-Zweitlauf), TOOL-83 (`similar` nach Relevanz-Stufe, nach IOA-1278) |
+| TOOL-35 | Konfidenz-/Unsicherheitsregeln kalibrieren | 1.5 | 25.01.2027 | 26.01.2027 | erledigt: `transcript assess`/`calibrate`, Bericht `docs/spikes/TOOL-35-kalibrierung.md` (85 % der Fehler in 46 % der Session-Zeit); Folge-Tickets außerhalb der Roadmap: TOOL-81 (Hotwords verschlucken Wörter), TOOL-82 (Parakeet-Zweitlauf), TOOL-83 (`similar` nach Relevanz-Stufe, erledigt: keine Archiv-Regel, Abschnitt im Bericht) |
 | TOOL-36 | Review-Kandidaten | 1 | 28.01.2027 | 28.01.2027 | aus TOOL-44: Review-Kandidaten lesen `review/segment-NN.hints.json`; `known_variant` und `ambiguous` gehen bevorzugt in die Auswahl; aus TOOL-35: `review/segment-NN.uncertainty.json` lesen, `uncertain` vor `needs_review`; Gewichtung pro Sprecher, sobald TOOL-68 Labels Personen zuordnet |
 | TOOL-46 | Review-Datenmodell | 0.5 | 01.02.2027 | 01.02.2027 | aus TOOL-44: Hinweise ins Review-Datenmodell übernehmen, das Format der Hinweisdatei ist Eingang dafür |
 | TOOL-47 | Review-CSV | 0.5 | 01.02.2027 | 01.02.2027 |  |
@@ -135,7 +135,7 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 | TOOL-59 | Laufzeit/Ressourcen/Aufwand auswerten | 0.5 | 04.03.2027 | 04.03.2027 | aus TOOL-18: entscheidet, ob TOOL-78 (Versuche pro Segment im Referenzformat) gebraucht wird |
 | TOOL-78 | Versuche pro Segment im Referenzformat | 0.5 | 04.03.2027 | 04.03.2027 | entfällt, wenn TOOL-59 keine Fehlerraten auswerten will; braucht eine neue `format_version` |
 | TOOL-61 | E2E-Workflow dokumentieren | 0.5 | 08.03.2027 | 08.03.2027 |  |
-| TOOL-60 | V0.1 bewerten, Entscheidungen, V0.2-Backlog | 1 | 08.03.2027 | 09.03.2027 | Go/No-Go für Phase 6; aus TOOL-35: am vollen Pilotlauf mit `transcript calibrate` prüfen, ob die Eingrenzung aus dem Bericht hält |
+| TOOL-60 | V0.1 bewerten, Entscheidungen, V0.2-Backlog | 1 | 08.03.2027 | 09.03.2027 | Go/No-Go für Phase 6; aus TOOL-35: am vollen Pilotlauf mit `transcript calibrate` prüfen, ob die Eingrenzung aus dem Bericht hält; aus TOOL-83: Archiv-Schreibtreffer am vollen Pilotlauf nach Methode und Stufe nachmessen (`--similar-judged`), bisher nur ein beurteilter Hinweis |
 
 ### Phase 5 — Narrata-Oberflächen
 
