@@ -100,6 +100,11 @@ class SessionCandidates:
     candidates: tuple[ReviewCandidate, ...]  # in review order
 
     @property
+    def processed_at(self) -> dict[int, str]:
+        """The transcript version each rated segment's candidates point at."""
+        return {rated.segment: rated.reference_processed_at for rated in self.rated}
+
+    @property
     def audio_ms(self) -> int:
         """Audio of the rated segments; the rate per hour counts only these."""
         return sum(segment.duration_ms for segment in self.rated)
