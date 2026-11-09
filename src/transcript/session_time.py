@@ -10,10 +10,10 @@ Error messages name segment numbers and milliseconds only, never text.
 """
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Protocol
 
 from transcript.manifest import Manifest, Segment
-from transcript.reference import Passage, ReferenceTranscript, Word, segment_ref
+from transcript.reference import ReferenceTranscript, Word, segment_ref
 from transcript.timecode import format_ms
 
 # Backends round and pad the last word; a time further past the WAV end means the
@@ -21,6 +21,16 @@ from transcript.timecode import format_ms
 END_TOLERANCE_MS = 1000
 
 Granularity = Literal["word", "passage"]
+
+
+class Timed(Protocol):
+    """A word, passage or working block, with times local to its segment."""
+
+    @property
+    def start_ms(self) -> int | None: ...
+
+    @property
+    def end_ms(self) -> int | None: ...
 
 
 @dataclass(frozen=True)
@@ -48,8 +58,8 @@ def segment_of(manifest: Manifest, reference: ReferenceTranscript) -> Segment:
     return segment
 
 
-def passage_span(segment: Segment, passage: Passage) -> SessionSpan | None:
-    """Session time of a passage; `None` when the backend gave it no times."""
+def passage_span(segment: Segment, passage: Timed) -> SessionSpan | None:
+    """Session time of a passage or a block made from one; `None` without times."""
     return _span(segment, "passage", passage)
 
 
@@ -74,7 +84,7 @@ def time_granularity(
 
 
 def _span(
-    segment: Segment, granularity: Granularity, unit: Word | Passage
+    segment: Segment, granularity: Granularity, unit: Timed
 ) -> SessionSpan | None:
     if not _timed(unit):
         return None
@@ -99,7 +109,7 @@ def _absolute(segment: Segment, local_ms: int | None) -> tuple[int | None, bool]
     return segment.to_absolute_ms(local_ms), False
 
 
-def _timed(unit: Word | Passage) -> bool:
+def _timed(unit: Timed) -> bool:
     return unit.start_ms is not None or unit.end_ms is not None
 
 

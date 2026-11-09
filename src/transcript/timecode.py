@@ -23,6 +23,11 @@ def format_ms(ms: int) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{millis:03d}"
 
 
+def format_clock(ms: int) -> str:
+    """Render milliseconds as `HH:MM:SS`, rounded down to the whole second."""
+    return format_ms(ms)[: -len(".mmm")]
+
+
 def parse_timecode(text: str) -> int:
     """Parse `HH:MM:SS.mmm` into milliseconds; the inverse of `format_ms`."""
     match = _TIMECODE_PATTERN.fullmatch(text)

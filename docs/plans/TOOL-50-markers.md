@@ -26,14 +26,14 @@ Ein zentrales Modul leitet aus jedem Block der Arbeitsfassung (TOOL-49) die Mark
 - **Reihenfolge:** erst die Inhaltsmarkierung (`unintelligible`/`unresolved`), dann die Sprechermarkierung, durch Leerzeichen getrennt.
 - **API (`src/transcript/markers.py`):**
   - `Marker(kind, at_ms: int | None)` — maschinenlesbar, Sitzungszeit in ms.
-  - `block_markers(block, segment) -> tuple[Marker, ...]`.
+  - `block_markers(block, manifest) -> tuple[Marker, ...]`; das Segment sucht die Funktion selbst, damit nicht jeder Exporter es nachschlägt.
   - `marker_label(marker) -> str` — die Textform.
-  - `rendered_text(block, segment) -> str` — der Blocktext für TXT/DOCX: bei `unintelligible` nur Markierungen, sonst `text` plus Markierungen. Kein Ersatzwortlaut.
+  - `rendered_text(block, manifest) -> str` — der Blocktext für TXT/DOCX: bei `unintelligible` nur Markierungen, sonst `text` plus Markierungen. Kein Ersatzwortlaut.
 - **`passage_span` nimmt alles mit `start_ms`/`end_ms`** (Protocol `Timed`), damit Blöcke dieselbe Umrechnung und Klemmung nutzen statt einer Kopie.
 
 ## Daten-Check
 - handled — `rendered_text` enthält erkannten Text; das Modul loggt nichts und schreibt keine Datei. Ausgaben entstehen erst in TOOL-51/52 unter `output/`.
-- handled — Fehlermeldungen (Segment fehlt im Manifest) nennen nur Segmentnummern.
+- handled — Fehlermeldungen (Segment fehlt im Manifest) nennen nur die Segmentnummer.
 - handled — Tests nutzen die synthetischen Fixtures aus `tests/test_working.py` (`wort{n}`, `beispielgruppe/042`).
 - N/A Klarnamen — Markierungen tragen weder Labels noch Personen.
 
