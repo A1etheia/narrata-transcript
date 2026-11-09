@@ -40,7 +40,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from transcript.contract import CONTRACT_VERSION, validate
+from transcript.contract import CONTRACT_VERSION, summarize, validate
 from transcript.decisions import ReviewStatus
 from transcript.jsonfile import DataFileError, write_bytes_atomic
 from transcript.knowledge import load_snapshot
@@ -55,7 +55,6 @@ from transcript.speakers import SpeakerRef, UserId
 from transcript.working import Block, WorkingTranscript, load_working
 
 UNLABELLED = "unlabelled"
-_SHOWN_VIOLATIONS = 10  # in a refusal; the rest are counted
 
 _REVIEW_STATUS: dict[ReviewStatus, str] = {
     "confirmed": "confirmed",
@@ -165,12 +164,8 @@ def write_export(paths: SessionPaths, document: dict[str, Any]) -> None:
     ).encode("utf-8")
     violations = validate(json.loads(raw))
     if violations:
-        shown = "; ".join(violations[:_SHOWN_VIOLATIONS])
-        more = len(violations) - _SHOWN_VIOLATIONS
-        rest = f"; and {more} more" if more > 0 else ""
         raise ExportError(
-            f"{paths.transcript_export}: not written, {len(violations)} contract "
-            f"violation(s): {shown}{rest}"
+            f"{paths.transcript_export}: not written, {summarize(violations)}"
         )
     write_bytes_atomic(paths.transcript_export, raw)
 

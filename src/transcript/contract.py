@@ -87,6 +87,14 @@ def validate(document: Any) -> tuple[str, ...]:
     )
 
 
+def summarize(violations: Sequence[str], shown: int = 10) -> str:
+    """`violations` for a message: the count, the first `shown`, the rest counted."""
+    listed = "; ".join(violations[:shown])
+    more = len(violations) - shown
+    rest = f"; and {more} more" if more > 0 else ""
+    return f"{len(violations)} contract violation(s): {listed}{rest}"
+
+
 def _major(version: Any) -> int | None:
     """The major of a well-formed `contract_version`; the schema reports others."""
     match = _VERSION.fullmatch(version) if isinstance(version, str) else None
