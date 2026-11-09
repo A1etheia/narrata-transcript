@@ -24,6 +24,7 @@ _TOP_LEVEL_KEYS = {
     "narrata",
     "knowledge",
     "review",
+    "render",
     "debug",
 }
 _PATHS_KEYS = {"root"}
@@ -57,6 +58,12 @@ MAX_RETRIES = 5  # per segment; the cap rules out endless retry loops
 # The tiers of the Narrata contract's `confidence_tier`, from safe to unsafe.
 Level = Literal["confident", "needs_review", "uncertain"]
 LEVELS: tuple[Level, ...] = get_args(Level)
+
+_RENDER_KEYS = {"timestamps"}
+# Where a rendered transcript shows a time (TOOL-51): at each change of speaker,
+# or at each passage.
+TimestampRule = Literal["turn", "passage"]
+TIMESTAMP_RULES: tuple[TimestampRule, ...] = get_args(TimestampRule)
 
 
 class ConfigError(Exception):
@@ -155,6 +162,7 @@ class Config:
     )
     review_similar: SimilarThresholds = SimilarThresholds()
     review_uncertainty: UncertaintyThresholds = UncertaintyThresholds()
+    render_timestamps: TimestampRule = "turn"
 
     def session_paths(self, key: SessionKey) -> SessionPaths:
         return SessionPaths(key, self.root)
@@ -268,6 +276,11 @@ def load_config(path: Path) -> Config:
             )
     uncertainty = UncertaintyThresholds(**merged)
 
+    render = _section(path, data, "render", _RENDER_KEYS)
+    timestamps = _choice(
+        path, render, "render", "timestamps", Config.render_timestamps, TIMESTAMP_RULES
+    )
+
     return Config(
         language=language,
         root=Path(root),
@@ -291,6 +304,7 @@ def load_config(path: Path) -> Config:
         keyword_budget=keyword_budget,
         review_similar=similar,
         review_uncertainty=uncertainty,
+        render_timestamps=timestamps,
     )
 
 
@@ -331,6 +345,7 @@ def format_config(config: Config) -> str:
                 "similar": dataclasses.asdict(config.review_similar),
                 "uncertainty": dataclasses.asdict(config.review_uncertainty),
             },
+            "render": {"timestamps": config.render_timestamps},
             "debug": config.debug,
         },
         sort_keys=False,

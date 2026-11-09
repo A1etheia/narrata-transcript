@@ -108,5 +108,10 @@ review:
     # bleiben in der Hinweisdatei sichtbar, heben die Passage aber nicht an.
     similar_sound_level: confident
 
+render:
+  # Zeitstempel im gerenderten Transkript (TXT, später DOCX): turn an jedem
+  # Sprecherwechsel, passage an jeder Passage.
+  timestamps: turn
+
 # Schreibt Transkripttext nach work/<gruppe>/<ordinal>/debug.log, nie auf die Konsole.
 debug: false
