@@ -54,6 +54,23 @@ Jede Prüfung meldet `ok`, `warning` oder `error`, und alle laufen durch, auch n
 
 Der Preflight schreibt nichts und legt keine Verzeichnisse an. Er braucht weder ein Alttranskript noch, bei gespeichertem Kontext, ein Token. Die Ausgabe nennt Pfade, Zähler und Modelle, nie Teilnehmende, Glossar oder Transkripttext.
 
+## Eine Sitzung in einem Befehl
+
+```bash
+transcript process beispielgruppe/042            # erster Lauf: hält zum Ausfüllen an
+transcript process beispielgruppe/042            # zweiter Lauf: liest ein, bis zum Bericht
+transcript process beispielgruppe/042 --redo transcribe
+```
+
+`transcript process` ruft die Einzelbefehle der folgenden Abschnitte der Reihe nach auf: `doctor`, `extract`, `context`, `snapshot`, `manifest`, `transcribe` (mit Diarisierung und Bewertung), Review, `speakers`, `working`, `export`, `txt`, `docx`, `report`. Jeder Schritt gibt aus, was sein Befehl ausgibt. Die Einzelbefehle bleiben unverändert nutzbar, und `process` kennt keine eigene Fachlogik.
+
+- **Wiederverwenden:** `extract`, `context` und `manifest` werden übersprungen, wenn ihr Ergebnis schon da ist. `context` fragt Narrata also nur beim ersten Lauf. `snapshot` und `transcribe` verwenden selbst wieder, was passt. Alles ab `working` läuft jedes Mal neu.
+- **Neu ausführen:** `--redo extract|context|snapshot|manifest|transcribe` erzwingt diesen Schritt (`snapshot --refresh`, `transcribe --force`) und lässt alle späteren laufen, auch die übersprungenen.
+- **Anhalten:** Fehlt das Review-Sheet und gibt es offene Kandidaten, schreibt `process` es. Fehlt `speakers/assignment.json`, schreibt es die Vorlage samt Hörproben. Danach hält es an und nennt die Dateien. Der nächste Lauf liest beides ein und läuft weiter. Was dann noch offen ist, bleibt offen und steht im Bericht als Lücke (`open_passages`, `open_speakers`). Ein Export ohne Zuordnung ist also möglich, gilt aber als unvollständig.
+- **Abbrechen:** Ein Fehler hält den Lauf am betroffenen Schritt an, mit `process: stopped at <schritt> (exit <n>)`. Das gilt auch für ein gescheitertes oder offenes Segment in `transcribe` und für nicht anwendbare Einträge in der Zuordnung.
+- **Optionen:** `--consent` und `--num-speakers` gehen an `manifest` und `transcribe`. Ein anderer Audiostream braucht vorher `transcript extract --stream`.
+- **Exit-Code:** `0` fertig und ohne Lücken, `1` fertig mit Lücken oder abgebrochen bei unvollständigem Schritt, `2` Fehler, `3` angehalten für die manuellen Schritte. Die Abschlusszeile nennt jeden Schritt mit `ran`, `reused`, `incomplete`, `halted` oder `failed`.
+
 ## Audiospur extrahieren
 
 ```bash
