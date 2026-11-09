@@ -26,6 +26,7 @@ from transcript import (
     knowledge,
     manifest,
     narrata,
+    preflight,
     rendering,
     report,
     review_import,
@@ -72,8 +73,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     config_command = commands.add_parser(
         "config", help="Show the effective configuration."
     )
-    commands.add_parser(
-        "doctor", help="Check that ffmpeg and ffprobe are installed and run."
+    doctor_command = commands.add_parser(
+        "doctor",
+        help="Check tools, configuration and models before a run, and with a "
+        "session also its input, knowledge and earlier artifacts; changes nothing.",
+    )
+    doctor_command.add_argument(
+        "session", nargs="?", help="session key <group>/<ordinal> (default: none)"
     )
     extract_command = commands.add_parser(
         "extract", help="Extract the audio track of a session's recordings."
@@ -256,6 +262,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     docx_command.add_argument("session", help="session key <group>/<ordinal>")
     for command in (
         config_command,
+        doctor_command,
         extract_command,
         context_command,
         snapshot_command,
@@ -284,7 +291,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "config":
         return _show_config(args.config)
     if args.command == "doctor":
-        return _doctor()
+        return _doctor(args.session, args.config)
     with _log_to_stderr():  # pipeline steps log progress and failed attempts
         if args.command == "extract":
             return _extract(args.session, args.config, args.stream)
@@ -327,14 +334,30 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _doctor() -> int:
+def _doctor(raw_key: str | None, config_path: Path) -> int:
+    """The preflight; only paths, counts and models reach the console (TOOL-66).
+
+    Exit 0 when nothing stops a run, warnings included; 2 on any error.
+    """
     try:
-        tools = audio_tools.check_audio_tools()
-    except audio_tools.AudioToolError as error:
+        key = None if raw_key is None else SessionKey.parse(raw_key)
+    except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
-    for info in (tools.ffmpeg, tools.ffprobe):
-        print(f"{info.name} {info.version} ({info.path})")
+    findings = preflight.run(config_path, key)
+    for finding in findings:
+        line = f"{finding.level}: {finding.check}: {finding.message}"
+        print(line, file=sys.stdout if finding.level == "ok" else sys.stderr)
+    warnings = preflight.warnings(findings)
+    if preflight.blocked(findings):
+        print(
+            f"preflight failed: {preflight.errors(findings)} error(s), "
+            f"{warnings} warning(s)",
+            file=sys.stderr,
+        )
+        return 2
+    checks = len({finding.check for finding in findings})
+    print(f"preflight ok: {checks} checks, {warnings} warning(s)")
     return 0
 
 

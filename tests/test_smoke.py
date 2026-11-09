@@ -48,6 +48,7 @@ from transcript.asr import AudioInputError, BackendUnavailableError, ResourceErr
 from transcript.asr.fake import FakeBackend
 from transcript.audio_tools import AudioToolError, AudioTools, ToolInfo
 from transcript.config import DEFAULT_KEYWORD_BUDGET, UncertaintyThresholds
+from transcript.preflight import Finding
 from transcript.reference import (
     Diarization,
     Passage,
@@ -139,27 +140,76 @@ class ConfigCommandTest(unittest.TestCase):
 
 
 class DoctorCommandTest(unittest.TestCase):
+    """The checks themselves are in test_preflight; here only the console."""
+
+    def doctor(
+        self, findings: list[Finding], *argv: str
+    ) -> tuple[int, str, str, mock.MagicMock]:
+        """Run `doctor` on `findings`; the last item is the patched preflight."""
+        with mock.patch.object(
+            transcript_main.preflight, "run", return_value=findings
+        ) as checked:
+            return (*run("doctor", *argv), checked)
+
     def test_prints_each_tool_with_version_and_path(self) -> None:
         tools = AudioTools(
             ffmpeg=ToolInfo("ffmpeg", Path("/bin/ffmpeg"), "6.1.1"),
             ffprobe=ToolInfo("ffprobe", Path("/bin/ffprobe"), "6.1.1"),
         )
         with mock.patch.object(audio_tools, "check_audio_tools", return_value=tools):
-            code, stdout, _ = run("doctor")
+            _, stdout, _ = run("doctor", "--config", "/nonexistent/config.yaml")
 
-        self.assertEqual(code, 0)
         self.assertIn("ffmpeg 6.1.1 (/bin/ffmpeg)", stdout)
         self.assertIn("ffprobe 6.1.1 (/bin/ffprobe)", stdout)
 
     def test_missing_tool_is_reported_without_traceback(self) -> None:
         error = AudioToolError("ffprobe not found on PATH; install with: sudo apt …")
         with mock.patch.object(audio_tools, "check_audio_tools", side_effect=error):
-            code, stdout, stderr = run("doctor")
+            code, _, stderr = run("doctor", "--config", "/nonexistent/config.yaml")
 
         self.assertEqual(code, 2)
-        self.assertEqual(stdout, "")
-        self.assertIn("error: ffprobe not found", stderr)
+        self.assertIn("error: audio-tools: ffprobe not found", stderr)
         self.assertNotIn("Traceback", stderr)
+
+    def test_warnings_do_not_stop_and_success_is_confirmed(self) -> None:
+        code, stdout, stderr, _ = self.doctor(
+            [
+                Finding("ok", "config", "config.yaml is valid"),
+                Finding("warning", "asr", "runs on the CPU"),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        self.assertIn("ok: config: config.yaml is valid", stdout)
+        self.assertIn("warning: asr: runs on the CPU", stderr)
+        self.assertTrue(stdout.endswith("preflight ok: 2 checks, 1 warning(s)\n"))
+
+    def test_an_error_stops_with_exit_2(self) -> None:
+        code, stdout, stderr, _ = self.doctor(
+            [
+                Finding("ok", "config", "config.yaml is valid"),
+                Finding("error", "disk", "too little room"),
+            ]
+        )
+
+        self.assertEqual(code, 2)
+        self.assertIn("error: disk: too little room", stderr)
+        self.assertIn("preflight failed: 1 error(s), 0 warning(s)", stderr)
+        self.assertNotIn("preflight ok", stdout)
+
+    def test_session_and_config_reach_the_preflight(self) -> None:
+        *_, checked = self.doctor([], "beispielgruppe/42", "--config", "other.yaml")
+
+        checked.assert_called_once_with(
+            Path("other.yaml"), SessionKey("beispielgruppe", 42)
+        )
+
+    def test_invalid_session_key_is_an_error(self) -> None:
+        code, _, stderr, checked = self.doctor([], "keine-session")
+
+        self.assertEqual(code, 2)
+        self.assertIn("invalid session key", stderr)
+        checked.assert_not_called()
 
 
 class ExtractCommandTest(unittest.TestCase):

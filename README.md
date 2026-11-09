@@ -32,7 +32,27 @@ cp config/example.yaml config/config.yaml
 transcript doctor
 ```
 
-`transcript doctor` gibt die gefundenen Versionen von `ffmpeg` und `ffprobe` aus. Fehlt eines oder läuft es nicht, endet der Befehl mit Exit-Code 2 und einer Meldung, die das Werkzeug und die Installation nennt.
+`transcript doctor` prüft die Umgebung, siehe [Preflight](#preflight).
+
+## Preflight
+
+```bash
+transcript doctor                    # Umgebung: Werkzeuge, Konfiguration, Modelle
+transcript doctor beispielgruppe/042 # zusätzlich die Session
+```
+
+Vor einem langen Lauf prüft `transcript doctor`, ob alles bereitsteht. Ohne Session prüft der Befehl `ffmpeg` und `ffprobe` (Version und Pfad), die Konfiguration, das ASR-Modell im lokalen Cache samt Gerät und das Diarisierungsmodell. Die Modelle werden dabei nicht geladen. Mit Session kommen hinzu:
+
+- die Aufnahmen in `input/`, jede per ffprobe geprüft
+- ob `work/` und `output/` beschreibbar sind
+- Platz für die Arbeits-WAVs, solange sie fehlen
+- der gespeicherte Narrata-Kontext oder, wenn er fehlt, `narrata.url`, `narrata.groups` und ein Token (ohne Netzwerkaufruf)
+- ob der Wissens-Snapshot gültig und aktuell ist
+- ob `audio.json`, Manifest und gespeicherte Transkripte zueinander und zu den Aufnahmen passen; `audio.json` wird nur über Dateiname und Größe verglichen
+
+Jede Prüfung meldet `ok`, `warning` oder `error`, und alle laufen durch, auch nach einem Fehler. Fehler blockieren den Start, Warnungen nicht. Warnungen gibt es etwa bei einem CPU-Lauf trotz `asr.device: auto`, bei mehreren Aufnahmen (Export erst mit Contract 1.1, IOA-1287), bei fehlendem oder veraltetem Snapshot, bei fehlender Einwilligungsnotiz und bei Segmenten, die `transcribe` neu transkribieren würde (dieselbe Regel wie beim Wiederverwenden). Die `ok`-Zeilen und `preflight ok: …` gehen auf stdout, Warnungen, Fehler und `preflight failed: …` auf stderr. Exit-Code 0 heißt: nichts hält den Lauf auf, auch mit Warnungen. Exit-Code 2 heißt: mindestens ein Fehler.
+
+Der Preflight schreibt nichts und legt keine Verzeichnisse an. Er braucht weder ein Alttranskript noch, bei gespeichertem Kontext, ein Token. Die Ausgabe nennt Pfade, Zähler und Modelle, nie Teilnehmende, Glossar oder Transkripttext.
 
 ## Audiospur extrahieren
 

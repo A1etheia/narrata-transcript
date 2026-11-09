@@ -98,6 +98,11 @@ def run(
     return findings
 
 
+def blocked(findings: Sequence[Finding]) -> bool:
+    """Whether a run must not start: any error does, warnings do not."""
+    return errors(findings) > 0
+
+
 def errors(findings: Sequence[Finding]) -> int:
     return sum(finding.level == "error" for finding in findings)
 
@@ -114,13 +119,11 @@ def _check_audio_tools(
     except audio_tools.AudioToolError as error:
         findings.append(Finding("error", "audio-tools", str(error)))
         return None
-    findings.append(
-        Finding(
-            "ok",
-            "audio-tools",
-            f"ffmpeg {tools.ffmpeg.version}, ffprobe {tools.ffprobe.version}",
-        )
+    found = ", ".join(
+        f"{info.name} {info.version} ({info.path})"
+        for info in (tools.ffmpeg, tools.ffprobe)
     )
+    findings.append(Finding("ok", "audio-tools", found))
     return tools
 
 
