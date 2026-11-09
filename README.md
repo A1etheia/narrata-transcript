@@ -482,12 +482,13 @@ Was die [Arbeitsfassung](#arbeitsfassung) offen lässt, wird an einer Stelle mar
 | `unresolved` | `origin: open` (noch nicht entschieden, `open`, `deferred` oder veraltete Entscheidung) | erkannter Text, dahinter `[unklar 01:42:17]` |
 | `speaker_unclear` | Sprecher `unknown` | Text, dahinter `[Sprecher unklar 01:42:17]` |
 | `crosstalk` | Sprecher `multiple` | Text, dahinter `[durcheinander 01:42:17]` |
+| `gap` | nur aus dem Contract, die Pipeline schreibt ihn nie | `[Lücke 01:42:17]` |
 
 - **Unverständlich und offen:** Eine als unverständlich entschiedene Stelle ist endgültig und zeigt keinen Text. Eine offene Stelle zeigt den erkannten Text, die Markierung sagt, dass er ungeprüft ist.
 - **Zeit:** Session-Zeit des Blockanfangs (siehe [Referenzformat](docs/referenzformat.md#session-zeit)), auf die Sekunde abgerundet, damit man an oder vor der Stelle landet. Ohne Startzeit fehlt sie: `[unverständlich]`.
 - **Mehrere Markierungen:** erst die zum Text, dann die zum Sprecher, etwa `[unverständlich 01:42:17] [durcheinander 01:42:17]`.
 - **Nicht markiert:** ein Sprecher, der noch nicht zugeordnet ist (`open`; die Konsole von `transcript working` zählt ihn), und eine Passage ohne Sprecher-Label. Sonst trüge ohne `assignment.json` jeder Block eine Markierung.
-- **Maschinenlesbar:** Jede Markierung hat `kind` und `at_ms` (Session-Zeit in ms oder `null`). `unintelligible`, `speaker_unclear` und `crosstalk` heißen wie die Marker im Narrata-Contract (IOA-1214). `unresolved` ist dort kein Marker, sondern `review_status: open`.
+- **Maschinenlesbar:** Jede Markierung hat `kind` und `at_ms` (Session-Zeit in ms oder `null`). `unintelligible`, `speaker_unclear` und `crosstalk` heißen wie die Marker im Narrata-Contract (IOA-1214). `unresolved` ist dort kein Marker, sondern `review_status: open`. Die Renderer des Exports beschriften die Contract-Marker über `markers.contract_marker_label`, auch `gap`, den der Contract kennt, die Pipeline aber nie schreibt.
 
 ## Abschlussbericht
 

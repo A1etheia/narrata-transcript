@@ -16,7 +16,9 @@ marker: it would mark every block of a session without an assignment.
 Each marker carries the session time of the block's start, if the transcript has
 one, so it leads back to the recording. `unintelligible`, `speaker_unclear` and
 `crosstalk` are named as the markers of the Narrata contract (IOA-1214); an
-`unresolved` block is a review status there, not a marker.
+`unresolved` block is a review status there, not a marker. Renderers of the
+export read the contract's markers, so `contract_marker_label` names those too,
+`gap` included.
 
 Nothing here logs or writes; the rendered text holds recognised words and goes
 only where its caller writes it.
@@ -39,6 +41,14 @@ MARKER_LABELS: dict[MarkerKind, str] = {
     "unresolved": "unklar",
     "speaker_unclear": "Sprecher unklar",
     "crosstalk": "durcheinander",
+}
+# `markers[].type` of contract v1, as the renderers of the export show it (TOOL-51).
+# `gap` comes only from the contract; this pipeline never marks one.
+CONTRACT_MARKER_LABELS: dict[str, str] = {
+    "unintelligible": MARKER_LABELS["unintelligible"],
+    "speaker_unclear": MARKER_LABELS["speaker_unclear"],
+    "crosstalk": MARKER_LABELS["crosstalk"],
+    "gap": "Lücke",
 }
 _SPEAKER_KINDS: dict[Assigned, MarkerKind] = {
     "unknown": "speaker_unclear",
@@ -77,10 +87,24 @@ def block_markers(block: Block, manifest: Manifest) -> tuple[Marker, ...]:
 
 def marker_label(marker: Marker) -> str:
     """The marker as it reads in a transcript, e.g. `[unverständlich 01:42:17]`."""
-    label = MARKER_LABELS[marker.kind]
-    if marker.at_ms is None:
+    return _bracket(MARKER_LABELS[marker.kind], marker.at_ms)
+
+
+def contract_marker_label(marker_type: str, at_ms: int | None) -> str:
+    """A contract marker as it reads in a transcript, e.g. `[Lücke 01:42:17]`.
+
+    `ValueError` for a type contract v1 does not know.
+    """
+    label = CONTRACT_MARKER_LABELS.get(marker_type)
+    if label is None:
+        raise ValueError(f"unknown contract marker type {marker_type!r}")
+    return _bracket(label, at_ms)
+
+
+def _bracket(label: str, at_ms: int | None) -> str:
+    if at_ms is None:
         return f"[{label}]"
-    return f"[{label} {format_clock(marker.at_ms)}]"
+    return f"[{label} {format_clock(at_ms)}]"
 
 
 def rendered_text(block: Block, manifest: Manifest) -> str:
