@@ -131,9 +131,9 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| TOOL-56 | Preflight | 0.5 | 22.02.2027 | 22.02.2027 | aus TOOL-9: `transcript doctor` ist der Ausgangspunkt des Gesamt-Preflights |
-| TOOL-55 | E2E-CLI mit Halt an manuellen Schritten | 1 | 22.02.2027 | 23.02.2027 | aus TOOL-10: `transcript extract` ist der erste Schritt des E2E-Befehls |
-| TOOL-57 | Pipeline-Status + Resume | 1 | 23.02.2027 | 25.02.2027 | aus TOOL-18: Fehlversuche stehen nur als `WARNING` auf stderr (`transcript.retry.FailureLog`); dauerhaftes Protokoll unter `work/<session>/` ist TOOL-77, mit TOOL-57 zusammen entwerfen |
+| TOOL-56 | Preflight | 0.5 | 22.02.2027 | 22.02.2027 | erledigt: `src/transcript/preflight.py`, `transcript doctor`; prüft Werkzeuge, Konfiguration, Modelle sowie Eingabe, Wissen und Artefakte einer Sitzung; aus TOOL-9: `transcript doctor` war der Ausgangspunkt |
+| TOOL-55 | E2E-CLI mit Halt an manuellen Schritten | 1 | 22.02.2027 | 23.02.2027 | aus TOOL-10: `transcript extract` ist der erste Schritt des E2E-Befehls; aus TOOL-56: der E2E-Befehl ruft `preflight.run` vor dem ersten Schritt auf und bricht bei Fehlern ab |
+| TOOL-57 | Pipeline-Status + Resume | 1 | 23.02.2027 | 25.02.2027 | aus TOOL-18: Fehlversuche stehen nur als `WARNING` auf stderr (`transcript.retry.FailureLog`); dauerhaftes Protokoll unter `work/<session>/` ist TOOL-77, mit TOOL-57 zusammen entwerfen; aus TOOL-56: Pipeline-Status über alle Stufen (Working, Export, Render) baut auf dem `resume`-Check auf |
 | TOOL-77 | Fehlversuche dauerhaft protokollieren | 0.5 | 25.02.2027 | 25.02.2027 | aus TOOL-18: heute nur `WARNING` auf stderr über `transcript.retry.FailureLog`; mit TOOL-57 zusammen entwerfen |
 | TOOL-86 | Sprecherzuordnung interaktiv (`transcript speakers --assign`) | 1 | 01.03.2027 | 01.03.2027 | vor TOOL-58, damit der Pilot den Zuordnungsaufwand mit dem Alltagsweg misst; Hörproben lokal abspielen, Auswahl aus dem Snapshot, atomar nach jedem Label; offen: Namen nur im interaktiven TTY (TOOL-66), Schreibregel für die handgemachte `assignment.json` (TOOL-68) |
 | TOOL-58 | Erste reale Session komplett (inkl. Review- und Zuordnungszeit) | 2 | 02.03.2027 | 04.03.2027 | Export → Fixture für IOA-1218; aus TOOL-69: AK „Import der Testsession über IOA-1218 ohne Korrektur“ liegt hier, dazu `transcript:validate`; `narrata.groups` muss die Gruppe kennen; eine Sitzung aus mehreren Aufnahmen braucht vorher Contract 1.1 (IOA-1287) |
