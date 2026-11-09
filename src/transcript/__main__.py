@@ -1,6 +1,6 @@
 """Command-line entry point: `config`, `doctor`, `extract`, `context`, `snapshot`,
 `manifest`, `transcribe`, `diarize`, `assess`, `calibrate`, `review-export`,
-`review-import`, `speakers`, `working`."""
+`review-import`, `speakers`, `working`, `report`."""
 
 import argparse
 import collections
@@ -24,6 +24,7 @@ from transcript import (
     knowledge,
     manifest,
     narrata,
+    report,
     review_import,
     review_sheet,
     speaker_samples,
@@ -229,6 +230,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "reference transcripts and write the working version.",
     )
     working_command.add_argument("session", help="session key <group>/<ordinal>")
+    report_command = commands.add_parser(
+        "report",
+        help="Write the closing report of the session's working version: counts, "
+        "gaps and the configuration used, no transcript text.",
+    )
+    report_command.add_argument("session", help="session key <group>/<ordinal>")
     for command in (
         config_command,
         extract_command,
@@ -243,6 +250,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         review_import_command,
         speakers_command,
         working_command,
+        report_command,
     ):
         command.add_argument(
             "--config",
@@ -288,6 +296,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _speakers(args.session, args.config)
         if args.command == "working":
             return _working(args.session, args.config)
+        if args.command == "report":
+            return _report(args.session, args.config)
     parser.print_help()
     return 0
 
@@ -923,6 +933,41 @@ def _working(raw_key: str, config_path: Path) -> int:
         print(f"{key}: {_working_finding(finding)}", file=sys.stderr)
     print(f"wrote {paths.working_transcript}")
     return 1 if result.findings else 0
+
+
+def _report(raw_key: str, config_path: Path) -> int:
+    """Only counts, codes and segment numbers reach the console (TOOL-66).
+
+    Exit 0, 1 if the report names a gap, 2 on an error.
+    """
+    try:
+        key = SessionKey.parse(raw_key)
+        paths = _load_config(config_path).session_paths(key)
+        result = report.compose(paths, manifest.load_manifest(paths))
+        report.write_report(paths, result)
+    except (ValueError, ConfigError, DataFileError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    review = result.review
+    print(
+        f"{key}: report: {result.passages.total} passage(s), "
+        f"{review.candidates} candidate(s), {sum(review.decided.values())} decided, "
+        f"{sum(review.unresolved.values())} open"
+    )
+    for note in result.notes:
+        print(f"{key}: note: {note.code}{_segments_suffix(note.segments)}")
+    for gap in result.gaps:
+        print(
+            f"{key}: gap: {gap.code}{_segments_suffix(gap.segments)}", file=sys.stderr
+        )
+    print(f"wrote {paths.report_json}")
+    print(f"wrote {paths.report_markdown}")
+    return 1 if result.gaps else 0
+
+
+def _segments_suffix(segments: Sequence[int]) -> str:
+    """`" (segment 1, 3)"`, or nothing for the whole session."""
+    return f" (segment {', '.join(map(str, segments))})" if segments else ""
 
 
 def _working_finding(finding: working.WorkingFinding) -> str:

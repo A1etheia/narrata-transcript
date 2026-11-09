@@ -34,7 +34,7 @@ from transcript.working import Block
 MarkerKind = Literal["unintelligible", "unresolved", "speaker_unclear", "crosstalk"]
 MARKER_KINDS: tuple[MarkerKind, ...] = get_args(MarkerKind)
 
-_LABELS: dict[MarkerKind, str] = {
+MARKER_LABELS: dict[MarkerKind, str] = {
     "unintelligible": "unverständlich",
     "unresolved": "unklar",
     "speaker_unclear": "Sprecher unklar",
@@ -77,7 +77,7 @@ def block_markers(block: Block, manifest: Manifest) -> tuple[Marker, ...]:
 
 def marker_label(marker: Marker) -> str:
     """The marker as it reads in a transcript, e.g. `[unverständlich 01:42:17]`."""
-    label = _LABELS[marker.kind]
+    label = MARKER_LABELS[marker.kind]
     if marker.at_ms is None:
         return f"[{label}]"
     return f"[{label} {format_clock(marker.at_ms)}]"

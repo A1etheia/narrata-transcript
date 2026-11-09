@@ -489,6 +489,35 @@ Was die [Arbeitsfassung](#arbeitsfassung) offen lässt, wird an einer Stelle mar
 - **Nicht markiert:** ein Sprecher, der noch nicht zugeordnet ist (`open`; die Konsole von `transcript working` zählt ihn), und eine Passage ohne Sprecher-Label. Sonst trüge ohne `assignment.json` jeder Block eine Markierung.
 - **Maschinenlesbar:** Jede Markierung hat `kind` und `at_ms` (Session-Zeit in ms oder `null`). `unintelligible`, `speaker_unclear` und `crosstalk` heißen wie die Marker im Narrata-Contract (IOA-1214). `unresolved` ist dort kein Marker, sondern `review_status: open`.
 
+## Abschlussbericht
+
+`transcript report <gruppe>/<ordinal>` beschreibt die gespeicherte [Arbeitsfassung](#arbeitsfassung) einer Session (`transcript.report`). Er zeigt, wie vollständig sie ist, wie viel Review und Sprecherzuordnung gebraucht haben und womit sie entstanden ist. Der Bericht zählt und misst. Eine Genauigkeit wird nicht gemessen, also gibt er auch keine Prozentzahl dafür aus.
+
+```bash
+transcript working beispielgruppe/042
+transcript report beispielgruppe/042
+```
+
+Die Arbeitsfassung muss aktuell sein: Der Befehl baut sie aus den Dateien unter `work/` neu und vergleicht. Weicht sie ab oder fehlt sie, verweist er auf `transcript working`. So beschreibt der Bericht genau den Stand, den der Export (TOOL-69) übernimmt.
+
+| Abschnitt | Inhalt |
+| --- | --- |
+| `recording` | Gesamtdauer; pro Segment Dauer und Zustand `transcribed`, `failed` (mit Fehlerklasse und `retryable`) oder `missing` |
+| `passages` | Blöcke gesamt und je `origin`, Dauer der automatisch übernommenen Blöcke, Blöcke ohne Zeit |
+| `review` | Kandidaten gesamt und je Stufe, bewertete Audiodauer, Kandidaten pro Stunde, entschiedene je Status (`confirmed`, `corrected`, `unintelligible`, `kept`), offene je `open`/`deferred` |
+| `markers` | Anzahl je [Markierung](#markierungen) |
+| `speakers` | diarisierte Segmente; Labels pro Segment mit Zuordnung und Redezeit; Zahl verschiedener Personen; `effort_minutes` aus `assignment.json` (`null` = nicht erfasst) |
+| `findings` | Funde der Arbeitsfassung je `kind` |
+| `pipeline` | Werkzeugversion; ASR, Diarisierung und Schwellenwerte, gleiche Konfigurationen mit ihren Segmenten zusammengefasst; Snapshot-Kennung und Contract-Version des Transkriptionskontexts |
+| `gaps` | was das Transkript unvollständig lässt: `failed_segment`, `missing_segment`, `open_passages`, `working_findings` |
+| `notes` | fehlende Angaben, die das Transkript nicht unvollständig machen: `no_diarization`, `no_assignment`, `effort_not_recorded`, `untimed_passages`, `segment_without_hints`, `snapshot_differs` |
+
+- **Personen:** Redezeit gibt es nur pro Label, nie pro Person (siehe [Datenschutz](docs/datenschutz.md)). Personen erscheinen nur als Anzahl, ohne Namen und User-ID. Die Redezeit ist die Summe der Passagendauern nach dem Mehrheitslabel der Passage, nicht die Sprechzeit aus der Diarisierung.
+- **Ablage:** `output/<gruppe>/<ordinal>/report.json` (`format_version: 1`) und `report.md`, ein kurzer deutscher Bericht mit Tabellen und ausgeschriebenen Lücken und Hinweisen. Beide enthalten keinen Transkripttext, keine Namen und keine User-IDs, nur Sprecher-Labels wie `SPEAKER_00`. Sie liegen dort, wo TXT, DOCX und der JSON-Export hinkommen, und lassen sich mit ihnen archivieren.
+- **Export:** Ohne `format_version` und `session` ist `report.json` das `stats`-Objekt des JSON-Exports. Narrata wertet es nicht aus.
+- **Gleiche Eingaben, gleiche Dateien:** Es gibt keinen Zeitstempel.
+- **Exit-Code:** `0` ohne Lücken, `1` mit Lücken, `2` Fehler. Die Konsole zeigt nur Zahlen, Codes und Segmentnummern, etwa `report: 539 passage(s), 57 candidate(s), 41 decided, 16 open` und `gap: open_passages (segment 1, 2)`.
+
 ## Konfiguration
 
 Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht im Repo, ebenso alles andere unter `config/` außer `config/example.yaml`. `transcript config` zeigt die wirksamen Werte, `transcript config --config <pfad>` liest eine andere Datei. Fehlende Pflichtwerte, ungültige Werte und unbekannte Schlüssel enden mit einer Meldung, die Datei und Schlüssel nennt.
@@ -567,7 +596,7 @@ work/beispielgruppe/042/
   speakers/                    assignment.json (Sprecherzuordnung, von Hand), samples.md (Hörliste pro Label)
   working/                     transcript.json (Arbeitsfassung: Entscheidungen und Sprecher angewendet)
   debug.log                    nur im Debug-Modus
-output/beispielgruppe/042/     JSON-Export, TXT, DOCX
+output/beispielgruppe/042/     report.json, report.md (Abschlussbericht), JSON-Export, TXT, DOCX
 ```
 
 Die Verzeichnisse von `input/` werden von Hand befüllt: Vor dem ersten Lauf kommen die Aufnahmen einer Sitzung nach `input/<gruppe>/<ordinal>/`, mit dem Ordinal aus Narrata. Liegt eine Aufnahme auch bearbeitet vor (etwa ohne Stille), gehört nur eine Fassung dorthin, sonst zählt sie doppelt. Die Pipeline liest dort nur und schreibt ausschließlich nach `work/` und `output/`. ASR-Ergebnisse werden nie überschrieben.

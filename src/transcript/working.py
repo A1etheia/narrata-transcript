@@ -96,6 +96,18 @@ class Block:
     text: str | None  # the result; None for `unintelligible`
     speaker: SpeakerRef
 
+    @property
+    def is_candidate(self) -> bool:
+        """Whether the passage was a review candidate, settled or not."""
+        return self.level != "confident"
+
+    @property
+    def duration_ms(self) -> int | None:
+        """End minus start; None without both times."""
+        if self.start_ms is None or self.end_ms is None:
+            return None
+        return self.end_ms - self.start_ms
+
 
 @dataclass(frozen=True)
 class WorkingFinding:
@@ -318,6 +330,21 @@ def load_working(paths: SessionPaths) -> WorkingTranscript:
             for n, item in enumerate(_list(data, "findings", dict, path), start=1)
         ),
     )
+
+
+def load_current(paths: SessionPaths, manifest: Manifest) -> WorkingTranscript:
+    """The stored working version if the current files still give it.
+
+    `WorkingError` if it is missing or outdated, so that what is reported or
+    exported is what the files say now.
+    """
+    path = paths.working_transcript
+    if not path.is_file():
+        raise WorkingError(f"{path}: working version not found; run transcript working")
+    stored = load_working(paths)
+    if stored != compose(paths, manifest):
+        raise WorkingError(f"{path}: working version outdated; run transcript working")
+    return stored
 
 
 def _inputs_from(data: dict[str, Any], path: Path) -> Inputs:
