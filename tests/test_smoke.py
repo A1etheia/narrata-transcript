@@ -1636,6 +1636,14 @@ class _DiarizedSession(unittest.TestCase):
     def speakers(self) -> tuple[int, str, str]:
         return run("speakers", str(KEY), "--config", str(self.config))
 
+    def assign_all(self) -> None:
+        """Write the template and settle every label as `unknown`."""
+        self.speakers()
+        data = json.loads(self.paths.speaker_assignment.read_text(encoding="utf-8"))
+        for item in data["entries"]:
+            item.update(assigned="unknown")
+        self.paths.speaker_assignment.write_text(json.dumps(data), encoding="utf-8")
+
     def assert_nothing_secret(self, output: str) -> None:
         for secret in (SECRET, NAME, "SPEAKER_", "user"):
             self.assertNotIn(secret, output)
@@ -1789,6 +1797,7 @@ class ReportCommandTest(_DiarizedSession):
         )
         self.assertIn("beispielgruppe/042: note: no_assignment", stdout)
         self.assertIn("beispielgruppe/042: gap: open_passages (segment 1)", stderr)
+        self.assertIn("beispielgruppe/042: gap: open_speakers (segment 1)", stderr)
         self.assertIn(f"wrote {self.paths.report_json}", stdout)
         self.assertIn(f"wrote {self.paths.report_markdown}", stdout)
         self.assert_nothing_secret(stdout + stderr)
@@ -1805,6 +1814,7 @@ class ReportCommandTest(_DiarizedSession):
             decisions.SessionDecisions(), found, found.candidates[0].id, "confirmed"
         )
         decisions.write_decisions(self.paths, settled)
+        self.assign_all()
         run("working", str(KEY), "--config", str(self.config))
 
         code, _, stderr = self.report()

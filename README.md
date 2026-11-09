@@ -530,7 +530,7 @@ Die Arbeitsfassung muss aktuell sein: Der Befehl baut sie aus den Dateien unter 
 | `speakers` | diarisierte Segmente; Labels pro Segment mit Zuordnung und Redezeit; Zahl verschiedener Personen; `effort_minutes` aus `assignment.json` (`null` = nicht erfasst) |
 | `findings` | Funde der Arbeitsfassung je `kind` |
 | `pipeline` | Werkzeugversion; ASR, Diarisierung und Schwellenwerte, gleiche Konfigurationen mit ihren Segmenten zusammengefasst; Snapshot-Kennung und Contract-Version des Transkriptionskontexts |
-| `gaps` | was das Transkript unvollständig lässt: `failed_segment`, `missing_segment`, `open_passages`, `working_findings` |
+| `gaps` | was das Transkript unvollständig lässt: `failed_segment`, `missing_segment`, `open_passages`, `working_findings`, `open_speakers` (Sprecher-Labels ohne Zuordnung, auch wenn die Zuordnung ganz fehlt) |
 | `notes` | fehlende Angaben, die das Transkript nicht unvollständig machen: `no_diarization`, `no_assignment`, `effort_not_recorded`, `untimed_passages`, `segment_without_hints`, `snapshot_differs` |
 
 - **Personen:** Redezeit gibt es nur pro Label, nie pro Person (siehe [Datenschutz](docs/datenschutz.md)). Personen erscheinen nur als Anzahl, ohne Namen und User-ID. Die Redezeit ist die Summe der Passagendauern nach dem Mehrheitslabel der Passage, nicht die Sprechzeit aus der Diarisierung.
