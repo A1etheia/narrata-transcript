@@ -20,10 +20,12 @@ follow it, labelled as in
 the contract's markers in file order, each at its own time. A passage without
 text shows its markers only; no text is ever made up.
 
-`render_txt` lays the paragraphs out by `render.timestamps`: `turn` gives each
-paragraph the head `[HH:MM:SS] <speaker>` and its text below; `passage` gives the
-head `<speaker>` and each passage on a line of its own, `[HH:MM:SS] <text>`.
-Times are session time rounded down to the second. Nothing of the export's head,
+`layout` lays the paragraphs out by `render.timestamps`, the same for every
+renderer: `turn` gives each paragraph the head `[HH:MM:SS] <speaker>` and its
+text below; `passage` gives the head `<speaker>` and each passage on a row of its
+own, `[HH:MM:SS] <text>`. Each row is a run of typed segments (time, name, label,
+text, marker) read with one space between; `render_txt` joins them as plain
+text. Times are session time rounded down to the second. Nothing of the export's head,
 pipeline or stats goes into the text.
 
 The text holds transcript words and names; `write_txt` stores it as
@@ -34,7 +36,7 @@ and contract rules, never a value.
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import groupby
-from typing import Any
+from typing import Any, Literal
 
 from transcript.config import TimestampRule
 from transcript.contract import summarize, validate
@@ -60,9 +62,37 @@ class Line:
     markers: tuple[str, ...] = ()
 
     @property
+    def segments(self) -> tuple["Segment", ...]:
+        """The text, if any, then each marker label."""
+        text = (Segment(self.text, "text"),) if self.text else ()
+        return (*text, *(Segment(marker, "marker") for marker in self.markers))
+
+    @property
     def shown(self) -> str:
         """Text and markers as plain text; empty without either."""
-        return " ".join((self.text, *self.markers) if self.text else self.markers)
+        return joined(self.segments)
+
+
+SegmentKind = Literal["time", "name", "label", "text", "marker"]
+
+
+@dataclass(frozen=True)
+class Segment:
+    """A piece of a rendered row and what it is, so a document can style it."""
+
+    text: str
+    kind: SegmentKind
+
+
+@dataclass(frozen=True)
+class Block:
+    """A speaker's head row and the rows below it, each a run of segments.
+
+    The segments of a row read with one space between them.
+    """
+
+    head: tuple[Segment, ...]
+    rows: tuple[tuple[Segment, ...], ...]
 
 
 @dataclass(frozen=True)
@@ -123,27 +153,49 @@ def speaker_name(label: str, person: Mapping[str, Any] | None) -> str:
     return f"{label} (zugeordnet, ohne Namen)" if name is None else name
 
 
-def render_txt(found: Sequence[Paragraph], rule: TimestampRule) -> str:
-    """The paragraphs as plain text, separated by an empty line."""
+def layout(found: Sequence[Paragraph], rule: TimestampRule) -> tuple[Block, ...]:
+    """The paragraphs laid out by `render.timestamps`, for every renderer.
+
+    `turn`: head time and speaker, then one row of all text, left out if empty.
+    `passage`: head speaker, then a row per passage with its time.
+    """
     blocks = []
     for paragraph in found:
+        speaker = Segment(paragraph.speaker, "name" if paragraph.named else "label")
         if rule == "turn":
-            head = f"[{format_clock(paragraph.lines[0].start_ms)}] {paragraph.speaker}"
-            joined = " ".join(line.shown for line in paragraph.lines if line.shown)
-            body = [joined] if joined else []
+            text = tuple(s for line in paragraph.lines for s in line.segments)
+            head = (_time(paragraph.lines[0].start_ms), speaker)
+            rows = (text,) if text else ()
         else:
-            head = paragraph.speaker
-            body = [
-                f"[{format_clock(line.start_ms)}] {line.shown}".rstrip()
-                for line in paragraph.lines
-            ]
-        blocks.append("\n".join([head, *body]))
+            head = (speaker,)
+            rows = tuple(
+                (_time(line.start_ms), *line.segments) for line in paragraph.lines
+            )
+        blocks.append(Block(head, rows))
+    return tuple(blocks)
+
+
+def joined(segments: Sequence[Segment]) -> str:
+    """A row as plain text, one space between its segments."""
+    return " ".join(segment.text for segment in segments)
+
+
+def render_txt(found: Sequence[Paragraph], rule: TimestampRule) -> str:
+    """The paragraphs as plain text, separated by an empty line."""
+    blocks = [
+        "\n".join(map(joined, (block.head, *block.rows)))
+        for block in layout(found, rule)
+    ]
     return "\n\n".join(blocks) + "\n" if blocks else ""
 
 
 def write_txt(paths: SessionPaths, text: str) -> None:
     """Replace the session's TXT transcript, UTF-8 without BOM."""
     write_bytes_atomic(paths.transcript_text, text.encode("utf-8"))
+
+
+def _time(start_ms: int) -> Segment:
+    return Segment(f"[{format_clock(start_ms)}]", "time")
 
 
 def _line(passage: Mapping[str, Any]) -> Line:
