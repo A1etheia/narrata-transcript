@@ -1,6 +1,6 @@
 """Command-line entry point: `config`, `doctor`, `extract`, `context`, `snapshot`,
 `manifest`, `transcribe`, `diarize`, `assess`, `calibrate`, `review-export`,
-`review-import`, `speakers`, `working`, `report`, `export`."""
+`review-import`, `speakers`, `working`, `report`, `export`, `txt`."""
 
 import argparse
 import collections
@@ -25,6 +25,7 @@ from transcript import (
     knowledge,
     manifest,
     narrata,
+    rendering,
     report,
     review_import,
     review_sheet,
@@ -243,6 +244,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "to output/<session>/transcript.json, checked against the contract first.",
     )
     export_command.add_argument("session", help="session key <group>/<ordinal>")
+    txt_command = commands.add_parser(
+        "txt",
+        help="Render the session's JSON export as plain text to "
+        "output/<session>/transcript.txt; reads nothing else.",
+    )
+    txt_command.add_argument("session", help="session key <group>/<ordinal>")
     for command in (
         config_command,
         extract_command,
@@ -259,6 +266,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         working_command,
         report_command,
         export_command,
+        txt_command,
     ):
         command.add_argument(
             "--config",
@@ -308,6 +316,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _report(args.session, args.config)
         if args.command == "export":
             return _export(args.session, args.config)
+        if args.command == "txt":
+            return _txt(args.session, args.config)
     parser.print_help()
     return 0
 
@@ -1004,6 +1014,33 @@ def _export(raw_key: str, config_path: Path) -> int:
             file=sys.stderr,
         )
     print(f"wrote {paths.transcript_export}")
+    return 0
+
+
+def _txt(raw_key: str, config_path: Path) -> int:
+    """Only counts and the path reach the console (TOOL-66).
+
+    Exit 0 once written, open passages included; 2 on an error or a refusal.
+    """
+    try:
+        key = SessionKey.parse(raw_key)
+        config = _load_config(config_path)
+        paths = config.session_paths(key)
+        document = rendering.load_export(paths)
+        found = rendering.paragraphs(document)
+        rendering.write_txt(
+            paths, rendering.render_txt(found, config.render_timestamps)
+        )
+    except (ValueError, ConfigError, DataFileError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    passages = document["passages"]
+    still_open = sum(p["review_status"] == "open" for p in passages)
+    print(
+        f"{key}: txt: {len(passages)} passage(s), {len(found)} paragraph(s), "
+        f"{still_open} open"
+    )
+    print(f"wrote {paths.transcript_text}")
     return 0
 
 

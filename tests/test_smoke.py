@@ -1778,7 +1778,9 @@ class ReportCommandTest(_DiarizedSession):
         self.assertIn("working version outdated; run transcript working", stderr)
 
 
-class ExportCommandTest(_DiarizedSession):
+class _ExportableSession(_DiarizedSession):
+    """An assessed session with a configuration that knows its group id."""
+
     GROUP_ID = 7  # made up
 
     def setUp(self) -> None:
@@ -1791,6 +1793,8 @@ class ExportCommandTest(_DiarizedSession):
             encoding="utf-8",
         )
 
+
+class ExportCommandTest(_ExportableSession):
     def export(self, config: Path | None = None) -> tuple[int, str, str]:
         return run("export", str(KEY), "--config", str(config or self.with_groups))
 
@@ -1826,6 +1830,43 @@ class ExportCommandTest(_DiarizedSession):
         self.assertEqual(code, 2)
         self.assertIn("working version not found; run transcript working", stderr)
         self.assertFalse(self.paths.transcript_export.exists())
+
+
+class TxtCommandTest(_ExportableSession):
+    def txt(self) -> tuple[int, str, str]:
+        return run("txt", str(KEY), "--config", str(self.with_groups))
+
+    def snapshot(self) -> dict[Path, bytes]:
+        """Every file under work/ and the export, with its bytes."""
+        files = [p for p in self.paths.work_dir.rglob("*") if p.is_file()]
+        return {p: p.read_bytes() for p in [*files, self.paths.transcript_export]}
+
+    def test_renders_the_export_and_prints_only_counts(self) -> None:
+        run("working", str(KEY), "--config", str(self.config))
+        run("export", str(KEY), "--config", str(self.with_groups))
+        before = self.snapshot()
+
+        code, stdout, stderr = self.txt()
+
+        self.assertEqual(code, 0, stderr)  # an open passage is rendered, marked
+        self.assertIn(
+            "beispielgruppe/042: txt: 2 passage(s), 2 paragraph(s), 1 open", stdout
+        )
+        self.assertIn(f"wrote {self.paths.transcript_text}", stdout)
+        self.assert_nothing_secret(stdout + stderr)
+        text = self.paths.transcript_text.read_text("utf-8")
+        self.assertEqual(text.count("[unklar "), 1)
+        self.assertIn("(nicht zugeordnet)", text)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_without_export_asks_for_it(self) -> None:
+        run("working", str(KEY), "--config", str(self.config))
+
+        code, _, stderr = self.txt()
+
+        self.assertEqual(code, 2)
+        self.assertIn("JSON export not found; run transcript export", stderr)
+        self.assertFalse(self.paths.transcript_text.exists())
 
 
 if __name__ == "__main__":
