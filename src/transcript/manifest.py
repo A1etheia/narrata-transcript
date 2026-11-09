@@ -163,6 +163,18 @@ def load_manifest(paths: SessionPaths) -> Manifest:
     return manifest
 
 
+def audio_sources(paths: SessionPaths) -> tuple[SourceRecording, ...]:
+    """The recordings `audio.json` was extracted from, in segment order."""
+    metadata = _read_json(paths.audio_metadata, "audio metadata")
+    if metadata.get("format_version") != audio.METADATA_FORMAT_VERSION:
+        raise ManifestError(
+            f"{paths.audio_metadata}: unsupported format_version; "
+            "run transcript extract again"
+        )
+    entries = _field(metadata, "segments", list, paths.audio_metadata)
+    return tuple(_source(entry, paths.audio_metadata) for entry in entries)
+
+
 def timeline(frames: list[int], sample_rate: int) -> list[tuple[int, int]]:
     """Start and end in ms of segments played back to back, from their frame counts."""
     bounds = []

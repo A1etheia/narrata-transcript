@@ -55,12 +55,9 @@ from transcript.transcription import (
 _DEFAULT_CONFIG = Path("config/config.yaml")
 _EXAMPLE_CONFIG = Path("config/example.yaml")
 _DOTENV = Path(".env")
-_SHORT_ID = 12  # characters of a snapshot id; enough within one session
+_SHORT_ID = knowledge.SHORT_ID
 _SHOWN_FINDINGS = 10  # the rest is in the diagnosis report
-_SNAPSHOT_BEHIND = (
-    "warning: the knowledge snapshot predates the stored Narrata context; "
-    "transcript snapshot --refresh uses it"
-)
+_SNAPSHOT_BEHIND = f"warning: {knowledge.BEHIND_CONTEXT}"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -485,11 +482,7 @@ def _snapshot(raw_key: str, config_path: Path, refresh: bool) -> int:
     if changed.context_changed:
         print(_SNAPSHOT_BEHIND, file=sys.stderr)
     if changed.budget_changed:
-        print(
-            "warning: knowledge.keyword_budget changed since this snapshot; "
-            "transcript snapshot --refresh uses it",
-            file=sys.stderr,
-        )
+        print(f"warning: {knowledge.BUDGET_CHANGED}", file=sys.stderr)
     findings = diagnosis.diagnose(snapshot.participants, glossary)
     diagnosis.write_report(paths.knowledge_diagnosis, findings, snapshot)
     _print_diagnosis(findings, paths.knowledge_diagnosis)

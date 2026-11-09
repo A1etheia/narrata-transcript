@@ -126,7 +126,7 @@ def transcribe_session(
     found = identity(backend)
     segments = _selected(manifest, indices)
     for segment in segments:
-        _check_audio(paths, segment.index)
+        check_audio(paths, segment.index)
 
     hints = tuple(keywords) if backend.capabilities.keyword_biasing else None
     outcomes: dict[int, SegmentOutcome] = {}
@@ -137,7 +137,7 @@ def transcribe_session(
         if (
             transcribed
             and not force
-            and _reusable(
+            and reusable(
                 stored,
                 found,
                 language,
@@ -253,7 +253,7 @@ def _selected(manifest: Manifest, indices: Collection[int] | None) -> list[Segme
     return [segment for segment in manifest.segments if segment.index in indices]
 
 
-def _check_audio(paths: SessionPaths, index: int) -> None:
+def check_audio(paths: SessionPaths, index: int) -> None:
     audio = paths.segment_wav(index)
     if not audio.is_file():
         raise TranscriptionError(
@@ -273,7 +273,7 @@ def _stored(paths: SessionPaths, index: int, force: bool) -> ReferenceTranscript
         return None  # an unreadable file holds no result worth keeping
 
 
-def _reusable(
+def reusable(
     reference: ReferenceTranscript,
     found: BackendIdentity,
     language: str | None,

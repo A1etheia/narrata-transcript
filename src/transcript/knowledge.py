@@ -40,6 +40,15 @@ from transcript.narrata import (
 from transcript.session import SessionPaths
 
 SNAPSHOT_FORMAT_VERSION = 1
+SHORT_ID = 12  # characters of a snapshot id the console shows; enough in a session
+BEHIND_CONTEXT = (
+    "the knowledge snapshot predates the stored Narrata context; "
+    "transcript snapshot --refresh uses it"
+)
+BUDGET_CHANGED = (
+    "knowledge.keyword_budget changed since this snapshot; "
+    "transcript snapshot --refresh uses it"
+)
 KEYWORD_TIERS: tuple[Relevance, ...] = ("pc", "session", "recent")
 _UNBUDGETED: tuple[Relevance, ...] = ("pc",)  # always keywords, never counted
 _WHAT = "knowledge snapshot"
