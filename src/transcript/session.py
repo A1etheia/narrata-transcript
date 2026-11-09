@@ -169,6 +169,11 @@ class SessionPaths:
         return self.output_dir / "report.md"
 
     @property
+    def transcript_export(self) -> Path:
+        """Structured transcript as Narrata contract v1, for the import (TOOL-69)."""
+        return self.output_dir / "transcript.json"
+
+    @property
     def manifest(self) -> Path:
         return self.work_dir / "manifest.json"
 

@@ -33,6 +33,7 @@ from transcript import __main__ as transcript_main
 from transcript import (
     audio_tools,
     candidates,
+    contract,
     decisions,
     hints,
     jsonfile,
@@ -1775,6 +1776,56 @@ class ReportCommandTest(_DiarizedSession):
 
         self.assertEqual(code, 2)
         self.assertIn("working version outdated; run transcript working", stderr)
+
+
+class ExportCommandTest(_DiarizedSession):
+    GROUP_ID = 7  # made up
+
+    def setUp(self) -> None:
+        super().setUp()
+        uncertainty.assess_session(self.paths, [1], UncertaintyThresholds())
+        self.with_groups = self.root / "with-groups.yaml"
+        self.with_groups.write_text(
+            f"language: de\npaths:\n  root: {self.root}\n"
+            f"narrata:\n  groups:\n    {KEY.group}: {self.GROUP_ID}\n",
+            encoding="utf-8",
+        )
+
+    def export(self, config: Path | None = None) -> tuple[int, str, str]:
+        return run("export", str(KEY), "--config", str(config or self.with_groups))
+
+    def test_writes_a_valid_export_and_prints_only_counts_and_codes(self) -> None:
+        run("working", str(KEY), "--config", str(self.config))
+
+        code, stdout, stderr = self.export()
+
+        self.assertEqual(code, 0, stderr)  # an open passage is valid in the contract
+        self.assertIn(
+            "beispielgruppe/042: export: 2 passage(s), 1 open, 2 speaker label(s)",
+            stdout,
+        )
+        self.assertIn("beispielgruppe/042: gap: open_passages (segment 1)", stderr)
+        self.assertIn(f"wrote {self.paths.transcript_export}", stdout)
+        self.assert_nothing_secret(stdout + stderr)
+        document = json.loads(self.paths.transcript_export.read_text("utf-8"))
+        self.assertEqual(contract.validate(document), ())
+        self.assertEqual(document["session"]["group"], self.GROUP_ID)
+
+    def test_without_a_group_id_nothing_is_written(self) -> None:
+        run("working", str(KEY), "--config", str(self.config))
+
+        code, _, stderr = self.export(self.config)
+
+        self.assertEqual(code, 2)
+        self.assertIn("narrata.groups has no group id for beispielgruppe", stderr)
+        self.assertFalse(self.paths.transcript_export.exists())
+
+    def test_without_working_version_asks_for_it(self) -> None:
+        code, _, stderr = self.export()
+
+        self.assertEqual(code, 2)
+        self.assertIn("working version not found; run transcript working", stderr)
+        self.assertFalse(self.paths.transcript_export.exists())
 
 
 if __name__ == "__main__":
