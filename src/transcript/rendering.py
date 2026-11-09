@@ -1,5 +1,7 @@
 """The session's transcript for people to read, rendered from the JSON export (TOOL-51).
 
+This is the reading core shared by TXT (`render_txt`) and DOCX
+(`transcript.docx_render`, TOOL-52).
 The JSON export (`output/<s>/transcript.json`, contract v1) is the only source:
 nothing here reads the working version, so TXT, DOCX and Narrata show the same
 state. `load_export` reads the file and refuses one that `contract.validate`
@@ -65,10 +67,14 @@ class Line:
 
 @dataclass(frozen=True)
 class Paragraph:
-    """The passages of one speaker in a row."""
+    """The passages of one speaker in a row.
+
+    `named` tells a person's name from a label, so a document can set them apart.
+    """
 
     speaker: str
     lines: tuple[Line, ...]
+    named: bool
 
 
 def load_export(paths: SessionPaths) -> dict[str, Any]:
@@ -98,8 +104,13 @@ def paragraphs(document: Mapping[str, Any]) -> tuple[Paragraph, ...]:
     for _, run in groupby(document["passages"], key=who):
         passages = list(run)
         label = passages[0]["speaker_label"]
+        person = speakers[label]
         found.append(
-            Paragraph(speaker_name(label, speakers[label]), tuple(map(_line, passages)))
+            Paragraph(
+                speaker_name(label, person),
+                tuple(map(_line, passages)),
+                named=person is not None and person.get("display_name") is not None,
+            )
         )
     return tuple(found)
 

@@ -19,7 +19,7 @@
 - **Text sicher ins XML:** Alle Texte gehen über `xml.sax.saxutils.escape`. In XML 1.0 verbotene Steuerzeichen werden entfernt, sonst wäre die Datei ungültig. Das ist die einzige Abweichung vom Wortlaut, und sie trifft nur Zeichen, die Word gar nicht darstellen kann. Runs bekommen `xml:space="preserve"`.
 - **Kopf:** Die Überschrift (Stil `Title`) lautet `Transkript <gruppe>/<ordinal>` aus dem Sitzungsschlüssel, den der Befehl ohnehin bekommt. Das ist kein zweiter Datenpfad. Contract v1 hat keinen Titel, und die Narrata-Gruppen-ID allein sagt niemandem etwas. Darunter folgt eine Zeile `Sitzung <ordinal> · <TT.MM.JJJJ>` (ohne Datum, wenn `session_date` `null` ist). Danach ein kleiner Metadatenblock (Stil `Meta`, klein, grau): `Backend: <backend> / <model>`, `Wissens-Snapshot: <id oder „keiner“>`, `Contract: <contract_version>`, `Narrata: Gruppe <group>, Spielsitzung <play_session_id>`. Der Block ist immer dabei und braucht keinen Schalter.
 - **Absätze:** `rendering.paragraphs` unverändert. `render.timestamps` gilt wie bei TXT. Bei `turn` gibt es einen Sprecherabsatz `[HH:MM:SS] Name` und darunter einen Textabsatz. Bei `passage` gibt es den Sprecherabsatz `Name` und darunter je Passage einen Absatz `[HH:MM:SS] Text`. Zeitstempel stehen grau in einem eigenen Run.
-- **Sprecher sichtbar unterscheidbar:** Der Sprecherabsatz hat den Stil `Speaker` (fett, mit Abstand davor, `keepNext`). Eine zugeordnete Person erscheint als Name in Schwarz. Ein Label (nicht zugeordnet oder ohne Namen) erscheint kursiv in einem eigenen Zeichenstil `SpeakerLabel`. Dafür braucht `Paragraph` die Information, ob es sich um eine Person handelt: ein neues Feld `assigned: bool`, gesetzt in `paragraphs`. TXT bleibt byte-gleich.
+- **Sprecher sichtbar unterscheidbar:** Der Sprecherabsatz hat den Stil `Speaker` (fett, mit Abstand davor, `keepNext`). Eine zugeordnete Person erscheint als Name in Schwarz. Ein Label (nicht zugeordnet oder ohne Namen) erscheint kursiv in einem eigenen Zeichenstil `SpeakerLabel`. Dafür braucht `Paragraph` die Information, ob ein Name erscheint: ein neues Feld `named: bool`, gesetzt in `paragraphs`. Eine zugeordnete Person ohne Namen zählt als Label, weil sie als Label erscheint. TXT bleibt byte-gleich.
 - **Markierungen nicht versteckt:** Die Beschriftungen aus `Line.markers` stehen in einem eigenen Run mit dem Zeichenstil `Marker` (kursiv, dunkelrot, Hervorhebung hellgrau). Damit fallen sie auch im Schwarzweißdruck auf. Die Reihenfolge und der Wortlaut sind dieselben wie in TXT.
 - **Modul:** neues `src/transcript/docx_render.py` (nicht `docx.py`, um keine Verwechslung mit python-docx zu provozieren) mit `render_docx(key, document, found, rule) -> bytes` und `write_docx(paths, data)`. `rendering.py` bleibt der gemeinsame Lesekern. So hält sich der XML-Teil aus dem TXT-Pfad heraus.
 - **Befehl:** `transcript docx <s>` nach dem Muster von `_txt`. Die Konsole zeigt `docx: <n> passage(s), <m> paragraph(s), <k> open` und `wrote <pfad>`. Exit 0 auch mit offenen Passagen, Exit 2 bei Fehler.
@@ -44,14 +44,14 @@
 *N/A because* keine neue Abhängigkeit dazukommt (Entscheidung oben). Gebraucht werden nur `zipfile` und `xml.sax.saxutils` aus der Standardbibliothek.
 
 ## Format-Check
-*N/A because* DOCX ein Leseformat ohne eigenes Versionsfeld ist. Der Aufbau steht im README. `Paragraph.assigned` ist ein internes Feld ohne gespeichertes Format.
+*N/A because* DOCX ein Leseformat ohne eigenes Versionsfeld ist. Der Aufbau steht im README. `Paragraph.named` ist ein internes Feld ohne gespeichertes Format.
 
 ## Chunks
 ### Chunk 1 — Sprecherart im Lesekern
 - Dateien: `src/transcript/rendering.py`, `tests/test_rendering.py`
-- Änderung: `Paragraph.assigned: bool`, in `paragraphs` aus `speakers[label] is not None` gesetzt. Der Moduldocstring nennt DOCX als zweiten Nutzer.
+- Änderung: `Paragraph.named: bool`, in `paragraphs` gesetzt, wenn die Person zugeordnet ist und einen `display_name` hat. Der Moduldocstring nennt DOCX als zweiten Nutzer.
 - Verify: `scripts/check`
-- AC: Person → `assigned=True`, nicht zugeordnet → `False`, zugeordnet ohne Namen → `True`. Der Text bleibt beim Label, weil der Name fehlt. Die TXT-Tests bleiben unverändert grün.
+- AC: Person mit Namen → `named=True`, nicht zugeordnet → `False`, zugeordnet ohne Namen → `False`. Die TXT-Tests bleiben unverändert grün.
 
 ### Chunk 2 — DOCX-Renderer
 - Dateien: `src/transcript/docx_render.py` (neu), `src/transcript/session.py` (`transcript_document`), `tests/test_docx.py` (neu)
@@ -79,6 +79,6 @@
 ## Chunk-Tabelle
 | Chunk | Scope | Clear context after? |
 | --- | --- | --- |
-| 1 | `Paragraph.assigned` im Lesekern | no |
+| 1 | `Paragraph.named` im Lesekern | no |
 | 2 | DOCX-Renderer `docx_render.py` | no |
 | 3 | CLI `transcript docx`, README | no |
