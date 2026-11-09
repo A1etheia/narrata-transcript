@@ -31,7 +31,7 @@ from transcript.report import (
 )
 from transcript.speakers import SpeakerAssignment, check, write_assignment
 from transcript.uncertainty import load_assessment
-from transcript.working import WorkingError, write_working
+from transcript.working import WorkingError, WorkingTranscript, write_working
 from transcript.working import compose as compose_working
 
 BLOCK_MS = 850  # three made-up words, 300 ms apart and 250 ms long
@@ -46,11 +46,22 @@ class _ReportCase(_WorkingCase):
         reference: ReferenceTranscript | None = None,
         others: tuple[ReferenceTranscript, ...] = (),
     ) -> SessionReport:
+        return self.reported(decisions, assignment, manifest, reference, others)[1]
+
+    def reported(
+        self,
+        decisions: SessionDecisions = NONE,
+        assignment: SpeakerAssignment | None = None,
+        manifest: Manifest = ONLY_FIRST,
+        reference: ReferenceTranscript | None = None,
+        others: tuple[ReferenceTranscript, ...] = (),
+    ) -> tuple[WorkingTranscript, SessionReport]:
+        """The working version and its report."""
         reference = reference or self.reference
         speakers = check(assignment or SpeakerAssignment(), [reference], PARTICIPANTS)
         stored = self.working(decisions, speakers, manifest, reference)
         found = collect(self.paths, manifest)
-        return build(
+        return stored, build(
             stored,
             manifest,
             {r.segment.index: r for r in (reference, *others)},
