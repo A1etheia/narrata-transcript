@@ -2,6 +2,7 @@ import itertools
 import unittest
 
 from transcript.timecode import (
+    format_clock,
     format_ms,
     frames_to_ms,
     parse_timecode,
@@ -20,6 +21,13 @@ class TimecodeTest(unittest.TestCase):
         self.assertEqual(format_ms(0), "00:00:00.000")
         self.assertEqual(format_ms(10 * 3_600_000 + 1), "10:00:00.001")
         self.assertEqual(format_ms(100 * 3_600_000 + 59_999), "100:00:59.999")
+
+    def test_clock_rounds_down_to_the_second(self) -> None:
+        self.assertEqual(format_clock(parse_timecode("01:42:17.999")), "01:42:17")
+        self.assertEqual(format_clock(0), "00:00:00")
+        self.assertEqual(format_clock(100 * 3_600_000), "100:00:00")
+        with self.assertRaises(ValueError):
+            format_clock(-1)
 
     def test_parse_and_format_round_trip(self) -> None:
         for text in ("00:00:00.000", "04:59:59.999", "05:00:00.000", "123:45:06.789"):

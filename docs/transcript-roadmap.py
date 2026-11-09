@@ -19,7 +19,7 @@ import pathlib
 START = dt.date(2026, 11, 2)  # a Monday
 WORKDAYS = [0, 1, 3]  # Mon, Tue, Thu -> 3 dev-days per week
 PAUSES = [(dt.date(2026, 12, 21), dt.date(2027, 1, 3))]  # inclusive ranges, no work
-GENERATED = "2026-11-08"
+GENERATED = "2026-11-09"
 
 # (phase title, milestone sentence, [(key, title, dev-days, note)])
 P = [
@@ -72,11 +72,11 @@ P = [
         ("TOOL-80", "Vorschlagsdatei neuer Hörfehler", 0.5, "erledigt: `src/transcript/variant_suggestions.py`, README „Hörfehler-Vorschläge“; `transcript review-import` schreibt `review/asr-variant-suggestions.json` (`format_version: 1`) aus geltenden `corrected`-Entscheidungen, Ersetzungen bis 4 Wörter auf Glossar-Begriffe, Mehrdeutiges nie aufgelöst, ohne Zeitstempel reproduzierbar; Import-Command in Narrata an IOA-1285"),
         ("TOOL-68", "Sprecherzuordnung manuell", 1.0, "erledigt: `src/transcript/speakers.py`, `transcript speakers`, README „Sprecherzuordnung“; Zuordnung von Hand in `speakers/assignment.json` (`format_version: 1`) pro Segment und Label, Kandidaten aus dem Snapshot, Hörliste `speakers/samples.md`; unbekannte Segmente, Labels und Personen sowie veraltete Einträge werden gemeldet, nie angewendet"),
         ("TOOL-49", "Arbeitsfassung", 1.0, "erledigt: `src/transcript/working.py`, `transcript working`, README „Arbeitsfassung“; `work/<s>/working/transcript.json` (`format_version: 1`), ein Block pro Passage mit `origin` (`automatic`/`decided`/`open`), unverändertem `asr_text`, Ergebnistext (`null` bei `unintelligible`) und Label plus Person; veraltete und verwaiste Entscheidungen, nicht anwendbare Sprecher-Einträge und fehlende Segmente als `findings` (Exit 1), nie angewendet; ohne Zeitstempel, `inputs` mit Versionen und Datei-Hashes, gleiche Eingaben byte-gleich"),
-        ("TOOL-50", "Markierungskonvention", 0.5, "aus TOOL-49: Markierung für unverständliche Blöcke (`text: null`, Status `unintelligible`) und offene Blöcke (`origin: open`) der Arbeitsfassung festlegen"),
+        ("TOOL-50", "Markierungskonvention", 0.5, "erledigt: `src/transcript/markers.py`, README „Markierungen“; aus jedem Block der Arbeitsfassung abgeleitet, nicht gespeichert: `unintelligible` (`[unverständlich HH:MM:SS]`, ohne Text), `unresolved` (Text plus `[unklar …]`), `speaker_unclear` (`unknown`), `crosstalk` (`multiple`); Zeit = Sitzungszeit des Blockanfangs, auf Sekunden abgerundet, ohne Startzeit keine Zeit; Sprecher `open` und `label: null` unmarkiert"),
         ("TOOL-53", "Abschlussbericht", 0.5, "vor TOOL-69: liefert `stats` für den Export"),
-        ("TOOL-69", "JSON-Export Contract v1", 1.0, "gegen IOA-1214-Validator; aus TOOL-19: Passagenzeiten über `session_time.passage_span` bilden und prüfen, ob Contract v1 die Granularität und `clamped` aufnehmen soll; aus TOOL-35: Stufe → `confidence_tier`, Gründe `gap`/`speaker_unclear`/`crosstalk` → `markers`; aus TOOL-68: sessionweite Labels (unsere gelten pro Segment), Passagen ohne Label und `multiple` im Contract abbilden; aus TOOL-49: aus der Arbeitsfassung exportieren (`working.load_working`, `work/<s>/working/transcript.json`), `origin`/`status` und `findings` abbilden, `text: null` bei `unintelligible`, Zeiten segmentlokal"),
-        ("TOOL-51", "TXT-Rendering", 0.5, ""),
-        ("TOOL-52", "DOCX-Rendering", 0.5, ""),
+        ("TOOL-69", "JSON-Export Contract v1", 1.0, "gegen IOA-1214-Validator; aus TOOL-19: Passagenzeiten über `session_time.passage_span` bilden und prüfen, ob Contract v1 die Granularität und `clamped` aufnehmen soll; aus TOOL-35: Stufe → `confidence_tier`, Gründe `gap`/`speaker_unclear`/`crosstalk` → `markers`; aus TOOL-68: sessionweite Labels (unsere gelten pro Segment), Passagen ohne Label und `multiple` im Contract abbilden; aus TOOL-49: aus der Arbeitsfassung exportieren (`working.load_working`, `work/<s>/working/transcript.json`), `origin`/`status` und `findings` abbilden, `text: null` bei `unintelligible`, Zeiten segmentlokal; aus TOOL-50: `markers.block_markers` → `markers` (`unintelligible`/`speaker_unclear`/`crosstalk` direkt, `at` = `at_ms / 1000`), `unresolved` → `review_status: open`, Marker ohne Startzeit (`at_ms: null`) haben im Contract kein `at` und brauchen eine Regel"),
+        ("TOOL-51", "TXT-Rendering", 0.5, "aus TOOL-50: Blocktext über `markers.rendered_text(block, manifest)`, keine eigenen Markierungsregeln"),
+        ("TOOL-52", "DOCX-Rendering", 0.5, "aus TOOL-50: Blocktext über `markers.rendered_text(block, manifest)`, keine eigenen Markierungsregeln"),
         ("IOA-1218", "Storage + idempotenter Import", 2.0, "erledigt: `transcript:import` und Upload-Endpoint in Narrata (ios-archiv PR #1138), gegen die IOA-1214-Fixture; die Probe gegen einen echten TOOL-69-Export folgt mit TOOL-58"),
     ]),
     ("Phase 4 — End-to-End-Pilot",
@@ -85,6 +85,7 @@ P = [
         ("TOOL-55", "E2E-CLI mit Halt an manuellen Schritten", 1.0, "aus TOOL-10: `transcript extract` ist der erste Schritt des E2E-Befehls"),
         ("TOOL-57", "Pipeline-Status + Resume", 1.0, "aus TOOL-18: Fehlversuche stehen nur als `WARNING` auf stderr (`transcript.retry.FailureLog`); dauerhaftes Protokoll unter `work/<session>/` ist TOOL-77, mit TOOL-57 zusammen entwerfen"),
         ("TOOL-77", "Fehlversuche dauerhaft protokollieren", 0.5, "aus TOOL-18: heute nur `WARNING` auf stderr über `transcript.retry.FailureLog`; mit TOOL-57 zusammen entwerfen"),
+        ("TOOL-86", "Sprecherzuordnung interaktiv (`transcript speakers --assign`)", 1.0, "vor TOOL-58, damit der Pilot den Zuordnungsaufwand mit dem Alltagsweg misst; Hörproben lokal abspielen, Auswahl aus dem Snapshot, atomar nach jedem Label; offen: Namen nur im interaktiven TTY (TOOL-66), Schreibregel für die handgemachte `assignment.json` (TOOL-68)"),
         ("TOOL-58", "Erste reale Session komplett (inkl. Review- und Zuordnungszeit)", 2.0, "Export → Fixture für IOA-1218"),
         ("TOOL-59", "Laufzeit/Ressourcen/Aufwand auswerten", 0.5, "aus TOOL-18: entscheidet, ob TOOL-78 (Versuche pro Segment im Referenzformat) gebraucht wird; aus TOOL-68: `effort_minutes` aus `speakers/assignment.json` im Bericht auswerten"),
         ("TOOL-78", "Versuche pro Segment im Referenzformat", 0.5, "entfällt, wenn TOOL-59 keine Fehlerraten auswerten will; braucht eine neue `format_version`"),
@@ -115,6 +116,10 @@ P = [
     ("Phase 8 — Öffnung für andere Nutzer",
      "M8 — Entscheidung, ob und wie andere Narrata-Nutzer ihre Aufnahmen transkribieren können. Reflexionspunkt, kein Umsetzungsblock.", [
         ("TOOL-85", "Entscheidung: Transkription für andere Narrata-Nutzer öffnen?", 0.5, "Wege: Nutzer rechnen lokal, eigener Worker getrennt vom Prod-VPS, externer ASR-Dienst, nichts tun; Datenschutz der Mitspielenden und Betriebsgrenzen klären; Erkenntnisse aus TOOL-59 und TOOL-60 einbeziehen; bei „ja“ Folge-Tickets"),
+    ]),
+    ("Phase 9 — Sprecher-Wiedererkennung",
+     "M9 — Konzept für Stimmprofile mit Einwilligung pro Spielrunde, Go/No-Go. Reflexionspunkt, kein Umsetzungsblock.", [
+        ("TOOL-87", "Konzept: Sprecher über Sessions hinweg wiedererkennen", 1.0, "nur Konzept, Umsetzung als Folge-Tickets (TOOL und IOA); Stimmprofil = biometrisches Datum (Art. 9 DSGVO), Opt-in pro Mitgliedschaft im Narrata-Profil; Profile nur lokal, nur aus bestätigten Zuordnungen, Vorschläge nie ohne Bestätigung; Go/No-Go nach `effort_minutes` aus TOOL-59 mit TOOL-86; Kandidaten auf Anwesende eingrenzen (TOOL-79)"),
     ]),
 ]
 
@@ -192,7 +197,8 @@ def main() -> None:
     o.append("| M4 | Trägt die Kernhypothese (Konfidenz grenzt Review ein)? Aufwand pro Abend alltagstauglich? | TOOL-60 | Go/No-Go Phase 6; Review-Kanal CSV vs. Narrata-UI (→ ggf. neues IOA-Ticket); TOOL-14 |")
     o.append("| Phase 6, Tag 2 | Reicht ein lokales LLM für IT/OT? Bringt der zweite Durchlauf messbar etwas? | TOOL-70 | TOOL-73 bleibt oder entfällt; ggf. Remote-Option |")
     o.append("| M7 | Welche Fragen aus der Zielliste sind jetzt beantwortbar, welche nicht? | Retro, kein Ticket | V0.2-Backlog beider Projekte |")
-    o.append("| M8 | Öffnen wir die Transkription für andere Nutzer, und auf welchem Weg? | TOOL-85 | Entscheidung; bei „ja“ Folge-Tickets |\n")
+    o.append("| M8 | Öffnen wir die Transkription für andere Nutzer, und auf welchem Weg? | TOOL-85 | Entscheidung; bei „ja“ Folge-Tickets |")
+    o.append("| M9 | Lohnt sich die Wiedererkennung der Sprecher, und trägt die Einwilligung pro Spielrunde? | TOOL-87 | Go/No-Go; bei „ja“ Umsetzungstickets in TOOL und IOA |\n")
     o.append("## Arbeitsfolge\n")
     o.append("Start/Ende sind in Jira als Start date / Due date gespiegelt.\n")
     for p in phases:
