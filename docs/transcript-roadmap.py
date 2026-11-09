@@ -96,10 +96,10 @@ P = [
     ]),
     ("Phase 5 — Narrata-Oberflächen",
      "M5 — Transkript per Chat/MCP befragbar, in Narrata durchsuchbar, lesbar, verlinkt.", [
-        ("IOA-1220", "Volltextsuche", 1.5, "Voraussetzung für IOA-1223"),
+        ("IOA-1220", "Volltextsuche", 1.5, "erledigt, vor Phase 4 vorgezogen; Voraussetzung für IOA-1223"),
         ("IOA-1223", "Chat + MCP", 1.5, "Kernziel: der KI-Assistent antwortet der Spielleitung aus dem Transkript"),
-        ("IOA-1219", "Lese-UI am Session-Detail", 3.0, "Mockup vor Code"),
-        ("IOA-1221", "Passage-Links", 2.0, ""),
+        ("IOA-1219", "Lese-UI am Session-Detail", 3.0, "erledigt, vor Phase 4 vorgezogen"),
+        ("IOA-1221", "Passage-Links", 2.0, "erledigt, vor Phase 4 vorgezogen"),
     ]),
     ("Phase 6 — IT/OT-Klassifikation",
      "M6 — IT/OT-Schicht im Export, Statistik im Bericht. Reflexionspunkt: TOOL-70 entscheidet ein oder zwei Durchläufe — oder Remote-Option.", [

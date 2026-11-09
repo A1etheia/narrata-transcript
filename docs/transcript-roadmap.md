@@ -150,10 +150,10 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| IOA-1220 | Volltextsuche | 1.5 | 16.03.2027 | 18.03.2027 | Voraussetzung für IOA-1223 |
+| IOA-1220 | Volltextsuche | 1.5 | 16.03.2027 | 18.03.2027 | erledigt, vor Phase 4 vorgezogen; Voraussetzung für IOA-1223 |
 | IOA-1223 | Chat + MCP | 1.5 | 18.03.2027 | 22.03.2027 | Kernziel: der KI-Assistent antwortet der Spielleitung aus dem Transkript |
-| IOA-1219 | Lese-UI am Session-Detail | 3 | 23.03.2027 | 29.03.2027 | Mockup vor Code |
-| IOA-1221 | Passage-Links | 2 | 30.03.2027 | 01.04.2027 |  |
+| IOA-1219 | Lese-UI am Session-Detail | 3 | 23.03.2027 | 29.03.2027 | erledigt, vor Phase 4 vorgezogen |
+| IOA-1221 | Passage-Links | 2 | 30.03.2027 | 01.04.2027 | erledigt, vor Phase 4 vorgezogen |
 
 ### Phase 6 — IT/OT-Klassifikation
 
