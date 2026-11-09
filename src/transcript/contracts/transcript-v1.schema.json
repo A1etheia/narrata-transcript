@@ -1,0 +1,268 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://narrata.cloud/contracts/transcript-v1.schema.json",
+  "title": "Narrata session transcript, contract v1",
+  "description": "One structured transcript of one play session, written by the Transcript pipeline (TOOL-69) and read by Narrata (IOA-1218). Human-readable contract: docs/transcript-contract.md. Rules a schema cannot express (unique ids, chronological order, end >= start, known speaker labels, supported major) are checked by transcript:validate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "tool_version",
+    "session",
+    "source",
+    "pipeline",
+    "speakers",
+    "stats",
+    "passages"
+  ],
+  "properties": {
+    "contract_version": {
+      "description": "\"<major>.<minor>\". Additive changes bump the minor, breaking changes the major; a reader refuses an unknown major.",
+      "type": "string",
+      "pattern": "^[1-9][0-9]*\\.(0|[1-9][0-9]*)$"
+    },
+    "tool_version": {
+      "description": "Version of the pipeline that wrote the file.",
+      "type": "string",
+      "minLength": 1
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["group", "ordinal", "play_session_id", "session_date"],
+      "properties": {
+        "group": {
+          "description": "Narrata group id.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "ordinal": {
+          "description": "Running number of the session within the group.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "play_session_id": {
+          "description": "Narrata play_sessions.id, as returned by transcription-context.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "session_date": {
+          "type": ["string", "null"],
+          "format": "date"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file_name", "duration_seconds", "audio_sha256"],
+      "properties": {
+        "file_name": {
+          "description": "Audio file name without any path.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^/\\\\]+$"
+        },
+        "duration_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "audio_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "pipeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend", "model", "config_hash", "knowledge_snapshot_id", "thresholds"],
+      "properties": {
+        "backend": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "config_hash": {
+          "type": "string",
+          "minLength": 1
+        },
+        "knowledge_snapshot_id": {
+          "description": "Id of the transcription-context snapshot used for keyword biasing, or null.",
+          "type": ["string", "null"]
+        },
+        "thresholds": {
+          "description": "Pipeline thresholds; open object, not interpreted by Narrata.",
+          "type": "object"
+        }
+      }
+    },
+    "speakers": {
+      "description": "Speaker label -> assigned participant, or null when the label is not assigned to anyone.",
+      "type": "object",
+      "propertyNames": {
+        "description": "Same rule as $defs/speaker_label, without the type: JSON keys are always strings, but PHP-based readers see numeric keys as integers.",
+        "minLength": 1,
+        "pattern": "[A-Za-z0-9]"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/speaker"
+      }
+    },
+    "stats": {
+      "description": "Pipeline report figures (TOOL-53); open object, not interpreted by Narrata.",
+      "type": "object"
+    },
+    "passages": {
+      "description": "Chronological by start.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/passage"
+      }
+    }
+  },
+  "$defs": {
+    "speaker_label": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "[A-Za-z0-9]"
+    },
+    "participant_id": {
+      "description": "Narrata users.id (transcription-context participants[].user_id), or null.",
+      "type": ["integer", "null"],
+      "minimum": 1
+    },
+    "speaker": {
+      "description": "null = label not assigned; properties/required apply to the object form only.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["participant_id", "display_name"],
+      "properties": {
+        "participant_id": {
+          "$ref": "#/$defs/participant_id"
+        },
+        "display_name": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "passage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "start",
+        "end",
+        "speaker_label",
+        "participant_id",
+        "text",
+        "asr_text",
+        "confidence_tier",
+        "review_status",
+        "review_note",
+        "markers",
+        "segment_ref",
+        "knowledge_hints",
+        "layers"
+      ],
+      "properties": {
+        "id": {
+          "description": "Stable passage id, minted once as p-<start in ms, 8 digits>-<speaker label slug> and kept on every re-export.",
+          "type": "string",
+          "pattern": "^p-[0-9]{8}-[a-z0-9]+(-[a-z0-9]+)*$"
+        },
+        "start": {
+          "description": "Absolute seconds from the start of the recording, at most three decimals.",
+          "type": "number",
+          "minimum": 0
+        },
+        "end": {
+          "description": "Absolute seconds from the start of the recording, at most three decimals; not before start.",
+          "type": "number",
+          "minimum": 0
+        },
+        "speaker_label": {
+          "description": "Must be a key of speakers.",
+          "$ref": "#/$defs/speaker_label"
+        },
+        "participant_id": {
+          "$ref": "#/$defs/participant_id"
+        },
+        "text": {
+          "description": "Cleaned working text.",
+          "type": "string"
+        },
+        "asr_text": {
+          "description": "Raw ASR text when it differs from text, else null.",
+          "type": ["string", "null"]
+        },
+        "confidence_tier": {
+          "enum": ["confident", "needs_review", "uncertain"]
+        },
+        "review_status": {
+          "enum": ["unreviewed", "confirmed", "corrected", "open"]
+        },
+        "review_note": {
+          "type": ["string", "null"]
+        },
+        "markers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/marker"
+          }
+        },
+        "segment_ref": {
+          "description": "Source segment, when the recording was split; else null.",
+          "type": ["string", "null"]
+        },
+        "knowledge_hints": {
+          "description": "World-archive entries that influenced this passage.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/knowledge_hint"
+          }
+        },
+        "layers": {
+          "description": "Open object for later layers. layers.it_ot is reserved (draft in docs/transcript-contract.md) and not validated in v1.",
+          "type": "object"
+        }
+      }
+    },
+    "marker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "at"],
+      "properties": {
+        "type": {
+          "enum": ["unintelligible", "speaker_unclear", "crosstalk", "gap"]
+        },
+        "at": {
+          "description": "Absolute seconds from the start of the recording.",
+          "type": "number",
+          "minimum": 0
+        },
+        "note": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "knowledge_hint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {
+          "enum": ["place", "person", "artifact", "organisation", "event", "lore"]
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}
