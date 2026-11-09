@@ -1716,5 +1716,66 @@ class WorkingCommandTest(_DiarizedSession):
         self.assertFalse(self.paths.working_transcript.exists())
 
 
+class ReportCommandTest(_DiarizedSession):
+    def setUp(self) -> None:
+        super().setUp()
+        uncertainty.assess_session(self.paths, [1], UncertaintyThresholds())
+
+    def report(self) -> tuple[int, str, str]:
+        return run("report", str(KEY), "--config", str(self.config))
+
+    def test_writes_both_files_and_prints_only_counts_and_codes(self) -> None:
+        run("working", str(KEY), "--config", str(self.config))
+
+        code, stdout, stderr = self.report()
+
+        self.assertEqual(code, 1, stderr)  # one passage is still open
+        self.assertIn(
+            "beispielgruppe/042: report: 2 passage(s), 1 candidate(s), "
+            "0 decided, 1 open",
+            stdout,
+        )
+        self.assertIn("beispielgruppe/042: note: no_assignment", stdout)
+        self.assertIn("beispielgruppe/042: gap: open_passages (segment 1)", stderr)
+        self.assertIn(f"wrote {self.paths.report_json}", stdout)
+        self.assertIn(f"wrote {self.paths.report_markdown}", stdout)
+        self.assert_nothing_secret(stdout + stderr)
+        for path in (self.paths.report_json, self.paths.report_markdown):
+            written = path.read_text(encoding="utf-8")
+            self.assertNotIn(SECRET, written)
+            self.assertNotIn(NAME, written)
+
+    def test_a_settled_session_gives_exit_0(self) -> None:
+        found = candidates.collect(
+            self.paths, transcript_main.manifest.load_manifest(self.paths)
+        )
+        settled = decisions.decide(
+            decisions.SessionDecisions(), found, found.candidates[0].id, "confirmed"
+        )
+        decisions.write_decisions(self.paths, settled)
+        run("working", str(KEY), "--config", str(self.config))
+
+        code, _, stderr = self.report()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertNotIn("gap:", stderr)
+
+    def test_without_working_version_asks_for_it(self) -> None:
+        code, _, stderr = self.report()
+
+        self.assertEqual(code, 2)
+        self.assertIn("working version not found; run transcript working", stderr)
+        self.assertFalse(self.paths.report_json.exists())
+
+    def test_an_outdated_working_version_asks_for_a_new_one(self) -> None:
+        run("working", str(KEY), "--config", str(self.config))
+        self.speakers()  # writes the assignment template
+
+        code, _, stderr = self.report()
+
+        self.assertEqual(code, 2)
+        self.assertIn("working version outdated; run transcript working", stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

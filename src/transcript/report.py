@@ -13,6 +13,10 @@ holds no transcript text, no names and no user ids.
 
 What leaves the transcript incomplete is a `gap`; data that is missing without
 making the transcript less complete is a `note`.
+
+`write_report` stores `report.json` and `report.md` under `output/`, next to the
+exports they describe. Neither holds a time stamp, so equal inputs give equal
+files.
 """
 
 import dataclasses
@@ -26,9 +30,10 @@ from transcript import __version__, markers, working
 from transcript.candidates import SessionCandidates, collect
 from transcript.config import LEVELS, Level
 from transcript.decisions import SETTLED, STATUSES, ReviewStatus
+from transcript.jsonfile import write_atomic, write_bytes_atomic
 from transcript.knowledge import load_snapshot
 from transcript.manifest import Manifest
-from transcript.markers import MARKER_KINDS
+from transcript.markers import MARKER_KINDS, MARKER_LABELS
 from transcript.reference import (
     Diarization,
     Failure,
@@ -37,8 +42,11 @@ from transcript.reference import (
 )
 from transcript.session import SessionPaths
 from transcript.speakers import ASSIGNED, Assigned, SpeakerAssignment, load_assignment
+from transcript.timecode import format_clock
 from transcript.uncertainty import SegmentAssessment, load_assessment
-from transcript.working import FindingKind, WorkingTranscript
+from transcript.working import FindingKind, Origin, WorkingTranscript
+
+REPORT_FORMAT_VERSION = 1
 
 SegmentState = Literal["transcribed", "failed", "missing"]
 GapCode = Literal[
@@ -412,3 +420,221 @@ def compose(paths: SessionPaths, manifest: Manifest) -> SessionReport:
 def report_json(report: SessionReport) -> dict[str, Any]:
     """The report as JSON data; the export carries it as `stats` (TOOL-69)."""
     return dataclasses.asdict(report)
+
+
+def write_report(paths: SessionPaths, report: SessionReport) -> None:
+    """Replace `report.md`, then `report.json` of the session.
+
+    Each file is replaced atomically, the pair is not: the JSON comes last, so a
+    current `report.json` means its `report.md` was written before it.
+    """
+    text = render_markdown(str(paths.key), report)
+    write_bytes_atomic(paths.report_markdown, text.encode("utf-8"))
+    write_atomic(
+        paths.report_json,
+        {
+            "format_version": REPORT_FORMAT_VERSION,
+            "session": str(paths.key),
+            **report_json(report),
+        },
+    )
+
+
+_STATES: dict[SegmentState, str] = {
+    "transcribed": "transkribiert",
+    "failed": "fehlgeschlagen",
+    "missing": "fehlt",
+}
+_ORIGIN_NAMES: dict[Origin, str] = {
+    "automatic": "automatisch übernommen",
+    "decided": "entschieden",
+    "open": "offen",
+}
+_STATUS_NAMES: dict[ReviewStatus, str] = {
+    "confirmed": "bestätigt",
+    "corrected": "korrigiert",
+    "unintelligible": "unverständlich",
+    "kept": "belassen",
+    "open": "offen",
+    "deferred": "zurückgestellt",
+}
+_LEVEL_NAMES: dict[Level, str] = {"needs_review": "prüfen", "uncertain": "unsicher"}
+_ASSIGNED_NAMES: dict[Assigned, str] = {
+    "person": "Person",
+    "unknown": "unbekannt",
+    "multiple": "mehrere",
+    "open": "offen",
+}
+_GAP_TEXTS: dict[GapCode, str] = {
+    "failed_segment": "Transkription fehlgeschlagen",
+    "missing_segment": "noch nicht transkribiert",
+    "open_passages": "Review-Kandidaten noch offen",
+    "working_findings": "Entscheidungen oder Sprecher-Einträge nicht angewendet",
+}
+_NOTE_TEXTS: dict[NoteCode, str] = {
+    "no_diarization": "ohne Diarisierung, also ohne Sprecher-Labels",
+    "no_assignment": "keine Sprecherzuordnung, alle Labels offen",
+    "effort_not_recorded": "Aufwand der Sprecherzuordnung nicht erfasst",
+    "untimed_passages": "Passagen ohne Zeit, in keiner Dauer enthalten",
+    "segment_without_hints": "ohne Wissenshinweise bewertet",
+    "snapshot_differs": "mit anderem Wissens-Snapshot transkribiert",
+}
+
+
+_NO_ACCURACY = (
+    "Der Bericht zählt und misst. Eine Genauigkeit des Transkripts wurde "
+    "nicht gemessen und wird nicht behauptet."
+)
+_SPEAKING_TIME = (
+    "Redezeit ist die Summe der Passagendauern nach dem Mehrheitslabel "
+    "der Passage, nicht die Sprechzeit aus der Diarisierung."
+)
+
+
+def render_markdown(session: str, report: SessionReport) -> str:
+    """The report for people: German, short, with the codes spelled out."""
+    lines = [
+        f"# Abschlussbericht {session}",
+        "",
+        _NO_ACCURACY,
+        "",
+        *_recording_lines(report.recording),
+        *_passage_lines(report.passages, report.markers),
+        *_review_lines(report.review),
+        *_speaker_lines(report.speakers),
+        *_pipeline_lines(report.pipeline),
+        "## Lücken",
+        "",
+        *_coded_lines([(_GAP_TEXTS[g.code], g.segments) for g in report.gaps]),
+        "",
+        "## Hinweise",
+        "",
+        *_coded_lines([(_NOTE_TEXTS[n.code], n.segments) for n in report.notes]),
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _coded_lines(items: list[tuple[str, tuple[int, ...]]]) -> list[str]:
+    """One line per gap or note, its segments after it; `keine` without any."""
+    return [
+        f"- {text}: {_segment_list(segments)}" if segments else f"- {text}"
+        for text, segments in items
+    ] or ["- keine"]
+
+
+def _recording_lines(recording: Recording) -> list[str]:
+    rows = []
+    for s in recording.segments:
+        state = _STATES[s.state]
+        if s.failure is not None:
+            again = "wiederholbar" if s.failure.retryable else "nicht wiederholbar"
+            state += f" ({s.failure.category}, {again})"
+        rows.append(f"| {s.segment} | {format_clock(s.duration_ms)} | {state} |")
+    count = len(recording.segments)
+    return [
+        "## Aufnahme",
+        "",
+        f"Dauer {format_clock(recording.duration_ms)}, {count} Segment(e).",
+        "",
+        "| Segment | Dauer | Zustand |",
+        "| --- | --- | --- |",
+        *rows,
+        "",
+    ]
+
+
+def _passage_lines(passages: Passages, marked: Mapping[str, int]) -> list[str]:
+    return [
+        "## Passagen",
+        "",
+        f"- gesamt: {passages.total}",
+        f"- {_named(passages.by_origin, _ORIGIN_NAMES)}",
+        f"- Dauer automatisch übernommen: {format_clock(passages.automatic_ms)}",
+        f"- ohne Zeit: {passages.untimed}",
+        f"- Markierungen: {_named(marked, MARKER_LABELS)}",
+        "",
+    ]
+
+
+def _review_lines(review: Review) -> list[str]:
+    rate = (
+        "keine bewertete Aufnahme"
+        if review.per_hour is None
+        else f"{review.per_hour:.1f}".replace(".", ",") + " pro Stunde"
+    )
+    return [
+        "## Review",
+        "",
+        f"- Kandidaten: {review.candidates} ({_named(review.by_level, _LEVEL_NAMES)})",
+        f"- Rate: {rate}, bewertet {format_clock(review.rated_audio_ms)}",
+        f"- entschieden: {_named(review.decided, _STATUS_NAMES)}",
+        f"- offen: {_named(review.unresolved, _STATUS_NAMES)}",
+        "",
+    ]
+
+
+def _speaker_lines(speakers: Speakers) -> list[str]:
+    effort = (
+        "nicht erfasst"
+        if speakers.effort_minutes is None
+        else f"{speakers.effort_minutes} min"
+    )
+    assigned = _named(speakers.by_assigned, _ASSIGNED_NAMES)
+    rows = [
+        f"| {x.segment} | {x.label} | {_ASSIGNED_NAMES[x.assigned]} "
+        f"| {format_clock(x.speaking_ms)} |"
+        for x in speakers.labels
+    ]
+    table = [
+        "",
+        _SPEAKING_TIME,
+        "",
+        "| Segment | Label | Zuordnung | Redezeit |",
+        "| --- | --- | --- | --- |",
+        *rows,
+    ]
+    return [
+        "## Sprecher",
+        "",
+        f"- diarisierte Segmente: {_segment_list(speakers.diarized_segments)}",
+        f"- Labels: {len(speakers.labels)} ({assigned})",
+        f"- verschiedene Personen: {speakers.persons}",
+        f"- Aufwand der Zuordnung: {effort}",
+        *(table if rows else []),
+        "",
+    ]
+
+
+def _pipeline_lines(pipeline: Pipeline) -> list[str]:
+    return [
+        "## Pipeline",
+        "",
+        f"- Werkzeug: {pipeline.tool_version}",
+        *_used_lines("ASR", pipeline.asr),
+        *_used_lines("Diarisierung", pipeline.diarization),
+        *_used_lines("Schwellenwerte", pipeline.thresholds),
+        f"- Wissens-Snapshot: `{pipeline.knowledge_snapshot_id}`",
+        f"- Contract des Transkriptionskontexts: {pipeline.context_contract_version}",
+        "",
+    ]
+
+
+def _used_lines(what: str, used: tuple[Used, ...]) -> list[str]:
+    if not used:
+        return [f"- {what}: keine"]
+    return [
+        f"- {what} ({_segment_list(u.segments)}): "
+        f"`{json.dumps(u.values, sort_keys=True, ensure_ascii=False)}`"
+        for u in used
+    ]
+
+
+def _named(counts: Mapping[str, int], names: Mapping[Any, str]) -> str:
+    return ", ".join(f"{names[key]} {n}" for key, n in counts.items())
+
+
+def _segment_list(segments: tuple[int, ...]) -> str:
+    if not segments:
+        return "keine"
+    word = "Segment" if len(segments) == 1 else "Segmente"
+    return f"{word} {', '.join(map(str, segments))}"

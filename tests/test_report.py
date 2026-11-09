@@ -25,7 +25,9 @@ from transcript.report import (
     Used,
     build,
     compose,
+    render_markdown,
     report_json,
+    write_report,
 )
 from transcript.speakers import SpeakerAssignment, check, write_assignment
 from transcript.uncertainty import load_assessment
@@ -276,7 +278,9 @@ class NoteTest(_ReportCase):
         self.assertEqual(report.speakers.labels, ())
 
 
-class ComposeTest(_ReportCase):
+class _KnownSession(_ReportCase):
+    """The segment of `_WorkingCase` with a knowledge snapshot of one person."""
+
     def setUp(self) -> None:
         super().setUp()
         store_context(
@@ -284,6 +288,8 @@ class ComposeTest(_ReportCase):
         )
         build_snapshot(self.paths, DEFAULT_KEYWORD_BUDGET)
 
+
+class ComposeTest(_KnownSession):
     def test_the_stored_working_version_is_reported(self) -> None:
         write_assignment(
             self.paths,
@@ -309,3 +315,65 @@ class ComposeTest(_ReportCase):
 
         with self.assertRaisesRegex(WorkingError, "outdated; run transcript working"):
             compose(self.paths, ONLY_FIRST)
+
+
+class FileTest(_KnownSession):
+    def setUp(self) -> None:
+        super().setUp()
+        write_decisions(self.paths, self.decided((2, "corrected", "Grauwasser")))
+        write_assignment(
+            self.paths, SpeakerAssignment((entry(self.reference, "SPEAKER_00", 11),))
+        )
+        write_working(self.paths, compose_working(self.paths, ONLY_FIRST))
+
+    def written(self) -> tuple[bytes, bytes]:
+        write_report(self.paths, compose(self.paths, ONLY_FIRST))
+        return (
+            self.paths.report_json.read_bytes(),
+            self.paths.report_markdown.read_bytes(),
+        )
+
+    def test_equal_inputs_give_equal_files_under_output(self) -> None:
+        first = self.written()
+
+        self.assertEqual(self.written(), first)
+        self.assertEqual(self.paths.report_json.parent, self.paths.output_dir)
+
+    def test_the_json_file_names_its_format_and_session(self) -> None:
+        data = json.loads(self.written()[0])
+
+        self.assertEqual(data["format_version"], 1)
+        self.assertEqual(data["session"], "beispielgruppe/042")
+        self.assertEqual(data["passages"]["total"], 6)
+
+    def test_no_file_holds_text_names_or_ids(self) -> None:
+        for written in self.written():
+            text = written.decode("utf-8")
+            for absent in ("user_id", "wort", "Grauwasser", NAME, "display_name"):
+                self.assertNotIn(absent, text)
+
+
+class MarkdownTest(_ReportCase):
+    def test_gaps_and_notes_are_spelled_out_without_percentages(self) -> None:
+        text = render_markdown(
+            "beispielgruppe/042",
+            self.report(manifest=MANIFEST, others=(failed_segment(2),)),
+        )
+
+        self.assertIn("nicht gemessen", text)
+        self.assertIn("- Transkription fehlgeschlagen: Segment 2", text)
+        self.assertIn("- Review-Kandidaten noch offen: Segment 1", text)
+        self.assertIn("- keine Sprecherzuordnung, alle Labels offen\n", text)
+        self.assertIn(
+            "| 2 | 00:10:00 | fehlgeschlagen (ResourceError, wiederholbar) |", text
+        )
+        self.assertIn("| 1 | SPEAKER_00 | offen | 00:00:05 |", text)  # 6 × 850 ms
+        self.assertNotIn("%", text)
+
+    def test_a_complete_session_has_no_gaps(self) -> None:
+        text = render_markdown(
+            "beispielgruppe/042",
+            self.report(self.decided(*((n, "confirmed", None) for n in range(2, 7)))),
+        )
+
+        self.assertIn("## Lücken\n\n- keine\n", text)

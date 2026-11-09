@@ -159,6 +159,16 @@ class SessionPaths:
         return self.work_dir / "working" / "transcript.json"
 
     @property
+    def report_json(self) -> Path:
+        """Closing report, machine-readable; no text, names or ids (TOOL-53)."""
+        return self.output_dir / "report.json"
+
+    @property
+    def report_markdown(self) -> Path:
+        """Closing report for people to read and archive (TOOL-53)."""
+        return self.output_dir / "report.md"
+
+    @property
     def manifest(self) -> Path:
         return self.work_dir / "manifest.json"
 
