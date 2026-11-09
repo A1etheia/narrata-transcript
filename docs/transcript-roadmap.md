@@ -1,13 +1,13 @@
 # Transkript-Projekt — Roadmap (TOOL + IOA-1213)
 
-Stand 2026-11-08, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwände stehen dort). Verbindliche Reihenfolge und Meilensteine für das gesamte Transkript-Vorhaben: die lokale Pipeline (Jira-Projekt **TOOL**, eigenes Python-Repo) und ihr Narrata-Gegenstück (Epic **IOA-1213**). Jira-Gesamtsicht: `project in (TOOL, IOA) AND labels = transcript`.
+Stand 2026-11-09, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwände stehen dort). Verbindliche Reihenfolge und Meilensteine für das gesamte Transkript-Vorhaben: die lokale Pipeline (Jira-Projekt **TOOL**, eigenes Python-Repo) und ihr Narrata-Gegenstück (Epic **IOA-1213**). Jira-Gesamtsicht: `project in (TOOL, IOA) AND labels = transcript`.
 
 ## Annahmen
 
 - **Eine Person, ein Zeitbudget.** TOOL- und IOA-Tickets konkurrieren um dieselben Tage; der Plan ist deshalb eine *lineare* Folge. Echte Parallelität gibt es nur dort, wo ASR-Läufe oder Modell-Downloads im Hintergrund laufen — dann wird am Narrata-Ticket derselben Phase gearbeitet.
 - **Kapazität: 3 Entwicklungstage pro Woche**, Start 02.11.2026, Pause 21.12.2026–03.01.2027. Das ist der Umrechnungsfaktor für die Kalenderspalte, nicht Teil des Plans — ändert sich die Kapazität, verschieben sich nur die Daten, nicht die Reihenfolge.
 - **Aufwände sind Entwicklungstage in 0,5er-Schritten**, grob geschätzt aus den Ticket-Beschreibungen. Sie dienen der Reihenfolge und den Meilenstein-Abständen; keine Zusage.
-- **Gesamtumfang: 70.5 Entwicklungstage** ≈ 26 Wochen inkl. Pause → letzter Meilenstein 27.04.2027. Davon 2 Tage bedingt (TOOL-73, TOOL-78).
+- **Gesamtumfang: 72.5 Entwicklungstage** ≈ 27 Wochen inkl. Pause → letzter Meilenstein 03.05.2027. Davon 2 Tage bedingt (TOOL-73, TOOL-78).
 - **Neu terminiert am 02.11.2026:** Vom Plan des 03.10. war noch kein Ticket begonnen (alle TOOL- und IOA-Tickets To Do, kein Python-Repo, keine Transkript-Commits). Die 3 Tage pro Woche sind damit unbelegt; Reihenfolge belastbar, Daten nur bei dieser Kapazität.
 - Nicht eingeplant: TOOL-14 (Remote-Backend, geparkt), die Epics selbst, verworfene Tickets (TOOL-21–32, 34; TOOL-3, 7; TOOL-11, 33 nach TOOL-62).
 
@@ -28,11 +28,12 @@ Stand 2026-11-08, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 | M1 | Backend gewählt, Diarisierung entschieden, TOOL-11/33 entschieden, Export-Endpoint live | Phase 1 | 12.11.2026 – 01.12.2026 | 8.5 |
 | M2 | Eine Session läuft vom MP4 bis zur Referenztranskription mit Sprecher-Labels und Wissens-Snapshot | Phase 2 | 01.12.2026 – 25.01.2027 | 17 |
 | M3 | JSON-Export (Contract v1) einer Session importiert lokal in Narrata und rendert dort als Rohliste | Phase 3 | 25.01.2027 – 18.02.2027 | 11.5 |
-| M4 | Pilot-Review (TOOL-60): Kernhypothese geprüft; Entscheidungen Review-Kanal, Remote-Backend, Freigabe IT/OT | Phase 4 | 22.02.2027 – 09.03.2027 | 7.5 |
-| M5 | Transkript per Chat/MCP befragbar, in Narrata durchsuchbar, lesbar, verlinkt | Phase 5 | 09.03.2027 – 29.03.2027 | 8 |
-| M6 | IT/OT-Schicht im Export, Statistik im Bericht | Phase 6 | 29.03.2027 – 13.04.2027 | 7.5 |
-| M7 | Erste Welt-Archiv-Einträge mit Transkript-Provenienz; IT/OT-Statistik und Abendvergleich sichtbar | Phase 7 | 15.04.2027 – 26.04.2027 | 5 |
-| M8 | Entscheidung, ob und wie andere Narrata-Nutzer ihre Aufnahmen transkribieren können | Phase 8 | 27.04.2027 – 27.04.2027 | 0.5 |
+| M4 | Pilot-Review (TOOL-60): Kernhypothese geprüft; Entscheidungen Review-Kanal, Remote-Backend, Freigabe IT/OT | Phase 4 | 22.02.2027 – 11.03.2027 | 8.5 |
+| M5 | Transkript per Chat/MCP befragbar, in Narrata durchsuchbar, lesbar, verlinkt | Phase 5 | 11.03.2027 – 30.03.2027 | 8 |
+| M6 | IT/OT-Schicht im Export, Statistik im Bericht | Phase 6 | 30.03.2027 – 15.04.2027 | 7.5 |
+| M7 | Erste Welt-Archiv-Einträge mit Transkript-Provenienz; IT/OT-Statistik und Abendvergleich sichtbar | Phase 7 | 19.04.2027 – 27.04.2027 | 5 |
+| M8 | Entscheidung, ob und wie andere Narrata-Nutzer ihre Aufnahmen transkribieren können | Phase 8 | 29.04.2027 – 29.04.2027 | 0.5 |
+| M9 | Konzept für Stimmprofile mit Einwilligung pro Spielrunde, Go/No-Go | Phase 9 | 29.04.2027 – 03.05.2027 | 1 |
 
 ## Reflexionspunkte
 
@@ -46,6 +47,7 @@ Stand 2026-11-08, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 | Phase 6, Tag 2 | Reicht ein lokales LLM für IT/OT? Bringt der zweite Durchlauf messbar etwas? | TOOL-70 | TOOL-73 bleibt oder entfällt; ggf. Remote-Option |
 | M7 | Welche Fragen aus der Zielliste sind jetzt beantwortbar, welche nicht? | Retro, kein Ticket | V0.2-Backlog beider Projekte |
 | M8 | Öffnen wir die Transkription für andere Nutzer, und auf welchem Weg? | TOOL-85 | Entscheidung; bei „ja“ Folge-Tickets |
+| M9 | Lohnt sich die Wiedererkennung der Sprecher, und trägt die Einwilligung pro Spielrunde? | TOOL-87 | Go/No-Go; bei „ja“ Umsetzungstickets in TOOL und IOA |
 
 ## Arbeitsfolge
 
@@ -133,11 +135,12 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 | TOOL-55 | E2E-CLI mit Halt an manuellen Schritten | 1 | 22.02.2027 | 23.02.2027 | aus TOOL-10: `transcript extract` ist der erste Schritt des E2E-Befehls |
 | TOOL-57 | Pipeline-Status + Resume | 1 | 23.02.2027 | 25.02.2027 | aus TOOL-18: Fehlversuche stehen nur als `WARNING` auf stderr (`transcript.retry.FailureLog`); dauerhaftes Protokoll unter `work/<session>/` ist TOOL-77, mit TOOL-57 zusammen entwerfen |
 | TOOL-77 | Fehlversuche dauerhaft protokollieren | 0.5 | 25.02.2027 | 25.02.2027 | aus TOOL-18: heute nur `WARNING` auf stderr über `transcript.retry.FailureLog`; mit TOOL-57 zusammen entwerfen |
-| TOOL-58 | Erste reale Session komplett (inkl. Review- und Zuordnungszeit) | 2 | 01.03.2027 | 02.03.2027 | Export → Fixture für IOA-1218 |
-| TOOL-59 | Laufzeit/Ressourcen/Aufwand auswerten | 0.5 | 04.03.2027 | 04.03.2027 | aus TOOL-18: entscheidet, ob TOOL-78 (Versuche pro Segment im Referenzformat) gebraucht wird; aus TOOL-68: `effort_minutes` aus `speakers/assignment.json` im Bericht auswerten |
-| TOOL-78 | Versuche pro Segment im Referenzformat | 0.5 | 04.03.2027 | 04.03.2027 | entfällt, wenn TOOL-59 keine Fehlerraten auswerten will; braucht eine neue `format_version` |
-| TOOL-61 | E2E-Workflow dokumentieren | 0.5 | 08.03.2027 | 08.03.2027 |  |
-| TOOL-60 | V0.1 bewerten, Entscheidungen, V0.2-Backlog | 1 | 08.03.2027 | 09.03.2027 | Go/No-Go für Phase 6; aus TOOL-35: am vollen Pilotlauf mit `transcript calibrate` prüfen, ob die Eingrenzung aus dem Bericht hält; aus TOOL-83: Archiv-Schreibtreffer am vollen Pilotlauf nach Methode und Stufe nachmessen (`--similar-judged`), bisher nur ein beurteilter Hinweis; aus TOOL-68: prüfen, ob die Unsicherheit pro Person gewichtet werden muss (Mundart 47,5 % gegen 14,0 % falsche Wörter, aus TOOL-36) |
+| TOOL-86 | Sprecherzuordnung interaktiv (`transcript speakers --assign`) | 1 | 01.03.2027 | 01.03.2027 | vor TOOL-58, damit der Pilot den Zuordnungsaufwand mit dem Alltagsweg misst; Hörproben lokal abspielen, Auswahl aus dem Snapshot, atomar nach jedem Label; offen: Namen nur im interaktiven TTY (TOOL-66), Schreibregel für die handgemachte `assignment.json` (TOOL-68) |
+| TOOL-58 | Erste reale Session komplett (inkl. Review- und Zuordnungszeit) | 2 | 02.03.2027 | 04.03.2027 | Export → Fixture für IOA-1218 |
+| TOOL-59 | Laufzeit/Ressourcen/Aufwand auswerten | 0.5 | 08.03.2027 | 08.03.2027 | aus TOOL-18: entscheidet, ob TOOL-78 (Versuche pro Segment im Referenzformat) gebraucht wird; aus TOOL-68: `effort_minutes` aus `speakers/assignment.json` im Bericht auswerten |
+| TOOL-78 | Versuche pro Segment im Referenzformat | 0.5 | 08.03.2027 | 08.03.2027 | entfällt, wenn TOOL-59 keine Fehlerraten auswerten will; braucht eine neue `format_version` |
+| TOOL-61 | E2E-Workflow dokumentieren | 0.5 | 09.03.2027 | 09.03.2027 |  |
+| TOOL-60 | V0.1 bewerten, Entscheidungen, V0.2-Backlog | 1 | 09.03.2027 | 11.03.2027 | Go/No-Go für Phase 6; aus TOOL-35: am vollen Pilotlauf mit `transcript calibrate` prüfen, ob die Eingrenzung aus dem Bericht hält; aus TOOL-83: Archiv-Schreibtreffer am vollen Pilotlauf nach Methode und Stufe nachmessen (`--similar-judged`), bisher nur ein beurteilter Hinweis; aus TOOL-68: prüfen, ob die Unsicherheit pro Person gewichtet werden muss (Mundart 47,5 % gegen 14,0 % falsche Wörter, aus TOOL-36) |
 
 ### Phase 5 — Narrata-Oberflächen
 
@@ -145,10 +148,10 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| IOA-1220 | Volltextsuche | 1.5 | 09.03.2027 | 11.03.2027 | Voraussetzung für IOA-1223 |
-| IOA-1223 | Chat + MCP | 1.5 | 15.03.2027 | 16.03.2027 | Kernziel: der KI-Assistent antwortet der Spielleitung aus dem Transkript |
-| IOA-1219 | Lese-UI am Session-Detail | 3 | 16.03.2027 | 23.03.2027 | Mockup vor Code |
-| IOA-1221 | Passage-Links | 2 | 23.03.2027 | 29.03.2027 |  |
+| IOA-1220 | Volltextsuche | 1.5 | 11.03.2027 | 15.03.2027 | Voraussetzung für IOA-1223 |
+| IOA-1223 | Chat + MCP | 1.5 | 16.03.2027 | 18.03.2027 | Kernziel: der KI-Assistent antwortet der Spielleitung aus dem Transkript |
+| IOA-1219 | Lese-UI am Session-Detail | 3 | 18.03.2027 | 25.03.2027 | Mockup vor Code |
+| IOA-1221 | Passage-Links | 2 | 25.03.2027 | 30.03.2027 |  |
 
 ### Phase 6 — IT/OT-Klassifikation
 
@@ -156,12 +159,12 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| TOOL-70 | Spike: lokales LLM an Goldstandard, Nutzen 2. Durchlauf | 2 | 29.03.2027 | 01.04.2027 | Labeln kostet die halbe Zeit |
-| TOOL-71 | IT/OT-Datenmodell, Contract-Bump | 1 | 01.04.2027 | 05.04.2027 |  |
-| TOOL-72 | Erstdurchlauf | 1.5 | 05.04.2027 | 06.04.2027 |  |
-| TOOL-73 | Zweitdurchlauf + Metrik | 1.5 | 08.04.2027 | 12.04.2027 | entfällt, wenn TOOL-70 keinen Mehrwert misst |
-| TOOL-74 | IT/OT-Review-Kandidaten | 0.5 | 12.04.2027 | 12.04.2027 |  |
-| TOOL-75 | Sessionstatistik | 1 | 13.04.2027 | 13.04.2027 |  |
+| TOOL-70 | Spike: lokales LLM an Goldstandard, Nutzen 2. Durchlauf | 2 | 30.03.2027 | 05.04.2027 | Labeln kostet die halbe Zeit |
+| TOOL-71 | IT/OT-Datenmodell, Contract-Bump | 1 | 05.04.2027 | 06.04.2027 |  |
+| TOOL-72 | Erstdurchlauf | 1.5 | 06.04.2027 | 08.04.2027 |  |
+| TOOL-73 | Zweitdurchlauf + Metrik | 1.5 | 12.04.2027 | 13.04.2027 | entfällt, wenn TOOL-70 keinen Mehrwert misst |
+| TOOL-74 | IT/OT-Review-Kandidaten | 0.5 | 13.04.2027 | 13.04.2027 |  |
+| TOOL-75 | Sessionstatistik | 1 | 15.04.2027 | 15.04.2027 |  |
 
 ### Phase 7 — Extraktion und Analytik in Narrata
 
@@ -169,8 +172,8 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| IOA-1222 | Transkript als Extraktionsquelle, polymorphe Provenienz | 3 | 15.04.2027 | 20.04.2027 | größte Migration des Epics |
-| IOA-1224 | IT/OT-Flächen + Statistik | 2 | 22.04.2027 | 26.04.2027 |  |
+| IOA-1222 | Transkript als Extraktionsquelle, polymorphe Provenienz | 3 | 19.04.2027 | 22.04.2027 | größte Migration des Epics |
+| IOA-1224 | IT/OT-Flächen + Statistik | 2 | 26.04.2027 | 27.04.2027 |  |
 
 ### Phase 8 — Öffnung für andere Nutzer
 
@@ -178,7 +181,15 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| TOOL-85 | Entscheidung: Transkription für andere Narrata-Nutzer öffnen? | 0.5 | 27.04.2027 | 27.04.2027 | Wege: Nutzer rechnen lokal, eigener Worker getrennt vom Prod-VPS, externer ASR-Dienst, nichts tun; Datenschutz der Mitspielenden und Betriebsgrenzen klären; Erkenntnisse aus TOOL-59 und TOOL-60 einbeziehen; bei „ja“ Folge-Tickets |
+| TOOL-85 | Entscheidung: Transkription für andere Narrata-Nutzer öffnen? | 0.5 | 29.04.2027 | 29.04.2027 | Wege: Nutzer rechnen lokal, eigener Worker getrennt vom Prod-VPS, externer ASR-Dienst, nichts tun; Datenschutz der Mitspielenden und Betriebsgrenzen klären; Erkenntnisse aus TOOL-59 und TOOL-60 einbeziehen; bei „ja“ Folge-Tickets |
+
+### Phase 9 — Sprecher-Wiedererkennung
+
+**M9 — Konzept für Stimmprofile mit Einwilligung pro Spielrunde, Go/No-Go. Reflexionspunkt, kein Umsetzungsblock.**
+
+| Ticket | Inhalt | Tage | Start | Ende | Hinweis |
+|---|---|---|---|---|---|
+| TOOL-87 | Konzept: Sprecher über Sessions hinweg wiedererkennen | 1 | 29.04.2027 | 03.05.2027 | nur Konzept, Umsetzung als Folge-Tickets (TOOL und IOA); Stimmprofil = biometrisches Datum (Art. 9 DSGVO), Opt-in pro Mitgliedschaft im Narrata-Profil; Profile nur lokal, nur aus bestätigten Zuordnungen, Vorschläge nie ohne Bestätigung; Go/No-Go nach `effort_minutes` aus TOOL-59 mit TOOL-86; Kandidaten auf Anwesende eingrenzen (TOOL-79) |
 
 ## Pflege
 
