@@ -654,12 +654,11 @@ def _transcribe(
         return 2
 
     info = run.identity.info
-    revision = f" ({info.model_version})" if info.model_version else ""
     counts = collections.Counter(outcome.status for outcome in run.outcomes)
     print(
         f"{key}: "
         + ", ".join(f"{counts[status]} {status}" for status in OUTCOME_STATUSES)
-        + f" with {info.backend_id} {info.model}{revision}"
+        + f" with {info.backend_id} {info.model_label}"
     )
     if keywords and biasing and run.keywords_used is not None:
         print(f"{key}: {run.keywords_used} of {len(keywords)} keyword(s) passed")
