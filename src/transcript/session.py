@@ -179,6 +179,11 @@ class SessionPaths:
         return self.output_dir / "transcript.txt"
 
     @property
+    def transcript_document(self) -> Path:
+        """Transcript as a Word document, rendered from the JSON export (TOOL-52)."""
+        return self.output_dir / "transcript.docx"
+
+    @property
     def manifest(self) -> Path:
         return self.work_dir / "manifest.json"
 

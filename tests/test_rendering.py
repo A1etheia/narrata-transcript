@@ -77,9 +77,9 @@ class ParagraphTest(unittest.TestCase):
         self.assertEqual(
             paragraphs(built),
             (
-                Paragraph("Mira", (Line(1000, "Eins."), Line(2000, "Zwei."))),
-                Paragraph("B (nicht zugeordnet)", (Line(3000, "Drei."),)),
-                Paragraph("Mira", (Line(4000, "Vier."),)),
+                Paragraph("Mira", (Line(1000, "Eins."), Line(2000, "Zwei.")), True),
+                Paragraph("B (nicht zugeordnet)", (Line(3000, "Drei."),), False),
+                Paragraph("Mira", (Line(4000, "Vier."),), True),
             ),
         )
 
@@ -102,8 +102,12 @@ class ParagraphTest(unittest.TestCase):
         )
 
         self.assertEqual(
-            [p.speaker for p in paragraphs(built)],
-            ["Mira", "B (nicht zugeordnet)", "C (zugeordnet, ohne Namen)"],
+            [(p.speaker, p.named) for p in paragraphs(built)],
+            [
+                ("Mira", True),
+                ("B (nicht zugeordnet)", False),
+                ("C (zugeordnet, ohne Namen)", False),
+            ],
         )
 
 
