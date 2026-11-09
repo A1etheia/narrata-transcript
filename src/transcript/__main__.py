@@ -26,6 +26,7 @@ from transcript import (
     knowledge,
     manifest,
     narrata,
+    preflight,
     rendering,
     report,
     review_import,
@@ -55,12 +56,9 @@ from transcript.transcription import (
 _DEFAULT_CONFIG = Path("config/config.yaml")
 _EXAMPLE_CONFIG = Path("config/example.yaml")
 _DOTENV = Path(".env")
-_SHORT_ID = 12  # characters of a snapshot id; enough within one session
+_SHORT_ID = knowledge.SHORT_ID
 _SHOWN_FINDINGS = 10  # the rest is in the diagnosis report
-_SNAPSHOT_BEHIND = (
-    "warning: the knowledge snapshot predates the stored Narrata context; "
-    "transcript snapshot --refresh uses it"
-)
+_SNAPSHOT_BEHIND = f"warning: {knowledge.BEHIND_CONTEXT}"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -75,8 +73,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     config_command = commands.add_parser(
         "config", help="Show the effective configuration."
     )
-    commands.add_parser(
-        "doctor", help="Check that ffmpeg and ffprobe are installed and run."
+    doctor_command = commands.add_parser(
+        "doctor",
+        help="Check tools, configuration and models before a run, and with a "
+        "session also its input, knowledge and earlier artifacts; changes nothing.",
+    )
+    doctor_command.add_argument(
+        "session", nargs="?", help="session key <group>/<ordinal> (default: none)"
     )
     extract_command = commands.add_parser(
         "extract", help="Extract the audio track of a session's recordings."
@@ -259,6 +262,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     docx_command.add_argument("session", help="session key <group>/<ordinal>")
     for command in (
         config_command,
+        doctor_command,
         extract_command,
         context_command,
         snapshot_command,
@@ -287,7 +291,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "config":
         return _show_config(args.config)
     if args.command == "doctor":
-        return _doctor()
+        return _doctor(args.session, args.config)
     with _log_to_stderr():  # pipeline steps log progress and failed attempts
         if args.command == "extract":
             return _extract(args.session, args.config, args.stream)
@@ -330,14 +334,30 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _doctor() -> int:
+def _doctor(raw_key: str | None, config_path: Path) -> int:
+    """The preflight; only paths, counts and models reach the console (TOOL-66).
+
+    Exit 0 when nothing stops a run, warnings included; 2 on any error.
+    """
     try:
-        tools = audio_tools.check_audio_tools()
-    except audio_tools.AudioToolError as error:
+        key = None if raw_key is None else SessionKey.parse(raw_key)
+    except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
-    for info in (tools.ffmpeg, tools.ffprobe):
-        print(f"{info.name} {info.version} ({info.path})")
+    findings = preflight.run(config_path, key)
+    for finding in findings:
+        line = f"{finding.level}: {finding.check}: {finding.message}"
+        print(line, file=sys.stdout if finding.level == "ok" else sys.stderr)
+    warnings = preflight.warnings(findings)
+    if preflight.blocked(findings):
+        print(
+            f"preflight failed: {preflight.errors(findings)} error(s), "
+            f"{warnings} warning(s)",
+            file=sys.stderr,
+        )
+        return 2
+    checks = len({finding.check for finding in findings})
+    print(f"preflight ok: {checks} checks, {warnings} warning(s)")
     return 0
 
 
@@ -485,11 +505,7 @@ def _snapshot(raw_key: str, config_path: Path, refresh: bool) -> int:
     if changed.context_changed:
         print(_SNAPSHOT_BEHIND, file=sys.stderr)
     if changed.budget_changed:
-        print(
-            "warning: knowledge.keyword_budget changed since this snapshot; "
-            "transcript snapshot --refresh uses it",
-            file=sys.stderr,
-        )
+        print(f"warning: {knowledge.BUDGET_CHANGED}", file=sys.stderr)
     findings = diagnosis.diagnose(snapshot.participants, glossary)
     diagnosis.write_report(paths.knowledge_diagnosis, findings, snapshot)
     _print_diagnosis(findings, paths.knowledge_diagnosis)
@@ -654,12 +670,11 @@ def _transcribe(
         return 2
 
     info = run.identity.info
-    revision = f" ({info.model_version})" if info.model_version else ""
     counts = collections.Counter(outcome.status for outcome in run.outcomes)
     print(
         f"{key}: "
         + ", ".join(f"{counts[status]} {status}" for status in OUTCOME_STATUSES)
-        + f" with {info.backend_id} {info.model}{revision}"
+        + f" with {info.backend_id} {info.model_label}"
     )
     if keywords and biasing and run.keywords_used is not None:
         print(f"{key}: {run.keywords_used} of {len(keywords)} keyword(s) passed")

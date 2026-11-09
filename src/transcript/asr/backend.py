@@ -109,6 +109,13 @@ class BackendInfo:
     model_version: str | None = None  # revision or checksum, when known
     runtime_version: str | None = None  # version of the backend library
 
+    @property
+    def model_label(self) -> str:
+        """The model with its revision, when known, for the console."""
+        if self.model_version:
+            return f"{self.model} ({self.model_version})"
+        return self.model
+
 
 @dataclass(frozen=True)
 class BackendIdentity:
