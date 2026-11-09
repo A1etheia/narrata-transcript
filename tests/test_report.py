@@ -38,6 +38,13 @@ BLOCK_MS = 850  # three made-up words, 300 ms apart and 250 ms long
 
 
 class _ReportCase(_WorkingCase):
+    def all_assigned(self) -> SpeakerAssignment:
+        """The one label of the default reference settled as `unknown`."""
+        return SpeakerAssignment(
+            (entry(self.reference, "SPEAKER_00", assigned="unknown"),),
+            effort_minutes=5,
+        )
+
     def report(
         self,
         decisions: SessionDecisions = NONE,
@@ -115,7 +122,9 @@ class CountTest(_ReportCase):
                 "crosstalk": 0,
             },
         )
-        self.assertEqual(report.gaps, (Gap("open_passages", (1,)),))
+        self.assertEqual(
+            report.gaps, (Gap("open_passages", (1,)), Gap("open_speakers", (1,)))
+        )
 
     def test_the_rate_counts_rated_audio_only(self) -> None:
         report = self.report(manifest=MANIFEST)
@@ -126,7 +135,8 @@ class CountTest(_ReportCase):
 
     def test_a_settled_session_has_no_gap(self) -> None:
         report = self.report(
-            self.decided(*((n, "confirmed", None) for n in range(2, 7)))
+            self.decided(*((n, "confirmed", None) for n in range(2, 7))),
+            assignment=self.all_assigned(),
         )
 
         self.assertEqual(report.gaps, ())
@@ -248,6 +258,36 @@ class SpeakerTest(_ReportCase):
         self.assertIsNone(without.speakers.effort_minutes)
         self.assertIn(Note("effort_not_recorded"), unrecorded.notes)
         self.assertNotIn(Note("no_assignment"), unrecorded.notes)
+
+    def test_open_labels_leave_the_transcript_incomplete(self) -> None:
+        without = self.report(reference=self.two)
+        template = self.report(
+            assignment=SpeakerAssignment(
+                (entry(self.two, "SPEAKER_00"), entry(self.two, "SPEAKER_01"))
+            ),
+            reference=self.two,
+        )
+        settled = self.report(
+            assignment=SpeakerAssignment(
+                (
+                    entry(self.two, "SPEAKER_00", 11),
+                    entry(self.two, "SPEAKER_01", assigned="multiple"),
+                )
+            ),
+            reference=self.two,
+        )
+
+        self.assertIn(Gap("open_speakers", (1,)), without.gaps)
+        self.assertIn(Gap("open_speakers", (1,)), template.gaps)
+        self.assertNotIn("open_speakers", [gap.code for gap in settled.gaps])
+
+    def test_a_segment_without_labels_has_no_open_speakers(self) -> None:
+        unlabelled = transcript(spoken(1, *SURE, label=None))
+        self.rated(unlabelled)
+
+        report = self.report(reference=unlabelled)
+
+        self.assertNotIn("open_speakers", [gap.code for gap in report.gaps])
 
     def test_the_report_names_no_person_and_holds_no_text(self) -> None:
         assignment = SpeakerAssignment((entry(self.two, "SPEAKER_00", 11),))
@@ -374,7 +414,8 @@ class MarkdownTest(_ReportCase):
         self.assertIn("nicht gemessen", text)
         self.assertIn("- Transkription fehlgeschlagen: Segment 2", text)
         self.assertIn("- Review-Kandidaten noch offen: Segment 1", text)
-        self.assertIn("- keine Sprecherzuordnung, alle Labels offen\n", text)
+        self.assertIn("- Sprecher-Labels noch nicht zugeordnet: Segment 1", text)
+        self.assertIn("- keine Sprecherzuordnung angelegt\n", text)
         self.assertIn(
             "| 2 | 00:10:00 | fehlgeschlagen (ResourceError, wiederholbar) |", text
         )
@@ -384,7 +425,10 @@ class MarkdownTest(_ReportCase):
     def test_a_complete_session_has_no_gaps(self) -> None:
         text = render_markdown(
             "beispielgruppe/042",
-            self.report(self.decided(*((n, "confirmed", None) for n in range(2, 7)))),
+            self.report(
+                self.decided(*((n, "confirmed", None) for n in range(2, 7))),
+                assignment=self.all_assigned(),
+            ),
         )
 
         self.assertIn("## Lücken\n\n- keine\n", text)

@@ -1,14 +1,16 @@
 """Command-line entry point: `config`, `doctor`, `extract`, `context`, `snapshot`,
 `manifest`, `transcribe`, `diarize`, `assess`, `calibrate`, `review-export`,
-`review-import`, `speakers`, `working`, `report`, `export`, `txt`."""
+`review-import`, `speakers`, `working`, `report`, `export`, `txt`, `docx`, and
+`process`, which runs them in order."""
 
 import argparse
 import collections
 import contextlib
+import functools
 import logging
 import os
 import sys
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 
 from transcript import (
@@ -26,6 +28,7 @@ from transcript import (
     knowledge,
     manifest,
     narrata,
+    pipeline,
     preflight,
     rendering,
     report,
@@ -260,6 +263,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         "output/<session>/transcript.docx; reads nothing else.",
     )
     docx_command.add_argument("session", help="session key <group>/<ordinal>")
+    process_command = commands.add_parser(
+        "process",
+        help="Run every step of a session from the preflight to the report, "
+        "reusing what is in place; halts for the review sheet and the speaker "
+        "assignment, and goes on when run again.",
+    )
+    process_command.add_argument("session", help="session key <group>/<ordinal>")
+    process_command.add_argument(
+        "--redo",
+        choices=pipeline.REDOABLE,
+        help="run this step again although its result is in place, and every "
+        "later step with it",
+    )
+    process_command.add_argument(
+        "--consent",
+        action="store_true",
+        help="note in the manifest that everyone audible agreed to the recording",
+    )
+    process_command.add_argument(
+        "--num-speakers",
+        type=_positive_int,
+        help="number of people audible, for the diarization (default: model decides)",
+    )
     for command in (
         config_command,
         doctor_command,
@@ -279,6 +305,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         export_command,
         txt_command,
         docx_command,
+        process_command,
     ):
         command.add_argument(
             "--config",
@@ -330,6 +357,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _export(args.session, args.config)
         if args.command in ("txt", "docx"):
             return _render(args.session, args.config, args.command)
+        if args.command == "process":
+            return _process(args)
     parser.print_help()
     return 0
 
@@ -809,9 +838,16 @@ def _measure(
 
 
 def _review_export(
-    raw_key: str, config_path: Path, include_all: bool, force: bool
+    raw_key: str,
+    config_path: Path,
+    include_all: bool,
+    force: bool,
+    skip_empty: bool = False,
 ) -> int:
-    """Only counts and candidate IDs reach the console (TOOL-66). Exit 0 or 2."""
+    """Only counts and candidate IDs reach the console (TOOL-66). Exit 0 or 2.
+
+    `skip_empty` writes no sheet when there is no row, for `process`.
+    """
     try:
         key = SessionKey.parse(raw_key)
         paths = _load_config(config_path).session_paths(key)
@@ -821,6 +857,9 @@ def _review_export(
             decisions.load_decisions(paths),
             include_all,
         )
+        if skip_empty and not sheet.rows:
+            print(f"{key}: review: no candidate to decide")
+            return 0
         review_sheet.write_sheet(paths, sheet, force)
     except (ValueError, ConfigError, DataFileError) as error:
         print(f"error: {error}", file=sys.stderr)
@@ -1071,6 +1110,155 @@ def _render(raw_key: str, config_path: Path, kind: str) -> int:
     )
     print(f"wrote {target}")
     return 0
+
+
+def _process(args: argparse.Namespace) -> int:
+    """Run the session's steps in order (TOOL-55); see `transcript.pipeline`.
+
+    Each step is its command's handler, so it prints what that command prints
+    (TOOL-66); this adds step names, statuses and paths only. Exit 0, 1 if the
+    report names a gap or a step left something out, 2 on an error, 3 when the
+    run halts for the review sheet or the speaker assignment.
+    """
+    try:
+        key = SessionKey.parse(args.session)
+    except ValueError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    session, config = str(key), args.config
+
+    @functools.cache
+    def paths() -> SessionPaths:
+        """Read after the preflight, which has checked the configuration."""
+        return _load_config(config).session_paths(key)
+
+    def step(
+        name: pipeline.StepName,
+        run: Callable[[bool], int],
+        reusable: Callable[[], bool] | None = None,
+        manual: bool = False,
+        stop_on_incomplete: bool = False,
+    ) -> pipeline.Step:
+        def announced(forced: bool) -> int:
+            print(f"process: {name}{' (redo)' if forced else ''}", flush=True)
+            return run(forced)
+
+        return pipeline.Step(name, announced, reusable, manual, stop_on_incomplete)
+
+    steps = [
+        step("preflight", lambda _: _doctor(session, config)),
+        step(
+            "extract",
+            lambda _: _extract(session, config, stream=0),
+            reusable=lambda: _extracted(paths()),
+        ),
+        step(
+            "context",
+            lambda _: _context(session, config, None),
+            reusable=lambda: paths().narrata_context.is_file(),
+        ),
+        step("snapshot", lambda forced: _snapshot(session, config, forced)),
+        step(
+            "manifest",
+            lambda _: _manifest(session, config, args.consent),
+            reusable=lambda: _manifest_in_place(paths(), args.consent),
+        ),
+        step(
+            "transcribe",
+            lambda forced: _transcribe(
+                session,
+                config,
+                None,
+                forced,
+                diarize=True,
+                num_speakers=args.num_speakers,
+            ),
+            stop_on_incomplete=True,
+        ),
+        step("review", lambda _: _review_step(session, config, paths()), manual=True),
+        step(
+            "speakers",
+            lambda _: _speakers_step(session, config, paths()),
+            manual=True,
+            stop_on_incomplete=True,
+        ),
+        step("working", lambda _: _working(session, config)),
+        step("export", lambda _: _export(session, config)),
+        step("txt", lambda _: _render(session, config, "txt")),
+        step("docx", lambda _: _render(session, config, "docx")),
+        step("report", lambda _: _report(session, config)),
+    ]
+    outcome = pipeline.run(steps, args.redo)
+    print(
+        "process: "
+        + ", ".join(f"{result.step} {result.status}" for result in outcome.results)
+    )
+    if outcome.stopped_at is not None:
+        print(
+            f"process: stopped at {outcome.stopped_at} (exit {outcome.exit_code})",
+            file=sys.stderr,
+        )
+    if outcome.exit_code == pipeline.HALTED:
+        _print_halt(key, paths(), outcome.halted)
+    return outcome.exit_code
+
+
+def _extracted(paths: SessionPaths) -> bool:
+    """Audio in place for every recording; without recordings, extract says why."""
+    try:
+        return audio.extracted(paths, len(audio.find_recordings(paths)))
+    except audio.AudioError:
+        return False
+
+
+def _manifest_in_place(paths: SessionPaths, consent: bool) -> bool:
+    """A manifest that needs no new run: present, and with consent if asked."""
+    if not paths.manifest.is_file():
+        return False
+    if not consent:
+        return True
+    try:
+        return manifest.load_manifest(paths).consent is not None
+    except DataFileError:
+        return False  # the manifest command says what is wrong
+
+
+def _review_step(session: str, config: Path, paths: SessionPaths) -> int:
+    """Import a filled sheet; without one, write it and halt if it has rows."""
+    if paths.review_sheet.is_file():
+        return _review_import(session, config)
+    code = _review_export(session, config, False, False, skip_empty=True)
+    return _halted_if_written(code, paths.review_sheet)
+
+
+def _speakers_step(session: str, config: Path, paths: SessionPaths) -> int:
+    """Check the assignment; without one, write the template and halt."""
+    existed = paths.speaker_assignment.exists()
+    code = _speakers(session, config)
+    return code if existed else _halted_if_written(code, paths.speaker_assignment)
+
+
+def _halted_if_written(code: int, path: Path) -> int:
+    """HALTED when a step succeeded and left `path` for a person to fill in."""
+    return pipeline.HALTED if code == 0 and path.exists() else code
+
+
+def _print_halt(
+    key: SessionKey, paths: SessionPaths, halted: Sequence[pipeline.StepName]
+) -> None:
+    """What to fill in before the next run; paths only (TOOL-66)."""
+    print("process: halted for manual steps")
+    if "review" in halted:
+        print(f"  review: fill in the decisions in {paths.review_sheet}")
+    if "speakers" in halted:
+        print(
+            f"  speakers: assign the labels in {paths.speaker_assignment}, "
+            f"passages to listen to are in {paths.speaker_samples}"
+        )
+    print(
+        f"then run transcript process {key} again; what is left open stays "
+        "open and is named in the report"
+    )
 
 
 def _segments_suffix(segments: Sequence[int]) -> str:

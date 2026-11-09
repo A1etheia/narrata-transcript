@@ -255,10 +255,7 @@ def _check_disk(
     """Room for the working WAVs `transcript extract` writes, if they are missing."""
     if infos is None:
         return  # without durations there is nothing to estimate
-    extracted = paths.audio_metadata.is_file() and all(
-        paths.segment_wav(index).is_file() for index in range(1, len(infos) + 1)
-    )
-    if extracted:
+    if audio.extracted(paths, len(infos)):
         findings.append(Finding("ok", "disk", "audio already extracted"))
         return
     seconds = sum(info.duration for info in infos)

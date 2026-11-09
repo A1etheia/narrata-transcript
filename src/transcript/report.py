@@ -54,6 +54,7 @@ GapCode = Literal[
     "missing_segment",  # the segment has no transcript yet
     "open_passages",  # review candidates nobody has settled
     "working_findings",  # decisions or speaker entries not applied
+    "open_speakers",  # speaker labels nobody has assigned yet
 ]
 NoteCode = Literal[
     "no_diarization",  # transcribed without speaker labels
@@ -215,7 +216,7 @@ def build(
             knowledge_snapshot_id=stored.inputs.knowledge_snapshot_id,
             context_contract_version=context_contract_version,
         ),
-        gaps=_gaps(stored, recording),
+        gaps=_gaps(stored, recording, speakers),
         notes=_notes(
             stored, references, assessments, speakers.diarized_segments, assignment
         ),
@@ -322,7 +323,9 @@ def _used(runs: Iterable[tuple[int, dict[str, Any]]]) -> tuple[Used, ...]:
     return tuple(sorted(used, key=lambda u: u.segments))
 
 
-def _gaps(stored: WorkingTranscript, recording: Recording) -> tuple[Gap, ...]:
+def _gaps(
+    stored: WorkingTranscript, recording: Recording, speakers: Speakers
+) -> tuple[Gap, ...]:
     segments = recording.segments
     found: tuple[tuple[GapCode, tuple[int, ...]], ...] = (
         ("failed_segment", tuple(s.segment for s in segments if s.state == "failed")),
@@ -334,6 +337,10 @@ def _gaps(stored: WorkingTranscript, recording: Recording) -> tuple[Gap, ...]:
         (
             "working_findings",
             _segments(f.segment for f in stored.findings if f.kind in _GAP_FINDINGS),
+        ),
+        (
+            "open_speakers",
+            _segments(x.segment for x in speakers.labels if x.assigned == "open"),
         ),
     )
     return tuple(Gap(code, segments) for code, segments in found if segments)
@@ -470,10 +477,11 @@ _GAP_TEXTS: dict[GapCode, str] = {
     "missing_segment": "noch nicht transkribiert",
     "open_passages": "Review-Kandidaten noch offen",
     "working_findings": "Entscheidungen oder Sprecher-Einträge nicht angewendet",
+    "open_speakers": "Sprecher-Labels noch nicht zugeordnet",
 }
 _NOTE_TEXTS: dict[NoteCode, str] = {
     "no_diarization": "ohne Diarisierung, also ohne Sprecher-Labels",
-    "no_assignment": "keine Sprecherzuordnung, alle Labels offen",
+    "no_assignment": "keine Sprecherzuordnung angelegt",
     "effort_not_recorded": "Aufwand der Sprecherzuordnung nicht erfasst",
     "untimed_passages": "Passagen ohne Zeit, in keiner Dauer enthalten",
     "segment_without_hints": "ohne Wissenshinweise bewertet",
