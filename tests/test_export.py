@@ -1,24 +1,35 @@
 import dataclasses
+import json
 import unittest
 from typing import Any
 
 from test_candidates import ONLY_FIRST
 from test_decisions import NONE
-from test_report import BLOCK_MS, _ReportCase
+from test_report import BLOCK_MS, _KnownSession, _ReportCase
 from test_session_time import MANIFEST, SECOND, SOURCE
 from test_speakers import NAME, PARTICIPANTS, entry
 from test_uncertainty import diarized, transcript
 from test_working import SURE, UNSURE, spoken
 
 from transcript.contract import validate
-from transcript.decisions import SETTLED, SessionDecisions
-from transcript.export import _REVIEW_STATUS, UNLABELLED, ExportError, build
+from transcript.decisions import SETTLED, SessionDecisions, write_decisions
+from transcript.export import (
+    _REVIEW_STATUS,
+    UNLABELLED,
+    ExportError,
+    build,
+    compose,
+    write_export,
+)
 from transcript.manifest import Manifest
 from transcript.reference import Passage, ReferenceTranscript
 from transcript.report import report_json
 from transcript.speakers import SpeakerAssignment
+from transcript.working import WorkingError, write_working
+from transcript.working import compose as compose_working
 
 GROUP_ID = 7  # made up, like every id here
+GROUPS = {"beispielgruppe": GROUP_ID}
 
 
 def at(passage: Passage, start_ms: int | None) -> Passage:
@@ -285,6 +296,63 @@ class RefusalTest(_ExportCase):
                 PARTICIPANTS,
                 GROUP_ID,
             )
+
+
+class FileTest(_KnownSession):
+    def written(self, decisions: SessionDecisions = NONE) -> bytes:
+        write_decisions(self.paths, decisions)
+        write_working(self.paths, compose_working(self.paths, ONLY_FIRST))
+        write_export(self.paths, compose(self.paths, ONLY_FIRST, GROUPS))
+        return self.paths.transcript_export.read_bytes()
+
+    def test_equal_inputs_give_an_equal_file_under_output(self) -> None:
+        first = self.written()
+
+        self.assertEqual(self.written(), first)
+        self.assertEqual(self.paths.transcript_export.parent, self.paths.output_dir)
+        self.assertTrue(first.startswith(b'{\n  "contract_version": "1.0",'))
+
+    def test_a_re_export_after_more_review_keeps_the_ids(self) -> None:
+        before = json.loads(self.written())
+        after = json.loads(self.written(self.decided((2, "corrected", "Grauwasser"))))
+
+        ids = [[p["id"] for p in d["passages"]] for d in (before, after)]
+        self.assertEqual(ids[0], ids[1])
+        self.assertEqual(after["passages"][1]["text"], "Grauwasser")
+
+    def test_names_and_text_stay_readable(self) -> None:
+        self.written(self.decided((2, "corrected", "Grauwasser")))
+        data = json.loads(self.written(self.decided((2, "corrected", "Grüne Au"))))
+
+        self.assertIn("Grüne Au", self.paths.transcript_export.read_text("utf-8"))
+        self.assertEqual(validate(data), ())
+
+    def test_a_group_without_id_is_refused(self) -> None:
+        with self.assertRaisesRegex(
+            ExportError, "narrata.groups has no group id for beispielgruppe"
+        ):
+            compose(self.paths, ONLY_FIRST, {})
+
+    def test_an_outdated_working_version_is_refused(self) -> None:
+        write_working(self.paths, compose_working(self.paths, ONLY_FIRST))
+        write_decisions(self.paths, self.decided((2, "confirmed", None)))
+
+        with self.assertRaisesRegex(WorkingError, "outdated; run transcript working"):
+            compose(self.paths, ONLY_FIRST, GROUPS)
+
+    def test_a_violation_writes_nothing_and_quotes_no_value(self) -> None:
+        write_working(self.paths, compose_working(self.paths, ONLY_FIRST))
+        document = compose(self.paths, ONLY_FIRST, GROUPS)
+        document["passages"][0]["review_status"] = "Grauwasser"
+
+        with self.assertRaises(ExportError) as raised:
+            write_export(self.paths, document)
+
+        message = str(raised.exception)
+        self.assertIn("not written, 1 contract violation(s)", message)
+        self.assertIn("/passages/0/review_status", message)
+        self.assertNotIn("Grauwasser", message)
+        self.assertFalse(self.paths.transcript_export.exists())
 
 
 class MappingTest(unittest.TestCase):

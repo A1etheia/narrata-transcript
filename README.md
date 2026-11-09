@@ -518,6 +518,39 @@ Die Arbeitsfassung muss aktuell sein: Der Befehl baut sie aus den Dateien unter 
 - **Gleiche Eingaben, gleiche Dateien:** Es gibt keinen Zeitstempel.
 - **Exit-Code:** `0` ohne Lücken, `1` mit Lücken, `2` Fehler. Die Konsole zeigt nur Zahlen, Codes und Segmentnummern, etwa `report: 539 passage(s), 57 candidate(s), 41 decided, 16 open` und `gap: open_passages (segment 1, 2)`.
 
+## JSON-Export
+
+`transcript export <gruppe>/<ordinal>` schreibt die gespeicherte [Arbeitsfassung](#arbeitsfassung) als strukturiertes Transkript nach Narrata-Contract v1 (IOA-1214) nach `output/<gruppe>/<ordinal>/transcript.json` (`transcript.export`). Narrata importiert diese Datei (IOA-1218), TXT und DOCX (TOOL-51, TOOL-52) rendern aus ihr.
+
+```bash
+transcript working beispielgruppe/042
+transcript export beispielgruppe/042
+```
+
+- **Contract:** Das Schema gehört Narrata. `src/transcript/contracts/transcript-v1.schema.json` ist eine Kopie, deren Herkunft und SHA-256 in `transcript.contract` stehen; ein Test prüft beides. Vor dem Schreiben prüft `contract.validate` die Datei gegen das Schema und die Regeln jenseits davon (bekannte Major, eindeutige IDs, chronologisch, `end` nicht vor `start`, Label in `speakers`). Bei einem Verstoß wird nichts geschrieben.
+- **Grundlage:** wie beim [Abschlussbericht](#abschlussbericht) die aktuelle Arbeitsfassung. `stats` ist der Bericht, `contract_version` ist `"1.0"`.
+- **Sitzung:** `session.group` kommt aus `narrata.groups` der Konfiguration, Ordinal, `play_session_id` und Datum aus dem Manifest. Fehlt der Eintrag für die Gruppe, bricht der Export ab.
+- **Sprecher:** Labels gelten pro Segment, im Contract für die Sitzung, daher `s01-SPEAKER_00`. Passagen ohne Label heißen `unlabelled`. In `speakers` steht nur bei einer zugeordneten Person `participant_id` (User-ID) und `display_name` aus dem Wissens-Snapshot; `open`, `unknown`, `multiple` und `unlabelled` sind `null`.
+- **Passagen-ID:** `p-<Sitzungsstart in ms, 8-stellig>-<Slug des Labels>`, etwa `p-00734120-s01-speaker-00`, bei gleichem Start und Label mit `-2`, `-3`. Start und Label stammen aus dem Referenztranskript, das kein Review ändert. Ein Re-Export nach weiterem Review behält deshalb jede ID. Neu transkribieren oder neu diarisieren erzeugt neue Passagen und damit neue IDs.
+- **Zeit:** `start`, `end` und `markers[].at` in Sekunden Session-Zeit, höchstens drei Nachkommastellen.
+
+| Arbeitsfassung | Contract |
+| --- | --- |
+| `level` | `confidence_tier`, unverändert |
+| `origin: automatic` | `review_status: unreviewed` |
+| entschieden `confirmed`, `kept` | `confirmed` |
+| entschieden `corrected`, `unintelligible` | `corrected` |
+| `origin: open` | `open`, ohne Marker |
+| [Markierung](#markierungen) `unintelligible`, `speaker_unclear`, `crosstalk` | `markers[]` mit gleichem `type` |
+| `text` (`null` bei `unintelligible`) | `text` (`""` bei `unintelligible`) |
+| `asr_text` | `asr_text`, nur wenn es vom Text abweicht, sonst `null` |
+
+- **Leer in v1:** `review_note` (`null`), `knowledge_hints` und `layers` (`[]`, `{}`). `segment_ref` ist `segment-NN`, wenn die Aufnahme geteilt wurde, sonst `null`.
+- **Verweigert:** eine Passage ohne Start oder Ende (der Contract verlangt beide, nichts wird ergänzt), eine Sitzung aus mehreren Aufnahmen (v1 kennt nur eine `source`, IOA-1287), eine `play_session_id` oder User-ID, die keine ganze Zahl ist, und eine leere Arbeitsfassung.
+- **Gleiche Eingaben, gleiche Datei:** sortierte Keys, kein Zeitstempel.
+- **Daten:** Die Datei enthält Text, Anzeigenamen und User-IDs. Sie bleibt unter `output/` und geht nur über den Import nach Narrata. Die Konsole zeigt nur Zahlen, Codes und den Pfad, etwa `export: 539 passage(s), 16 open, 5 speaker label(s)`. Fehlermeldungen nennen Segment, Passage, JSON-Pfad und Regel, nie einen Wert.
+- **Exit-Code:** `0` geschrieben, auch mit offenen Passagen (die Lücken aus dem Bericht stehen auf stderr), `2` Fehler oder Verweigerung.
+
 ## Konfiguration
 
 Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht im Repo, ebenso alles andere unter `config/` außer `config/example.yaml`. `transcript config` zeigt die wirksamen Werte, `transcript config --config <pfad>` liest eine andere Datei. Fehlende Pflichtwerte, ungültige Werte und unbekannte Schlüssel enden mit einer Meldung, die Datei und Schlüssel nennt.
@@ -539,7 +572,7 @@ Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht 
 | `diarization.device` | nein | `auto` | wie `asr.device` |
 | `diarization.retries` | nein | `2` | wie `asr.retries` |
 | `narrata.url` | nein | `null` | Basis-URL des Narrata-Hosts für `transcript context`; `https`, `http` nur für `localhost`, ohne Zugangsdaten und Query |
-| `narrata.groups` | nein | `{}` | Gruppen-ID in Narrata je Gruppen-Slug, z. B. `beispielgruppe: 12` |
+| `narrata.groups` | nein | `{}` | Gruppen-ID in Narrata je Gruppen-Slug, z. B. `beispielgruppe: 12`; für Kontextabruf und JSON-Export nötig |
 | `narrata.recent_sessions` | nein | `3` | Fenster der Stufe `recent`: die letzten `n` Sitzungen, diese eingeschlossen, `1` bis `20` |
 | `narrata.archive_limit` | nein | `500` | Höchstzahl der Glossar-Einträge der Stufe `archive`, `0` bis `2000` |
 | `knowledge.keyword_budget` | nein | person 15, place 10, organisation 5, artifact 5, event 3, lore 3 | Höchstzahl der Keyword-Einträge je Typ aus den Stufen `session` und `recent`; Spielfiguren zählen nicht mit, ein fehlender Typ behält seinen Default, `0` heißt keiner |
@@ -596,7 +629,7 @@ work/beispielgruppe/042/
   speakers/                    assignment.json (Sprecherzuordnung, von Hand), samples.md (Hörliste pro Label)
   working/                     transcript.json (Arbeitsfassung: Entscheidungen und Sprecher angewendet)
   debug.log                    nur im Debug-Modus
-output/beispielgruppe/042/     report.json, report.md (Abschlussbericht), JSON-Export, TXT, DOCX
+output/beispielgruppe/042/     report.json, report.md (Abschlussbericht), transcript.json (JSON-Export), TXT, DOCX
 ```
 
 Die Verzeichnisse von `input/` werden von Hand befüllt: Vor dem ersten Lauf kommen die Aufnahmen einer Sitzung nach `input/<gruppe>/<ordinal>/`, mit dem Ordinal aus Narrata. Liegt eine Aufnahme auch bearbeitet vor (etwa ohne Stille), gehört nur eine Fassung dorthin, sonst zählt sie doppelt. Die Pipeline liest dort nur und schreibt ausschließlich nach `work/` und `output/`. ASR-Ergebnisse werden nie überschrieben.

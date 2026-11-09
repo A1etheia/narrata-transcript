@@ -1,6 +1,6 @@
 """Command-line entry point: `config`, `doctor`, `extract`, `context`, `snapshot`,
 `manifest`, `transcribe`, `diarize`, `assess`, `calibrate`, `review-export`,
-`review-import`, `speakers`, `working`, `report`."""
+`review-import`, `speakers`, `working`, `report`, `export`."""
 
 import argparse
 import collections
@@ -20,6 +20,7 @@ from transcript import (
     decisions,
     diagnosis,
     diarization,
+    export,
     hints,
     knowledge,
     manifest,
@@ -236,6 +237,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "gaps and the configuration used, no transcript text.",
     )
     report_command.add_argument("session", help="session key <group>/<ordinal>")
+    export_command = commands.add_parser(
+        "export",
+        help="Write the session's working version as Narrata transcript contract v1 "
+        "to output/<session>/transcript.json, checked against the contract first.",
+    )
+    export_command.add_argument("session", help="session key <group>/<ordinal>")
     for command in (
         config_command,
         extract_command,
@@ -251,6 +258,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         speakers_command,
         working_command,
         report_command,
+        export_command,
     ):
         command.add_argument(
             "--config",
@@ -298,6 +306,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _working(args.session, args.config)
         if args.command == "report":
             return _report(args.session, args.config)
+        if args.command == "export":
+            return _export(args.session, args.config)
     parser.print_help()
     return 0
 
@@ -963,6 +973,38 @@ def _report(raw_key: str, config_path: Path) -> int:
     print(f"wrote {paths.report_json}")
     print(f"wrote {paths.report_markdown}")
     return 1 if result.gaps else 0
+
+
+def _export(raw_key: str, config_path: Path) -> int:
+    """Only counts, codes and the path reach the console (TOOL-66).
+
+    Exit 0 once written, open passages included, since the contract carries
+    them; 2 on an error or a refusal.
+    """
+    try:
+        key = SessionKey.parse(raw_key)
+        config = _load_config(config_path)
+        paths = config.session_paths(key)
+        document = export.compose(
+            paths, manifest.load_manifest(paths), config.narrata_groups
+        )
+        export.write_export(paths, document)
+    except (ValueError, ConfigError, DataFileError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    passages = document["passages"]
+    still_open = sum(p["review_status"] == "open" for p in passages)
+    print(
+        f"{key}: export: {len(passages)} passage(s), {still_open} open, "
+        f"{len(document['speakers'])} speaker label(s)"
+    )
+    for gap in document["stats"]["gaps"]:
+        print(
+            f"{key}: gap: {gap['code']}{_segments_suffix(gap['segments'])}",
+            file=sys.stderr,
+        )
+    print(f"wrote {paths.transcript_export}")
+    return 0
 
 
 def _segments_suffix(segments: Sequence[int]) -> str:

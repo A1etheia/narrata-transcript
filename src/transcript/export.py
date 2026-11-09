@@ -24,8 +24,12 @@ The contract needs a start and an end for every passage, one recording per
 session (more: IOA-1287) and integer Narrata ids; a working version that cannot
 give them is an `ExportError`, never filled in.
 
-Nothing here logs or writes; error messages name segment, passage and field,
-never text, a name or an id.
+`write_export` stores the document as `output/<s>/transcript.json` after
+`contract.validate` found nothing; with sorted keys and no time stamp, equal
+inputs give an equal file. The file holds text, names and user ids; it goes to
+Narrata only by an import someone starts (IOA-1218). Nothing here logs; error
+messages name segment, passage, field and contract rule, never text, a name or
+an id.
 """
 
 import dataclasses
@@ -36,19 +40,22 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from transcript.contract import CONTRACT_VERSION
+from transcript.contract import CONTRACT_VERSION, validate
 from transcript.decisions import ReviewStatus
-from transcript.jsonfile import DataFileError
+from transcript.jsonfile import DataFileError, write_bytes_atomic
+from transcript.knowledge import load_snapshot
 from transcript.manifest import Manifest, Segment
 from transcript.markers import Marker, MarkerKind, block_markers
 from transcript.narrata import Participant
 from transcript.report import Pipeline, SessionReport, Used, report_json
-from transcript.session import segment_name
+from transcript.report import compose as compose_report
+from transcript.session import SessionPaths, segment_name
 from transcript.session_time import passage_span
 from transcript.speakers import SpeakerRef, UserId
-from transcript.working import Block, WorkingTranscript
+from transcript.working import Block, WorkingTranscript, load_working
 
 UNLABELLED = "unlabelled"
+_SHOWN_VIOLATIONS = 10  # in a refusal; the rest are counted
 
 _REVIEW_STATUS: dict[ReviewStatus, str] = {
     "confirmed": "confirmed",
@@ -122,6 +129,50 @@ def build(
         "stats": report_json(report),
         "passages": passages,
     }
+
+
+def compose(
+    paths: SessionPaths, manifest: Manifest, groups: Mapping[str, int]
+) -> dict[str, Any]:
+    """The export of the session's stored working version.
+
+    `groups` maps group slugs to Narrata group ids (`narrata.groups`). A missing,
+    outdated or invalid input is a `DataFileError`.
+    """
+    group_id = groups.get(paths.key.group)
+    if group_id is None:
+        raise ExportError(
+            f"narrata.groups has no group id for {paths.key.group}; "
+            "add it to the configuration"
+        )
+    closing = compose_report(paths, manifest)  # refuses an outdated working version
+    return build(
+        load_working(paths),
+        manifest,
+        closing,
+        load_snapshot(paths).participants,
+        group_id,
+    )
+
+
+def write_export(paths: SessionPaths, document: dict[str, Any]) -> None:
+    """Validate `document` as it would be read back, then replace the export.
+
+    A document with a contract violation is an `ExportError`; nothing is written.
+    """
+    raw = (
+        json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    ).encode("utf-8")
+    violations = validate(json.loads(raw))
+    if violations:
+        shown = "; ".join(violations[:_SHOWN_VIOLATIONS])
+        more = len(violations) - _SHOWN_VIOLATIONS
+        rest = f"; and {more} more" if more > 0 else ""
+        raise ExportError(
+            f"{paths.transcript_export}: not written, {len(violations)} contract "
+            f"violation(s): {shown}{rest}"
+        )
+    write_bytes_atomic(paths.transcript_export, raw)
 
 
 def session_label(block: Block) -> str:
