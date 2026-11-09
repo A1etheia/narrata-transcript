@@ -89,6 +89,7 @@ class LoadConfigTest(unittest.TestCase):
             review_uncertainty=UncertaintyThresholds(
                 word_low=0.6, gap_ms=900, avg_logprob=-0.8, similar_level="uncertain"
             ),
+            render_timestamps="passage",
         )
 
         self.assertEqual(self.load(format_config(config)), config)
@@ -431,6 +432,22 @@ class LoadConfigTest(unittest.TestCase):
         ):
             with self.subTest(key=key):
                 self.assert_rejected(MINIMAL + text + "\n", f"unknown key: {key}")
+
+    def test_render_timestamps_default_to_each_turn(self) -> None:
+        self.assertEqual(self.load(MINIMAL).render_timestamps, "turn")
+
+    def test_render_timestamps_are_validated(self) -> None:
+        for value in ("minute", "null", "1"):
+            with self.subTest(value=value):
+                self.assert_rejected(
+                    MINIMAL + f"render:\n  timestamps: {value}\n",
+                    "invalid value for render.timestamps",
+                )
+
+    def test_unknown_render_keys_name_their_path(self) -> None:
+        self.assert_rejected(
+            MINIMAL + "render:\n  format: docx\n", "unknown key: render.format"
+        )
 
     def test_session_paths_use_the_configured_root(self) -> None:
         paths = self.load(MINIMAL).session_paths(SessionKey("beispielgruppe", 42))

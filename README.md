@@ -482,12 +482,13 @@ Was die [Arbeitsfassung](#arbeitsfassung) offen lässt, wird an einer Stelle mar
 | `unresolved` | `origin: open` (noch nicht entschieden, `open`, `deferred` oder veraltete Entscheidung) | erkannter Text, dahinter `[unklar 01:42:17]` |
 | `speaker_unclear` | Sprecher `unknown` | Text, dahinter `[Sprecher unklar 01:42:17]` |
 | `crosstalk` | Sprecher `multiple` | Text, dahinter `[durcheinander 01:42:17]` |
+| `gap` | nur aus dem Contract, die Pipeline schreibt ihn nie | `[Lücke 01:42:17]` |
 
 - **Unverständlich und offen:** Eine als unverständlich entschiedene Stelle ist endgültig und zeigt keinen Text. Eine offene Stelle zeigt den erkannten Text, die Markierung sagt, dass er ungeprüft ist.
 - **Zeit:** Session-Zeit des Blockanfangs (siehe [Referenzformat](docs/referenzformat.md#session-zeit)), auf die Sekunde abgerundet, damit man an oder vor der Stelle landet. Ohne Startzeit fehlt sie: `[unverständlich]`.
 - **Mehrere Markierungen:** erst die zum Text, dann die zum Sprecher, etwa `[unverständlich 01:42:17] [durcheinander 01:42:17]`.
 - **Nicht markiert:** ein Sprecher, der noch nicht zugeordnet ist (`open`; die Konsole von `transcript working` zählt ihn), und eine Passage ohne Sprecher-Label. Sonst trüge ohne `assignment.json` jeder Block eine Markierung.
-- **Maschinenlesbar:** Jede Markierung hat `kind` und `at_ms` (Session-Zeit in ms oder `null`). `unintelligible`, `speaker_unclear` und `crosstalk` heißen wie die Marker im Narrata-Contract (IOA-1214). `unresolved` ist dort kein Marker, sondern `review_status: open`.
+- **Maschinenlesbar:** Jede Markierung hat `kind` und `at_ms` (Session-Zeit in ms oder `null`). `unintelligible`, `speaker_unclear` und `crosstalk` heißen wie die Marker im Narrata-Contract (IOA-1214). `unresolved` ist dort kein Marker, sondern `review_status: open`. Die Renderer des Exports beschriften die Contract-Marker über `markers.contract_marker_label`, auch `gap`, den der Contract kennt, die Pipeline aber nie schreibt.
 
 ## Abschlussbericht
 
@@ -520,7 +521,7 @@ Die Arbeitsfassung muss aktuell sein: Der Befehl baut sie aus den Dateien unter 
 
 ## JSON-Export
 
-`transcript export <gruppe>/<ordinal>` schreibt die gespeicherte [Arbeitsfassung](#arbeitsfassung) als strukturiertes Transkript nach Narrata-Contract v1 (IOA-1214) nach `output/<gruppe>/<ordinal>/transcript.json` (`transcript.export`). Narrata importiert diese Datei (IOA-1218), TXT und DOCX (TOOL-51, TOOL-52) rendern aus ihr.
+`transcript export <gruppe>/<ordinal>` schreibt die gespeicherte [Arbeitsfassung](#arbeitsfassung) als strukturiertes Transkript nach Narrata-Contract v1 (IOA-1214) nach `output/<gruppe>/<ordinal>/transcript.json` (`transcript.export`). Narrata importiert diese Datei (IOA-1218), die [TXT-Ausgabe](#txt-ausgabe) und DOCX (TOOL-52) rendern aus ihr.
 
 ```bash
 transcript working beispielgruppe/042
@@ -551,6 +552,37 @@ transcript export beispielgruppe/042
 - **Daten:** Die Datei enthält Text, Anzeigenamen und User-IDs. Sie bleibt unter `output/` und geht nur über den Import nach Narrata. Die Konsole zeigt nur Zahlen, Codes und den Pfad, etwa `export: 539 passage(s), 16 open, 5 speaker label(s)`. Fehlermeldungen nennen Segment, Passage, JSON-Pfad und Regel, nie einen Wert.
 - **Exit-Code:** `0` geschrieben, auch mit offenen Passagen (die Lücken aus dem Bericht stehen auf stderr), `2` Fehler oder Verweigerung.
 
+## TXT-Ausgabe
+
+`transcript txt <gruppe>/<ordinal>` rendert den [JSON-Export](#json-export) als Text zum Lesen und Archivieren nach `output/<gruppe>/<ordinal>/transcript.txt` (`transcript.rendering`).
+
+```bash
+transcript export beispielgruppe/042
+transcript txt beispielgruppe/042
+```
+
+```
+[00:00:30] Spielleitung
+Ihr erreicht Rabenfurt kurz nach Sonnenuntergang. Der Fluss steht hoch.
+
+[00:00:35] Mira
+Ich schaue mich nach einer Herberge um. [unklar 00:00:35]
+
+[00:01:02] s01-SPEAKER_04 (nicht zugeordnet)
+[unverständlich 00:01:02]
+```
+
+- **Quelle:** nur `transcript.json`. Der Befehl prüft die Datei vorher wie der Export gegen den Contract und rendert eine ungültige Datei nicht. Arbeitsdateien unter `work/` liest er nicht, so zeigen TXT und Narrata denselben Stand. Nach weiterem Review also erst `transcript working` und `transcript export`, dann `transcript txt`.
+- **Absätze:** ein Absatz je Sprecherwechsel, dazwischen eine Leerzeile. Zwei Labels derselben Person hintereinander bilden einen Absatz.
+- **Sprecher:** eine zugeordnete Person mit ihrem Anzeigenamen, sonst das Label mit `(nicht zugeordnet)`. Kennt der Snapshot den Namen einer zugeordneten Person nicht, steht dort `(zugeordnet, ohne Namen)`.
+- **Zeitstempel:** nach `render.timestamps` (siehe [Konfiguration](#konfiguration)). `turn` setzt die Zeit des Absatzanfangs in die Kopfzeile, `passage` schreibt jede Passage in eine eigene Zeile mit ihrer Zeit. Die Zeit ist die Session-Zeit, auf die Sekunde abgerundet.
+- **Markierungen:** wie unter [Markierungen](#markierungen). Eine offene Passage (`review_status: open`) erhält `[unklar …]` an ihrem Anfang, danach folgen die Marker der Datei in ihrer Reihenfolge. Eine Passage ohne Text zeigt nur ihre Markierungen.
+- **Wortlaut:** Der Text steht wie im Export. Nur Zeilenumbrüche und mehrfache Leerzeichen innerhalb einer Passage werden zu einem Leerzeichen.
+- **Keine Metadaten:** Sitzung, Pipeline und Statistik stehen in `transcript.json` und `report.md`, nicht im Text.
+- **Datei:** UTF-8 ohne BOM, Zeilenende `\n`. Sie wird bei jedem Lauf ersetzt, weil sie abgeleitet ist. Gleicher Export und gleiche Regel ergeben eine byte-gleiche Datei.
+- **Daten:** Die Datei enthält Text und Anzeigenamen und bleibt unter `output/`. Die Konsole zeigt nur Zahlen und den Pfad, etwa `txt: 539 passage(s), 212 paragraph(s), 16 open`.
+- **Exit-Code:** `0` geschrieben, auch mit offenen Passagen, `2` Fehler oder Verweigerung, etwa ohne `transcript.json`.
+
 ## Konfiguration
 
 Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht im Repo, ebenso alles andere unter `config/` außer `config/example.yaml`. `transcript config` zeigt die wirksamen Werte, `transcript config --config <pfad>` liest eine andere Datei. Fehlende Pflichtwerte, ungültige Werte und unbekannte Schlüssel enden mit einer Meldung, die Datei und Schlüssel nennt.
@@ -580,6 +612,7 @@ Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht 
 | `review.similar.min_length` | nein | `4` | Mindestlänge von Begriff und Wortfolge in Buchstaben, `1` bis `50` |
 | `review.similar.max_length_deviation` | nein | `0.3` | höchste Längenabweichung als Anteil der Begriffslänge, `0` bis `0.9` |
 | `review.uncertainty.*` | nein | siehe `config/example.yaml` | Schwellen der [Unsicherheitsbewertung](#unsicherheitsbewertung): `word_low` (0,5), `word_very_low` (0,2), `low_share_review` (0,2), `low_share_uncertain` (0,5), `no_speech_prob` (0,6), `avg_logprob` (−1,0), `compression_ratio` (2,4), `gap_ms` (2500), `min_words_per_second` (1,0), `crosstalk_ms` (1000), `similar_level` (`needs_review`), `similar_sound_level` (`confident`); `word_very_low` darf `word_low` nicht übersteigen, `low_share_review` nicht `low_share_uncertain` |
+| `render.timestamps` | nein | `turn` | Zeitstempel im gerenderten Transkript (TXT): `turn` an jedem Sprecherwechsel, `passage` an jeder Passage |
 | `debug` | nein | `false` | schreibt Transkripttext nach `work/<gruppe>/<ordinal>/debug.log`, nie auf die Konsole |
 
 Einen eigenen Ausgabepfad gibt es nicht: `output/` liegt immer unter `paths.root`, damit echte Daten im Layout unter [Sessions](#sessions) bleiben. Secrets gehören nicht in diese Datei, sondern in `.env` (Vorlage `.env.example`, heute nur `NARRATA_TOKEN`).
@@ -629,7 +662,7 @@ work/beispielgruppe/042/
   speakers/                    assignment.json (Sprecherzuordnung, von Hand), samples.md (Hörliste pro Label)
   working/                     transcript.json (Arbeitsfassung: Entscheidungen und Sprecher angewendet)
   debug.log                    nur im Debug-Modus
-output/beispielgruppe/042/     report.json, report.md (Abschlussbericht), transcript.json (JSON-Export), TXT, DOCX
+output/beispielgruppe/042/     report.json, report.md (Abschlussbericht), transcript.json (JSON-Export), transcript.txt (TXT-Ausgabe), DOCX
 ```
 
 Die Verzeichnisse von `input/` werden von Hand befüllt: Vor dem ersten Lauf kommen die Aufnahmen einer Sitzung nach `input/<gruppe>/<ordinal>/`, mit dem Ordinal aus Narrata. Liegt eine Aufnahme auch bearbeitet vor (etwa ohne Stille), gehört nur eine Fassung dorthin, sonst zählt sie doppelt. Die Pipeline liest dort nur und schreibt ausschließlich nach `work/` und `output/`. ASR-Ergebnisse werden nie überschrieben.

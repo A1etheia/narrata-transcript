@@ -3,10 +3,13 @@ import unittest
 
 from test_session_time import MANIFEST, SECOND
 
+from transcript.contract import load_schema
 from transcript.markers import (
+    CONTRACT_MARKER_LABELS,
     MARKER_KINDS,
     Marker,
     block_markers,
+    contract_marker_label,
     marker_label,
     rendered_text,
 )
@@ -15,8 +18,6 @@ from transcript.speakers import Assigned, SpeakerRef
 from transcript.timecode import parse_timecode
 from transcript.working import Block
 
-# `marker.type` of the Narrata contract v1 (IOA-1214, transcript-v1.schema.json)
-CONTRACT_MARKER_TYPES = {"unintelligible", "speaker_unclear", "crosstalk", "gap"}
 AT = parse_timecode("00:02:13.750")  # local to SECOND
 SESSION_AT = "01:21:56"  # SECOND starts at 01:19:43.000; seconds rounded down
 
@@ -153,4 +154,26 @@ class MarkerTimeTest(unittest.TestCase):
 
 class ContractTest(unittest.TestCase):
     def test_kinds_are_contract_markers_except_unresolved(self) -> None:
-        self.assertEqual(set(MARKER_KINDS) - CONTRACT_MARKER_TYPES, {"unresolved"})
+        # the schema test below ties CONTRACT_MARKER_LABELS to the contract's types
+        self.assertEqual(
+            set(MARKER_KINDS) - set(CONTRACT_MARKER_LABELS), {"unresolved"}
+        )
+
+    def test_every_marker_type_of_the_schema_has_a_label(self) -> None:
+        marker = load_schema()["$defs"]["marker"]["properties"]["type"]["enum"]
+        self.assertEqual(set(CONTRACT_MARKER_LABELS), set(marker))
+
+    def test_a_contract_marker_reads_like_the_working_marker(self) -> None:
+        for kind in sorted(set(MARKER_KINDS) & set(CONTRACT_MARKER_LABELS)):
+            with self.subTest(kind=kind):
+                self.assertEqual(
+                    contract_marker_label(kind, AT), marker_label(Marker(kind, AT))
+                )
+
+    def test_a_gap_reads_as_such(self) -> None:
+        self.assertEqual(contract_marker_label("gap", AT), "[Lücke 00:02:13]")
+        self.assertEqual(contract_marker_label("gap", None), "[Lücke]")
+
+    def test_an_unknown_type_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            contract_marker_label("unresolved", AT)
