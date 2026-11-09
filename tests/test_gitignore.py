@@ -13,6 +13,7 @@ IGNORED = (
     "work/beispielgruppe/042/asr/segment-001.json",
     "work/beispielgruppe/042/snapshot/wissen.json",
     "output/beispielgruppe/042/transkript.json",
+    "output/beispielgruppe/042/transcript.docx",
     "tests/fixtures/input/aufnahme.json",
     "tests/fixtures/aufnahme.wav",
     "aufnahme.mp4",

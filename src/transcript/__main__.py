@@ -20,6 +20,7 @@ from transcript import (
     decisions,
     diagnosis,
     diarization,
+    docx_render,
     export,
     hints,
     knowledge,
@@ -250,6 +251,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "output/<session>/transcript.txt; reads nothing else.",
     )
     txt_command.add_argument("session", help="session key <group>/<ordinal>")
+    docx_command = commands.add_parser(
+        "docx",
+        help="Render the session's JSON export as a Word document to "
+        "output/<session>/transcript.docx; reads nothing else.",
+    )
+    docx_command.add_argument("session", help="session key <group>/<ordinal>")
     for command in (
         config_command,
         extract_command,
@@ -267,6 +274,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         report_command,
         export_command,
         txt_command,
+        docx_command,
     ):
         command.add_argument(
             "--config",
@@ -316,8 +324,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _report(args.session, args.config)
         if args.command == "export":
             return _export(args.session, args.config)
-        if args.command == "txt":
-            return _txt(args.session, args.config)
+        if args.command in ("txt", "docx"):
+            return _render(args.session, args.config, args.command)
     parser.print_help()
     return 0
 
@@ -1017,10 +1025,11 @@ def _export(raw_key: str, config_path: Path) -> int:
     return 0
 
 
-def _txt(raw_key: str, config_path: Path) -> int:
-    """Only counts and the path reach the console (TOOL-66).
+def _render(raw_key: str, config_path: Path, kind: str) -> int:
+    """Render the JSON export as `txt` or `docx` (TOOL-51, TOOL-52).
 
-    Exit 0 once written, open passages included; 2 on an error or a refusal.
+    Only counts and the path reach the console (TOOL-66). Exit 0 once written,
+    open passages included; 2 on an error or a refusal.
     """
     try:
         key = SessionKey.parse(raw_key)
@@ -1028,19 +1037,24 @@ def _txt(raw_key: str, config_path: Path) -> int:
         paths = config.session_paths(key)
         document = rendering.load_export(paths)
         found = rendering.paragraphs(document)
-        rendering.write_txt(
-            paths, rendering.render_txt(found, config.render_timestamps)
-        )
+        rule = config.render_timestamps
+        if kind == "txt":
+            rendering.write_txt(paths, rendering.render_txt(found, rule))
+            target = paths.transcript_text
+        else:
+            data = docx_render.render_docx(key, document, found, rule)
+            docx_render.write_docx(paths, data)
+            target = paths.transcript_document
     except (ValueError, ConfigError, DataFileError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     passages = document["passages"]
     still_open = sum(p["review_status"] == "open" for p in passages)
     print(
-        f"{key}: txt: {len(passages)} passage(s), {len(found)} paragraph(s), "
+        f"{key}: {kind}: {len(passages)} passage(s), {len(found)} paragraph(s), "
         f"{still_open} open"
     )
-    print(f"wrote {paths.transcript_text}")
+    print(f"wrote {target}")
     return 0
 
 

@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -1867,6 +1868,44 @@ class TxtCommandTest(_ExportableSession):
         self.assertEqual(code, 2)
         self.assertIn("JSON export not found; run transcript export", stderr)
         self.assertFalse(self.paths.transcript_text.exists())
+
+
+class DocxCommandTest(_ExportableSession):
+    def docx(self) -> tuple[int, str, str]:
+        return run("docx", str(KEY), "--config", str(self.with_groups))
+
+    def snapshot(self) -> dict[Path, bytes]:
+        """Every file under work/ and the export, with its bytes."""
+        files = [p for p in self.paths.work_dir.rglob("*") if p.is_file()]
+        return {p: p.read_bytes() for p in [*files, self.paths.transcript_export]}
+
+    def test_renders_the_export_and_prints_only_counts(self) -> None:
+        run("working", str(KEY), "--config", str(self.config))
+        run("export", str(KEY), "--config", str(self.with_groups))
+        before = self.snapshot()
+
+        code, stdout, stderr = self.docx()
+
+        self.assertEqual(code, 0, stderr)  # an open passage is rendered, marked
+        self.assertIn(
+            "beispielgruppe/042: docx: 2 passage(s), 2 paragraph(s), 1 open", stdout
+        )
+        self.assertIn(f"wrote {self.paths.transcript_document}", stdout)
+        self.assert_nothing_secret(stdout + stderr)
+        with zipfile.ZipFile(self.paths.transcript_document) as archive:
+            xml = archive.read("word/document.xml").decode("utf-8")
+        self.assertEqual(xml.count("[unklar "), 1)
+        self.assertIn("(nicht zugeordnet)", xml)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_without_export_asks_for_it(self) -> None:
+        run("working", str(KEY), "--config", str(self.config))
+
+        code, _, stderr = self.docx()
+
+        self.assertEqual(code, 2)
+        self.assertIn("JSON export not found; run transcript export", stderr)
+        self.assertFalse(self.paths.transcript_document.exists())
 
 
 if __name__ == "__main__":

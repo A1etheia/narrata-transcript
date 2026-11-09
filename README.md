@@ -521,7 +521,7 @@ Die Arbeitsfassung muss aktuell sein: Der Befehl baut sie aus den Dateien unter 
 
 ## JSON-Export
 
-`transcript export <gruppe>/<ordinal>` schreibt die gespeicherte [Arbeitsfassung](#arbeitsfassung) als strukturiertes Transkript nach Narrata-Contract v1 (IOA-1214) nach `output/<gruppe>/<ordinal>/transcript.json` (`transcript.export`). Narrata importiert diese Datei (IOA-1218), die [TXT-Ausgabe](#txt-ausgabe) und DOCX (TOOL-52) rendern aus ihr.
+`transcript export <gruppe>/<ordinal>` schreibt die gespeicherte [Arbeitsfassung](#arbeitsfassung) als strukturiertes Transkript nach Narrata-Contract v1 (IOA-1214) nach `output/<gruppe>/<ordinal>/transcript.json` (`transcript.export`). Narrata importiert diese Datei (IOA-1218), die [TXT-Ausgabe](#txt-ausgabe) und die [DOCX-Ausgabe](#docx-ausgabe) rendern aus ihr.
 
 ```bash
 transcript working beispielgruppe/042
@@ -581,6 +581,22 @@ Ich schaue mich nach einer Herberge um. [unklar 00:00:35]
 - **Keine Metadaten:** Sitzung, Pipeline und Statistik stehen in `transcript.json` und `report.md`, nicht im Text.
 - **Datei:** UTF-8 ohne BOM, Zeilenende `\n`. Sie wird bei jedem Lauf ersetzt, weil sie abgeleitet ist. Gleicher Export und gleiche Regel ergeben eine byte-gleiche Datei.
 - **Daten:** Die Datei enthält Text und Anzeigenamen und bleibt unter `output/`. Die Konsole zeigt nur Zahlen und den Pfad, etwa `txt: 539 passage(s), 212 paragraph(s), 16 open`.
+- **Exit-Code:** `0` geschrieben, auch mit offenen Passagen, `2` Fehler oder Verweigerung, etwa ohne `transcript.json`.
+
+## DOCX-Ausgabe
+
+`transcript docx <gruppe>/<ordinal>` rendert den [JSON-Export](#json-export) als Word-Dokument für Archiv und redaktionelle Arbeit nach `output/<gruppe>/<ordinal>/transcript.docx` (`transcript.docx_render`).
+
+```bash
+transcript export beispielgruppe/042
+transcript docx beispielgruppe/042
+```
+
+- **Gleicher Inhalt wie TXT:** Quelle, Absätze, Sprecher, Zeitstempel (`render.timestamps`), Markierungen und Wortlaut folgen denselben Regeln wie bei der [TXT-Ausgabe](#txt-ausgabe), und beide nutzen dasselbe Layout aus `transcript.rendering`. Jeder Absatz im Dokument liest sich wie eine Zeile der TXT-Datei.
+- **Kopf:** Überschrift `Transkript <gruppe>/<ordinal>`, darunter `Sitzung <ordinal> · <Datum>` und klein Backend und Modell, Wissens-Snapshot, Contract-Version sowie Narrata-Gruppe und -Spielsitzung. Contract v1 kennt keinen Sitzungstitel.
+- **Formatvorlagen:** Sprecherzeilen fett im Absatzstil `Speaker`. Ein Label (nicht zugeordnet oder ohne Namen) ist zusätzlich kursiv und grau (`SpeakerLabel`), ein Personenname nicht. Markierungen stehen kursiv, dunkelrot und grau hinterlegt (`Marker`) und fallen auch im Schwarzweißdruck auf. Zeitstempel sind grau (`Time`). Die Stile lassen sich in Word anpassen.
+- **Datei:** ein schlankes DOCX-Paket aus der Standardbibliothek, ohne zusätzliche Abhängigkeit. Die Dokumenteigenschaften sind fest (Titel `Transkript`, Autor `narrata-transcript`) und tragen weder Zeit noch Benutzer noch Rechnernamen. Gleicher Export und gleiche Regel ergeben eine byte-gleiche Datei. Zeichen, die XML nicht erlaubt (Steuerzeichen), fallen weg; sonst bleibt der Text wie im Export.
+- **Daten:** Die Datei enthält Text und Anzeigenamen und bleibt unter `output/`. Die Konsole zeigt nur Zahlen und den Pfad, etwa `docx: 539 passage(s), 212 paragraph(s), 16 open`.
 - **Exit-Code:** `0` geschrieben, auch mit offenen Passagen, `2` Fehler oder Verweigerung, etwa ohne `transcript.json`.
 
 ## Konfiguration
@@ -662,7 +678,7 @@ work/beispielgruppe/042/
   speakers/                    assignment.json (Sprecherzuordnung, von Hand), samples.md (Hörliste pro Label)
   working/                     transcript.json (Arbeitsfassung: Entscheidungen und Sprecher angewendet)
   debug.log                    nur im Debug-Modus
-output/beispielgruppe/042/     report.json, report.md (Abschlussbericht), transcript.json (JSON-Export), transcript.txt (TXT-Ausgabe), DOCX
+output/beispielgruppe/042/     report.json, report.md (Abschlussbericht), transcript.json (JSON-Export), transcript.txt (TXT-Ausgabe), transcript.docx (DOCX-Ausgabe)
 ```
 
 Die Verzeichnisse von `input/` werden von Hand befüllt: Vor dem ersten Lauf kommen die Aufnahmen einer Sitzung nach `input/<gruppe>/<ordinal>/`, mit dem Ordinal aus Narrata. Liegt eine Aufnahme auch bearbeitet vor (etwa ohne Stille), gehört nur eine Fassung dorthin, sonst zählt sie doppelt. Die Pipeline liest dort nur und schreibt ausschließlich nach `work/` und `output/`. ASR-Ergebnisse werden nie überschrieben.
