@@ -19,6 +19,7 @@ from transcript.audio import (
     AudioInfo,
     ExtractedSegment,
     extract,
+    extracted,
     probe,
 )
 from transcript.audio_tools import AudioTools, ToolInfo
@@ -290,6 +291,23 @@ class ExtractTest(MediaTestCase):
         write_stub(self.dir, "ffmpeg", f"echo 'boom: Invalid data' >&2\n{body}")
         stub = ToolInfo("ffmpeg", self.dir / "ffmpeg", "x")
         return dataclasses.replace(self.tools, ffmpeg=stub)
+
+
+class ExtractedTest(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        config = Config(language="de", root=Path(directory.name))
+        self.paths = config.session_paths(SessionKey("beispielgruppe", 1))
+        self.paths.audio_dir.mkdir(parents=True)
+
+    def test_needs_the_metadata_and_a_wav_per_recording(self) -> None:
+        self.assertFalse(extracted(self.paths, 1))
+        self.paths.audio_metadata.write_text("{}", encoding="utf-8")
+        self.paths.segment_wav(1).write_bytes(b"")
+
+        self.assertTrue(extracted(self.paths, 1))
+        self.assertFalse(extracted(self.paths, 2))
 
 
 def frequency(path: Path) -> float:

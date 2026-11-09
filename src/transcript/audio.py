@@ -104,6 +104,16 @@ def find_recordings(paths: SessionPaths) -> tuple[Path, ...]:
     return files
 
 
+def extracted(paths: SessionPaths, recordings: int) -> bool:
+    """Whether `audio.json` and a WAV for each of `recordings` are in place.
+
+    Presence only: whether they fit the recordings is the preflight's check.
+    """
+    return paths.audio_metadata.is_file() and all(
+        paths.segment_wav(index).is_file() for index in range(1, recordings + 1)
+    )
+
+
 def probe(path: Path, tools: AudioTools) -> AudioInfo:
     """Read a recording's metadata, or raise `AudioError` if it is not usable."""
     if not path.is_file():
