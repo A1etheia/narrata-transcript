@@ -132,9 +132,14 @@ def _is_kind(value: Any, kind: type) -> bool:
     return isinstance(value, kind) and (kind is bool or not isinstance(value, bool))
 
 
+def encode(data: dict[str, Any]) -> bytes:
+    """The bytes `write_atomic` writes for `data`."""
+    return (json.dumps(data, indent=2) + "\n").encode("utf-8")
+
+
 def write_atomic(path: Path, data: dict[str, Any]) -> None:
     """Replace `path` atomically, so a reader never sees half a file."""
-    write_bytes_atomic(path, (json.dumps(data, indent=2) + "\n").encode("utf-8"))
+    write_bytes_atomic(path, encode(data))
 
 
 def write_bytes_atomic(path: Path, data: bytes) -> None:

@@ -24,13 +24,13 @@ import json
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
 
-from transcript import __version__, markers, working
+from transcript import __version__, jsonfile, markers, working
 from transcript.candidates import SessionCandidates, collect
 from transcript.config import LEVELS, Level
 from transcript.decisions import SETTLED, STATUSES, ReviewStatus
-from transcript.jsonfile import write_atomic, write_bytes_atomic
 from transcript.knowledge import load_snapshot
 from transcript.manifest import Manifest
 from transcript.markers import MARKER_KINDS, MARKER_LABELS
@@ -429,22 +429,30 @@ def report_json(report: SessionReport) -> dict[str, Any]:
     return dataclasses.asdict(report)
 
 
+def outputs(
+    paths: SessionPaths, report: SessionReport
+) -> tuple[tuple[Path, bytes], ...]:
+    """The files `write_report` writes and their bytes, in the order written."""
+    text = render_markdown(str(paths.key), report)
+    data = {
+        "format_version": REPORT_FORMAT_VERSION,
+        "session": str(paths.key),
+        **report_json(report),
+    }
+    return (
+        (paths.report_markdown, text.encode("utf-8")),
+        (paths.report_json, jsonfile.encode(data)),
+    )
+
+
 def write_report(paths: SessionPaths, report: SessionReport) -> None:
     """Replace `report.md`, then `report.json` of the session.
 
     Each file is replaced atomically, the pair is not: the JSON comes last, so a
     current `report.json` means its `report.md` was written before it.
     """
-    text = render_markdown(str(paths.key), report)
-    write_bytes_atomic(paths.report_markdown, text.encode("utf-8"))
-    write_atomic(
-        paths.report_json,
-        {
-            "format_version": REPORT_FORMAT_VERSION,
-            "session": str(paths.key),
-            **report_json(report),
-        },
-    )
+    for path, data in outputs(paths, report):
+        jsonfile.write_bytes_atomic(path, data)
 
 
 _STATES: dict[SegmentState, str] = {
