@@ -33,9 +33,11 @@ from transcript import (
     review_import,
     review_sheet,
     speakers,
+    transcription,
     working,
 )
 from transcript.config import Config
+from transcript.domain import DomainContext
 from transcript.jsonfile import DataFileError
 from transcript.pipeline import StepName
 from transcript.reference import load_reference
@@ -184,35 +186,43 @@ def _manifest(files: _Files) -> _Found:
 _SEGMENT_KINDS: tuple[tuple[str, StepState], ...] = (
     ("failed", "failed"),
     ("unreadable", "stale"),
-    ("other snapshot", "stale"),
+    ("other knowledge or language", "stale"),
     ("rating outdated", "stale"),
     ("missing", "partial"),
     ("no speaker labels", "partial"),
 )
 _SEVERITY: tuple[StepState, ...] = ("failed", "stale", "partial")
-# `transcribe` reuses a transcript of another snapshot only after `--redo`
-_REDO_KINDS = frozenset({"other snapshot"})
+# `process` transcribes these again only with `--redo` (strict resume guard)
+_REDO_KINDS = frozenset({"other knowledge or language"})
 
 
 def _transcribe(files: _Files) -> _Found:
     """Transcript, rating and speaker labels of every segment.
 
     `process` always diarizes and rates, so a segment without either is
-    not done. A transcript made with another snapshot than the stored one,
-    or a rating of another transcript version, is stale.
+    not done. A transcript that `transcribe` would not reuse with the stored
+    snapshot, its keywords and the configured language, or a rating of
+    another transcript version, is stale. Whether the backend takes keywords
+    comes from the stored result; a change of model is the preflight's check.
     """
     paths = files.paths
     if not paths.manifest.is_file():
         return _Found("pending", "needs the manifest")
     try:
         segments = [segment.index for segment in files.manifest.segments]
-        snapshot_id = (
-            knowledge.load_snapshot(paths).snapshot_id
+        snapshot = (
+            knowledge.load_snapshot(paths)
             if paths.knowledge_snapshot.is_file()
             else None
         )
     except DataFileError as error:
         return _Found("stale", str(error))
+    snapshot_id = None if snapshot is None else snapshot.snapshot_id
+    keywords = (
+        ()
+        if snapshot is None
+        else tuple(DomainContext.from_snapshot(snapshot).transcription_keywords())
+    )
     found: dict[str, list[int]] = {kind: [] for kind, _ in _SEGMENT_KINDS}
     transcribed = 0
     for index in segments:
@@ -228,8 +238,14 @@ def _transcribe(files: _Files) -> _Found:
             found["failed"].append(index)
             continue
         transcribed += 1
-        if reference.asr.knowledge_snapshot_id != snapshot_id:
-            found["other snapshot"].append(index)
+        biasing = reference.asr.capabilities.get("keyword_biasing") is True
+        if not transcription.same_input(
+            reference,
+            files.config.language,
+            snapshot_id,
+            keywords if biasing else None,
+        ):
+            found["other knowledge or language"].append(index)
         try:
             rated = load_assessment(paths, index).matches(reference)
         except DataFileError:

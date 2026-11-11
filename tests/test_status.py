@@ -14,6 +14,7 @@ from test_smoke import _ExportableSession, run
 from transcript import candidates, decisions, knowledge, manifest, review_sheet, status
 from transcript.audio import extract, find_recordings, probe
 from transcript.config import UncertaintyThresholds, load_config
+from transcript.domain import DomainContext
 from transcript.knowledge import build_snapshot, load_snapshot
 from transcript.manifest import build_manifest
 from transcript.narrata import store_context
@@ -79,11 +80,7 @@ class StatusTestCase(unittest.TestCase):
         """A transcribed segment as `transcribe` stores it, rated."""
         values: dict[str, Any] = {
             "segment": SegmentRef(index, f"segment-{index:02d}.wav", "ab" * 32),
-            "asr": AsrInfo(
-                backend_id="fake",
-                model="fake",
-                knowledge_snapshot_id=load_snapshot(self.paths).snapshot_id,
-            ),
+            "asr": self.asr(),
             "processing": Processing(
                 pipeline_version="0.0.1", processed_at=processed_at
             ),
@@ -107,6 +104,17 @@ class StatusTestCase(unittest.TestCase):
         values.update(changes)
         write_reference(self.paths, minimal(**values), {})
         assess_session(self.paths, [index], UncertaintyThresholds())
+
+    def asr(self, **changes: Any) -> AsrInfo:
+        """What `transcribe` stores for a run on the current snapshot."""
+        values: dict[str, Any] = {
+            "backend_id": "fake",
+            "model": "fake",
+            "language": "de",
+            "knowledge_snapshot_id": load_snapshot(self.paths).snapshot_id,
+        }
+        values.update(changes)
+        return AsrInfo(**values)
 
     def failed(self, index: int = 1) -> None:
         write_reference(
@@ -299,10 +307,44 @@ class TranscribeTest(StatusTestCase):
         self.store_context(session_date="2026-11-05")
         build_snapshot(self.paths, self.config.keyword_budget)
 
-        state, detail = self.statuses()["transcribe"]
+        self.assert_transcribed_again()
 
-        self.assertEqual(state, "stale")
-        self.assertIn("other snapshot: 1", detail)
+    def assert_transcribed_again(self) -> None:
+        found = status.inspect(self.paths, self.config)
+        (step,) = [step for step in found.steps if step.step == "transcribe"]
+        self.assertEqual((step.state, step.redo), ("stale", True))
+        self.assertIn("other knowledge or language: 1", step.detail)
+        self.assertEqual(found.resume_from, "transcribe")
+        self.assertEqual(found.command, f"transcript process {KEY} --redo transcribe")
+
+    def test_a_transcript_in_another_language_is_stale(self) -> None:
+        self.prepared()
+        self.reference(asr=self.asr(language="en"))
+
+        self.assert_transcribed_again()
+
+    def keywords(self) -> tuple[str, ...]:
+        snapshot = load_snapshot(self.paths)
+        return tuple(DomainContext.from_snapshot(snapshot).transcription_keywords())
+
+    def test_other_keywords_on_a_backend_that_takes_them_are_stale(self) -> None:
+        self.prepared()
+        biasing = {"keyword_biasing": True}
+        self.reference(asr=self.asr(capabilities=biasing, keywords_used=("Nirgendwo",)))
+
+        self.assert_transcribed_again()
+
+    def test_the_same_keywords_or_a_backend_without_them_are_done(self) -> None:
+        self.prepared()
+        biasing = {"keyword_biasing": True}
+        self.reference(
+            asr=self.asr(capabilities=biasing, keywords_used=self.keywords())
+        )
+        self.assertEqual(self.state("transcribe"), "done")
+
+        self.reference(asr=self.asr(keywords_used=()))  # ignores keywords
+
+        self.assertEqual(self.state("transcribe"), "done")
 
     def test_a_rating_of_an_earlier_transcript_is_stale(self) -> None:
         self.prepared()
