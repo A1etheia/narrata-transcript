@@ -363,7 +363,7 @@ def _check_resume(
         findings.append(Finding("ok", "resume", "no earlier artifacts"))
         return
     if paths.audio_metadata.is_file() and recordings is not None:
-        problem = _audio_metadata_problem(paths, recordings)
+        problem = manifest.audio_metadata_problem(paths, recordings)
         if problem is not None:
             findings.append(Finding("error", "resume", problem))
     if not paths.manifest.is_file():
@@ -435,28 +435,6 @@ def _passed_knowledge(
         return None, (() if biasing else None)
     keywords = DomainContext.from_snapshot(snapshot).transcription_keywords()
     return snapshot.snapshot_id, (tuple(keywords) if biasing else None)
-
-
-def _audio_metadata_problem(
-    paths: SessionPaths, recordings: Sequence[Path]
-) -> str | None:
-    """Whether `audio.json` was extracted from these recordings, by name and size.
-
-    Hashing hours of audio has no place in a preflight; `transcript extract`
-    and the manifest check the content.
-    """
-    try:
-        sources = manifest.audio_sources(paths)
-    except DataFileError as error:
-        return str(error)
-    extracted = [(source.file, source.size_bytes) for source in sources]
-    present = [(path.name, path.stat().st_size) for path in recordings]
-    if extracted != present:
-        return (
-            f"{paths.audio_metadata}: does not match the recordings in "
-            f"{paths.input_dir}; run transcript extract again"
-        )
-    return None
 
 
 def _existing_ancestor(path: Path) -> Path:

@@ -11,6 +11,7 @@ so a segment ends exactly where the next one starts.
 
 import datetime
 import functools
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -173,6 +174,28 @@ def audio_sources(paths: SessionPaths) -> tuple[SourceRecording, ...]:
         )
     entries = _field(metadata, "segments", list, paths.audio_metadata)
     return tuple(_source(entry, paths.audio_metadata) for entry in entries)
+
+
+def audio_metadata_problem(
+    paths: SessionPaths, recordings: Sequence[Path]
+) -> str | None:
+    """Whether `audio.json` was extracted from these recordings, by name and size.
+
+    Hashing hours of audio has no place in a preflight or a status;
+    `transcript extract` and the manifest check the content.
+    """
+    try:
+        sources = audio_sources(paths)
+    except DataFileError as error:
+        return str(error)
+    extracted = [(source.file, source.size_bytes) for source in sources]
+    present = [(path.name, path.stat().st_size) for path in recordings]
+    if extracted != present:
+        return (
+            f"{paths.audio_metadata}: does not match the recordings in "
+            f"{paths.input_dir}; run transcript extract again"
+        )
+    return None
 
 
 def timeline(frames: list[int], sample_rate: int) -> list[tuple[int, int]]:
