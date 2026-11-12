@@ -79,7 +79,7 @@ Danach ordnet `transcript speakers <session> --assign` alle offenen Labels einer
 - AC: Haltanweisung und Doku nennen `--assign`; Übergabe aus TOOL-55 erledigt.
 
 ## Folge-Tickets
-- IOA-1294: Transcript-Import setzt eine fremde `participant_id` auf `null`, statt den Import abzulehnen (wie `docs/transcript-contract.md:122`).
+- [kein Ticket: in IOA-1294 erledigt (Done)] Transcript-Import setzt eine fremde `participant_id` auf `null`, statt den Import abzulehnen (wie `docs/transcript-contract.md:122`).
 - TOOL-87: automatische Vorschläge über Stimmprofile.
 - TOOL-79: Kandidaten auf Anwesende eingrenzen, sobald Narrata Anwesenheit liefert.
 - IOA-1295: Sprecherzuordnung in Narrata nachträglich anzeigen und korrigieren, auch pro Passage für gemischte Labels; Korrekturen überstehen einen erneuten Import.
