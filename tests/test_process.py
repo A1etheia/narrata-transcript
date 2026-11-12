@@ -82,9 +82,8 @@ class WiringTest(_Patched):
         self.assertIn(
             f"review: fill in the decisions in {self.paths.review_sheet}", stdout
         )
-        self.assertIn(
-            f"speakers: assign the labels in {self.paths.speaker_assignment}", stdout
-        )
+        self.assertIn(f"speakers: run transcript speakers {KEY} --assign", stdout)
+        self.assertIn(f"edit {self.paths.speaker_assignment} by hand", stdout)
         self.assertIn(f"then run transcript process {KEY} again", stdout)
         self.assertIn("review halted, speakers halted", stdout)
 

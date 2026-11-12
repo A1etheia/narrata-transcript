@@ -26,7 +26,9 @@ from transcript.timecode import format_ms
 SAMPLES_PER_LABEL = 5
 MERGE_SHARE = 0.03  # below this share of its segment's speech time, a label is suspect
 _INTRO = (
-    "Assign each label in `assignment.json` next to this file: `assigned` is "
+    "`transcript speakers <session> --assign` asks for each label in the "
+    "terminal and plays these passages. By hand, assign each label in "
+    "`assignment.json` next to this file: `assigned` is "
     "`person` with a `user_id` from the list below, `unknown`, `multiple` or "
     "`open`. Labels hold per segment only. Note the minutes spent in "
     "`effort_minutes`."

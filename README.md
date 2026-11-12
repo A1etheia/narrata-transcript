@@ -20,7 +20,7 @@ Der JSON-Contract ist die einzige Kopplung zu Narrata. Sein Schema liegt in `ios
 
 - Python 3.10 oder neuer
 - Unter Ubuntu das Paket `python3-venv`
-- `ffmpeg` und `ffprobe` im `PATH`; unter Ubuntu/WSL beide über `sudo apt install ffmpeg`
+- `ffmpeg` und `ffprobe` im `PATH`; unter Ubuntu/WSL beide über `sudo apt install ffmpeg`. Dasselbe Paket bringt `ffplay` mit, das nur `transcript speakers --assign` zum Abspielen von Hörproben braucht.
 
 ## Setup
 
@@ -41,7 +41,7 @@ transcript doctor                    # Umgebung: Werkzeuge, Konfiguration, Model
 transcript doctor beispielgruppe/042 # zusätzlich die Session
 ```
 
-Vor einem langen Lauf prüft `transcript doctor`, ob alles bereitsteht. Ohne Session prüft der Befehl `ffmpeg` und `ffprobe` (Version und Pfad), die Konfiguration, das ASR-Modell im lokalen Cache samt Gerät und das Diarisierungsmodell. Die Modelle werden dabei nicht geladen. Mit Session kommen hinzu:
+Vor einem langen Lauf prüft `transcript doctor`, ob alles bereitsteht. Ohne Session prüft der Befehl `ffmpeg` und `ffprobe` (Version und Pfad), ob `ffplay` für Hörproben da ist (fehlt es, ist das nur eine Warnung; der Preflight von `process` prüft es nicht), die Konfiguration, das ASR-Modell im lokalen Cache samt Gerät und das Diarisierungsmodell. Die Modelle werden dabei nicht geladen. Mit Session kommen hinzu:
 
 - die Aufnahmen in `input/`, jede per ffprobe geprüft
 - ob `work/` und `output/` beschreibbar sind
@@ -66,7 +66,7 @@ transcript process beispielgruppe/042 --redo transcribe
 
 - **Wiederverwenden:** `extract`, `context` und `manifest` werden übersprungen, wenn ihr Ergebnis schon da ist. `context` fragt Narrata also nur beim ersten Lauf. `snapshot` und `transcribe` verwenden selbst wieder, was passt. Alles ab `working` läuft jedes Mal neu.
 - **Neu ausführen:** `--redo extract|context|snapshot|manifest|transcribe` erzwingt diesen Schritt (`snapshot --refresh`, `transcribe --force`) und lässt alle späteren laufen, auch die übersprungenen.
-- **Anhalten:** Fehlt das Review-Sheet und gibt es offene Kandidaten, schreibt `process` es. Fehlt `speakers/assignment.json`, schreibt es die Vorlage samt Hörproben. Danach hält es an und nennt die Dateien. Der nächste Lauf liest beides ein und läuft weiter. Was dann noch offen ist, bleibt offen und steht im Bericht als Lücke (`open_passages`, `open_speakers`). Ein Export ohne Zuordnung ist also möglich, gilt aber als unvollständig.
+- **Anhalten:** Fehlt das Review-Sheet und gibt es offene Kandidaten, schreibt `process` es. Fehlt `speakers/assignment.json`, schreibt es die Vorlage samt Hörproben. Danach hält es an und nennt die Dateien; für die Sprecher nennt es `transcript speakers <gruppe>/<ordinal> --assign`. Der nächste Lauf liest beides ein und läuft weiter. Was dann noch offen ist, bleibt offen und steht im Bericht als Lücke (`open_passages`, `open_speakers`). Ein Export ohne Zuordnung ist also möglich, gilt aber als unvollständig.
 - **Abbrechen:** Ein Fehler hält den Lauf am betroffenen Schritt an, mit `process: stopped at <schritt> (exit <n>)`. Das gilt auch für ein gescheitertes oder offenes Segment in `transcribe` und für nicht anwendbare Einträge in der Zuordnung.
 - **Nicht still neu transkribieren:** `process` ruft den Preflight streng auf. Würde `transcribe` fertige Segmente neu machen, weil Modell, Einstellungen, Snapshot, Keywords oder Sprache abweichen, ist das ein Fehler statt einer Warnung, und der Lauf startet nicht. Die Meldung nennt die Segmente und `--redo transcribe`. Mit `--redo` gilt der Lauf als ausdrücklich gewollte Neuverarbeitung, der Preflight warnt dann nur.
 - **Nur ein Lauf je Sitzung:** Nach dem Preflight legt `process` die Datei `work/<gruppe>/<ordinal>/process.lock` mit seiner Prozess-ID an und entfernt sie am Ende. Läuft der Prozess dieser ID noch, bricht ein zweiter Lauf mit Exit-Code 2 ab. Nach einem Abbruch (Ctrl-C, Absturz) bleibt die Datei liegen. `transcript status` meldet die Sitzung dann als `interrupted`, und der nächste Lauf ersetzt die Datei und macht weiter.
@@ -315,16 +315,17 @@ TRANSCRIPT_DIARIZATION_SMOKE=1 python -m unittest discover -s tests -p test_diar
 
 ## Sprecherzuordnung
 
-Wer hinter einem Label steckt, wird von Hand festgelegt (`transcript.speakers`, TOOL-68). Pro Abend dauert das wenige Minuten: je Label ein paar Sekunden anhören. Voraussetzung sind Manifest, [Wissens-Snapshot](#wissens-snapshot) und mindestens ein diarisiertes Segment.
+Wer hinter einem Label steckt, legt ein Mensch fest, nie das Werkzeug (`transcript.speakers`, TOOL-68). Pro Abend dauert das wenige Minuten: je Label ein paar Sekunden anhören. Voraussetzung sind Manifest, [Wissens-Snapshot](#wissens-snapshot) und mindestens ein diarisiertes Segment. Der Alltagsweg ist die [interaktive Zuordnung](#interaktiv-zuordnen); die Datei lässt sich aber auch von Hand bearbeiten.
 
 ```bash
-transcript speakers beispielgruppe/042
+transcript speakers beispielgruppe/042            # Hörliste, Vorlage, Prüfung
+transcript speakers beispielgruppe/042 --assign   # offene Labels im Terminal zuordnen
 ```
 
 Der Befehl schreibt zwei Dateien unter `work/<gruppe>/<ordinal>/speakers/`:
 
-- **`samples.md`**, die Hörliste. Sie wird bei jedem Lauf neu geschrieben und nie zurückgelesen. Oben stehen die Teilnehmenden aus dem Snapshot mit User-ID, Anzeigename, Rolle und Mitgliedschaft (aktive zuerst, Ehemalige wählbar). Danach folgt pro Segment und Label die Redezeit mit ihrem Anteil am Segment und der aktuellen Zuordnung. Darunter stehen die fünf Passagen, in denen das Label am längsten spricht, jeweils mit Session-Zeit, Zeit im Segment-WAV und Text. Redezeit ist die Summe der Wortdauern des Labels; ohne Wortzeiten zählt die Passage ganz für ihr Mehrheitslabel. Ein Label unter 3 % der Redezeit seines Segments ist als **Kandidat für Zusammenlegung** markiert, wahrscheinlich ein abgespaltenes Stück einer anderen Person.
-- **`assignment.json`**, die Zuordnung (`format_version: 1`). Fehlt die Datei, entsteht sie als Vorlage mit einem `open`-Eintrag pro Segment und Label. Danach schreibt das Werkzeug sie nie wieder, sie ist Handarbeit.
+- **`samples.md`**, die Hörliste. Sie wird bei jedem Lauf neu geschrieben und nie zurückgelesen. Oben stehen die Teilnehmenden aus dem Snapshot mit User-ID, Anzeigename, Rolle und Mitgliedschaft (Anwesende zuerst, dann aktive, dann ehemalige Mitglieder, die wählbar bleiben). Danach folgt pro Segment und Label die Redezeit mit ihrem Anteil am Segment und der aktuellen Zuordnung. Darunter stehen die fünf Passagen, in denen das Label am längsten spricht, jeweils mit Session-Zeit, Zeit im Segment-WAV und Text. Redezeit ist die Summe der Wortdauern des Labels; ohne Wortzeiten zählt die Passage ganz für ihr Mehrheitslabel. Ein Label unter 3 % der Redezeit seines Segments ist als **Kandidat für Zusammenlegung** markiert, wahrscheinlich ein abgespaltenes Stück einer anderen Person.
+- **`assignment.json`**, die Zuordnung (`format_version: 1`). Fehlt die Datei, entsteht sie als Vorlage mit einem `open`-Eintrag pro Segment und Label. Danach ersetzt das Werkzeug sie nie; nur `--assign` ändert sie, und zwar je bestätigter Wahl genau einen Eintrag.
 
 | `assigned` | Bedeutung |
 | --- | --- |
@@ -334,12 +335,35 @@ Der Befehl schreibt zwei Dateien unter `work/<gruppe>/<ordinal>/speakers/`:
 | `open` | noch nicht zugeordnet; das gilt auch für ein Label ohne Eintrag |
 
 - **Pro Eintrag:** `segment`, `label`, `labels_version`, `assigned` und bei `person` die `user_id`. Labels gelten pro Segment, deshalb ist der Schlüssel Segment plus Label. Mehrere Aufnahmen einer Session werden zusammengeführt, indem ihre Labels derselben Person zugeordnet werden.
-- **`effort_minutes`** hält von Hand fest, wie viele Minuten die Zuordnung gedauert hat; der Bericht (TOOL-59) wertet das aus.
+- **`effort_minutes`** hält fest, wie viele Minuten die Zuordnung gedauert hat; `--assign` schlägt die gemessene Zeit vor, sonst trägt man sie von Hand ein. Der Bericht (TOOL-59) wertet das aus.
 - **Zusammenführen:** Zwei Labels eines Segments dürfen derselben Person gehören, wenn die Diarisierung eine Person geteilt hat. Der Befehl warnt dann und führt sie zusammen.
 - **Nicht angewendet** werden Einträge zu einem unbekannten Segment, einem unbekannten Label oder einer Person, die nicht im Snapshot steht. Dasselbe gilt für veraltete Einträge: `labels_version` ist ein Fingerabdruck der Labels des Segments und ändert sich, wenn das Segment neu transkribiert oder mit anderem Ergebnis neu diarisiert wird. Solche Einträge bleiben in der Datei, werden mit Eintragsnummer gemeldet, und der Befehl endet mit Exit-Code 1.
 - **Nie geraten:** Was nicht gültig einer Person zugeordnet ist, bleibt ein Label, ebenso Wörter ohne Label. Das Referenztranskript bleibt unverändert. Die [Arbeitsfassung](#arbeitsfassung) trägt pro Passage Label und Person.
 
-Die Konsole zeigt nur Zähler, Segment- und Eintragsnummern, nie Labels, Namen, User-IDs oder Text. Beide Dateien enthalten User-IDs, die Hörliste auch Namen und Text; sie bleiben unter `work/`.
+Die Konsole zeigt nur Zähler, Segment- und Eintragsnummern, nie Labels, Namen, User-IDs oder Text; die Ausnahme ist der Dialog von `--assign`. Beide Dateien enthalten User-IDs, die Hörliste auch Namen und Text; sie bleiben unter `work/`.
+
+### Interaktiv zuordnen
+
+`transcript speakers <gruppe>/<ordinal> --assign` geht die offenen Labels nacheinander durch (`transcript.speaker_assign`, TOOL-86), Segment für Segment und darin das Label mit der meisten Redezeit zuerst. Offen ist ein Label ohne angewendeten Eintrag: ohne Eintrag, `open`, veraltet oder mit einer Person, die nicht im Snapshot steht. Mit `--all` kommen auch die schon zugeordneten Labels dran.
+
+Pro Label zeigt der Dialog Redezeit, Anteil, den Vermerk „Kandidat für Zusammenlegung“, die aktuelle Zuordnung und die Passagen der Hörliste. Ein veralteter Eintrag erscheint als „open (not applied, earlier: …)“ und wird erst durch eine neue Wahl ersetzt.
+
+| Eingabe | Wirkung |
+| --- | --- |
+| `p` oder Enter | nächste Hörprobe abspielen |
+| `r` | dieselbe Probe noch einmal |
+| Zahl | die Person mit dieser Nummer aus der Teilnehmerliste |
+| `u` / `m` | `unknown` / `multiple` |
+| `s` | überspringen, das Label bleibt, wie es ist |
+| `q` | beenden; der Aufwand wird trotzdem angeboten |
+
+- **Hörproben:** `ffplay` spielt die Passage aus dem Segment-WAV ab, ab ihrer Zeit im WAV und höchstens 12 Sekunden lang. Fehlt `ffplay` oder gibt es keine Audioausgabe (etwa WSL ohne Ton), nennt der Dialog Datei und Zeit, und man hört in einem anderen Player nach.
+- **Speichern:** Jede Wahl wird sofort und atomar in `assignment.json` geschrieben. Alle anderen Einträge bleiben inhaltlich, wie sie gelesen wurden, auch mit zusätzlichen Feldern; die Datei bekommt dabei die Standardformatierung. Wer nichts wählt, lässt die Datei unberührt.
+- **Zusammenlegen:** Spricht die gewählte Person im selben Segment schon als anderes Label, fragt der Dialog nach, weil die Labels dann zusammengeführt werden.
+- **Aufwand:** Am Ende schlägt der Dialog die gemessene Dauer als `effort_minutes` vor, zum bisherigen Wert addiert, und speichert sie nur nach `y`.
+- **Abbruch:** Strg+C beendet mit Exit-Code 130. Alles bis dahin Bestätigte ist gespeichert, die Datei bleibt gültig.
+- **Danach** folgen dieselbe Prüfung und Ausgabe wie ohne `--assign`, die Hörliste wird neu geschrieben.
+- **Nur im Terminal:** Der Dialog zeigt Anzeigenamen und Passagentext. Deshalb läuft er nur, wenn Ein- und Ausgabe ein interaktives Terminal sind; sonst endet der Befehl mit Exit-Code 2, bevor er etwas zeigt. Ins Log und in die Zähler gelangt nichts davon.
 
 ## Review-Hinweise
 
@@ -739,7 +763,7 @@ work/beispielgruppe/042/
   asr/                         segment-NN.json (Referenztranskript), segment-NN.raw.json (Backend-Rohantwort)
   diarization/                 segment-NN.json (Sprecher-Turns von pyannote)
   review/                      segment-NN.hints.json (Review-Hinweise aus dem Wissen), segment-NN.uncertainty.json (Unsicherheitsbewertung), candidates.json (Review-Kandidaten der Session), decisions.json (Review-Entscheidungen), review.csv (Review-CSV)
-  speakers/                    assignment.json (Sprecherzuordnung, von Hand), samples.md (Hörliste pro Label)
+  speakers/                    assignment.json (Sprecherzuordnung, von Hand oder mit --assign), samples.md (Hörliste pro Label)
   working/                     transcript.json (Arbeitsfassung: Entscheidungen und Sprecher angewendet)
   debug.log                    nur im Debug-Modus
 output/beispielgruppe/042/     report.json, report.md (Abschlussbericht), transcript.json (JSON-Export), transcript.txt (TXT-Ausgabe), transcript.docx (DOCX-Ausgabe)

@@ -37,6 +37,9 @@ Dieses Dokument enthält keine Klarnamen und keine Sitzungsdaten.
 **Logs und Fehlermeldungen.** Sie enthalten standardmäßig nur Session-Schlüssel, Passagen-IDs, Laufzeiten und Zähler. Nur ein ausdrücklich aktivierter Debug-Modus darf Transkripttext schreiben, und zwar in eine Logdatei unter `work/`, nie auf die Konsole.
 *Grund:* Konsolenausgaben landen schnell in Tickets oder Chats; zum Fehlersuchen braucht es den Text trotzdem manchmal.
 
+**Interaktive Sprecherzuordnung (TOOL-86).** `transcript speakers --assign` zeigt Anzeigenamen und Passagentext auf der Konsole, weil man sonst nicht entscheiden kann, wer spricht. Das geschieht nur, wenn Ein- und Ausgabe ein interaktives Terminal sind; umgeleitet oder ohne Terminal bricht der Befehl ab, bevor er etwas zeigt. Logs, `pipeline.log` und die Zählerzeilen am Ende bleiben ohne Namen und Text, und `process` startet den Dialog nie selbst.
+*Grund:* Was eine Person am eigenen Bildschirm sieht, ist dasselbe wie die Hörliste unter `work/`; was in Dateien oder weitergeleitete Ausgaben gelangt, soll nicht mehr enthalten als bisher.
+
 **Modelle und Telemetrie.** Modelle kommen einmalig per Download in den lokalen Cache; danach läuft die Pipeline ohne Netz. Bibliotheken, die von sich aus Daten nach außen melden, werden abgeschaltet: pyannote.audio 4 schickt sonst Laufmetadaten (Audiodauer, Sprecherzahl) an seinen Hersteller.
 *Grund:* Auch Metadaten über eine Sitzung gehören nicht zu Dritten, und „vollständig lokal“ soll ohne Ausnahmen gelten.
 

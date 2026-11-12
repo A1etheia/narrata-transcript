@@ -1391,8 +1391,8 @@ def _print_halt(
         print(f"  review: fill in the decisions in {paths.review_sheet}")
     if "speakers" in halted:
         print(
-            f"  speakers: assign the labels in {paths.speaker_assignment}, "
-            f"passages to listen to are in {paths.speaker_samples}"
+            f"  speakers: run transcript speakers {key} --assign, or edit "
+            f"{paths.speaker_assignment} by hand with {paths.speaker_samples}"
         )
     print(
         f"then run transcript process {key} again; what is left open stays "
