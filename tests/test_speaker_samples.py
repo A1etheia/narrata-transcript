@@ -76,7 +76,10 @@ class LabelSamplesTest(unittest.TestCase):
             [s.speech_ms for s in found_a.samples], [900, 800, 700, 500, 300]
         )
         first = found_a.samples[0]
-        self.assertEqual((first.passage, first.local_start_ms), (2, 20_000))
+        self.assertEqual(
+            (first.passage, first.local_start_ms, first.local_end_ms),
+            (2, 20_000, 20_900),
+        )
         assert first.span is not None
         self.assertEqual(first.span.start_ms, 20_000)
         self.assertEqual(first.text, "Satz 2")

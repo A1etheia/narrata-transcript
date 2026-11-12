@@ -201,7 +201,10 @@ class DoctorCommandTest(unittest.TestCase):
         *_, checked = self.doctor([], "beispielgruppe/42", "--config", "other.yaml")
 
         checked.assert_called_once_with(
-            Path("other.yaml"), SessionKey("beispielgruppe", 42), strict_resume=False
+            Path("other.yaml"),
+            SessionKey("beispielgruppe", 42),
+            strict_resume=False,
+            player=True,
         )
 
     def test_invalid_session_key_is_an_error(self) -> None:

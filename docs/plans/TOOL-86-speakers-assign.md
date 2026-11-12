@@ -47,7 +47,7 @@ Danach ordnet `transcript speakers <session> --assign` alle offenen Labels einer
 - Modell/Snapshot: *N/A because kein Modell; ein Snapshot-Wechsel zeigt sich über `unknown_person` in der Abschlussprüfung, `--all` erlaubt Nachziehen.*
 
 ## Dependency-Check
-- `ffplay`: *handled — gehört unter Ubuntu/Debian zum Paket `ffmpeg`, läuft lokal, Lizenz wie ffmpeg (LGPL/GPL); optional: fehlt es, gibt es keine Wiedergabe, sondern WAV und Zeit. `transcript doctor` meldet ein fehlendes `ffplay` als `warning`, nicht als Fehler.*
+- `ffplay`: *handled — gehört unter Ubuntu/Debian zum Paket `ffmpeg`, läuft lokal, Lizenz wie ffmpeg (LGPL/GPL); optional: fehlt es, gibt es keine Wiedergabe, sondern WAV und Zeit. `transcript doctor` meldet ein fehlendes `ffplay` als `warning`, nicht als Fehler; der Preflight von `process` prüft es nicht, weil `process` nichts abspielt.*
 - Python-Pakete: *N/A because keine neuen.*
 
 ## Format-Check

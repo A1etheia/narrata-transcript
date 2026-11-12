@@ -38,6 +38,7 @@ class Sample:
     passage: int
     speech_ms: int  # of the label within the passage
     local_start_ms: int | None  # in the segment's WAV
+    local_end_ms: int | None
     span: SessionSpan | None
     text: str
 
@@ -110,6 +111,7 @@ def label_samples(
                             passage=p.index,
                             speech_ms=ms,
                             local_start_ms=p.start_ms,
+                            local_end_ms=p.end_ms,
                             span=passage_span(segment, p),
                             text=" ".join(p.text.split()),
                         )

@@ -66,6 +66,7 @@ class PreflightTestCase(unittest.TestCase):
         self.search_path: str | None = str(self.bin)
         self.environ: dict[str, str] = {}
         self.free_bytes = 10**12
+        self.player: Path | None = Path("/opt/fake/ffplay")
 
     def write_config(self, extra: str = "") -> None:
         self.config.write_text(
@@ -80,9 +81,11 @@ class PreflightTestCase(unittest.TestCase):
             environ=self.environ,
             dotenv=self.root / ".env",
             disk_free=lambda path: self.free_bytes,
+            player=lambda: self.player,
         )
 
     def run_preflight(self, key=None, **options: object) -> list[preflight.Finding]:
+        options.setdefault("player", True)  # as `doctor` runs it
         return preflight.run(self.config, key, probes=self.probes(), **options)
 
     def by_check(self, findings, check: str) -> list[preflight.Finding]:
@@ -100,7 +103,7 @@ class EnvironmentTest(PreflightTestCase):
         self.assertEqual(preflight.warnings(findings), 0)
         self.assertEqual(
             [finding.check for finding in findings],
-            ["audio-tools", "config", "asr", "diarization"],
+            ["audio-tools", "player", "config", "asr", "diarization"],
         )
         (asr,) = self.by_check(findings, "asr")
         self.assertEqual(asr.message, "fake tiny (abc123) on cuda")
@@ -115,6 +118,16 @@ class EnvironmentTest(PreflightTestCase):
         self.assertIn("ffprobe not found", tools.message)
         self.assertEqual(self.levels(findings, "asr"), ["ok"])
         self.assertEqual(preflight.errors(findings), 1)
+
+    def test_missing_ffplay_is_only_a_warning(self) -> None:
+        self.player = None
+
+        findings = self.run_preflight()
+
+        (player,) = self.by_check(findings, "player")
+        self.assertEqual(player.level, "warning")
+        self.assertIn("ffplay not found", player.message)
+        self.assertFalse(preflight.blocked(findings))
 
     def test_missing_ffmpeg_is_an_error(self) -> None:
         (self.bin / "ffmpeg").unlink()
@@ -188,10 +201,10 @@ class EnvironmentTest(PreflightTestCase):
 
         self.assertEqual(
             [(finding.check, finding.level) for finding in findings],
-            [("audio-tools", "ok"), ("config", "error")],
+            [("audio-tools", "ok"), ("player", "ok"), ("config", "error")],
         )
-        self.assertIn("language", findings[1].message)
-        self.assertIn("skipped", findings[1].message)
+        self.assertIn("language", findings[2].message)
+        self.assertIn("skipped", findings[2].message)
 
     def test_missing_config_file_is_an_error(self) -> None:
         self.config.unlink()
@@ -280,6 +293,7 @@ class SessionTest(PreflightTestCase):
             list(dict.fromkeys(f.check for f in findings)),
             [
                 "audio-tools",
+                "player",
                 "config",
                 "asr",
                 "diarization",

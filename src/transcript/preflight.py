@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Protocol
 
-from transcript import audio, audio_tools, knowledge, manifest, narrata
+from transcript import audio, audio_tools, knowledge, manifest, narrata, speaker_player
 from transcript.asr.backend import Backend, BackendError, BackendIdentity, BackendInfo
 from transcript.asr.backend import identity as backend_identity
 from transcript.asr.whisper import WhisperBackend
@@ -55,6 +55,7 @@ class Probes:
     environ: Mapping[str, str] = field(default_factory=lambda: os.environ)
     dotenv: Path = Path(".env")
     disk_free: Callable[[Path], int] = lambda path: shutil.disk_usage(path).free
+    player: Callable[[], Path | None] = speaker_player.find_player
 
 
 @dataclass(frozen=True)
@@ -74,16 +75,20 @@ def run(
     *,
     diarize: bool = True,
     strict_resume: bool = False,
+    player: bool = False,
     probes: Probes = _PROBES,
 ) -> list[Finding]:
     """Check the environment and, with `key`, that session.
 
     `diarize=False` leaves the diarization out. `strict_resume` makes stored
     transcripts that `transcribe` would make again an error rather than a
-    warning, for `process`, which must not transcribe again unasked.
+    warning, for `process`, which must not transcribe again unasked. `player`
+    adds the optional ffplay, for `doctor`; `process` plays nothing.
     """
     findings: list[Finding] = []
     tools = _check_audio_tools(findings, probes)
+    if player:
+        _check_player(findings, probes)
     config = _check_config(findings, config_path)
     if config is None:
         return findings
@@ -128,6 +133,22 @@ def _check_audio_tools(
     )
     findings.append(Finding("ok", "audio-tools", found))
     return tools
+
+
+def _check_player(findings: list[Finding], probes: Probes) -> None:
+    """ffplay is optional: only `speakers --assign` plays samples with it."""
+    player = probes.player()
+    if player is None:
+        findings.append(
+            Finding(
+                "warning",
+                "player",
+                f"{speaker_player.PLAYER} not found on PATH; speakers --assign "
+                "cannot play samples (it comes with the ffmpeg package)",
+            )
+        )
+    else:
+        findings.append(Finding("ok", "player", str(player)))
 
 
 def _check_config(findings: list[Finding], path: Path) -> Config | None:

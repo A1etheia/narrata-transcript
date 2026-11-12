@@ -205,6 +205,8 @@ class LockAndLogTest(_Patched):
     def test_the_preflight_is_strict_unless_a_step_is_redone(self) -> None:
         self.process()
         self.assertTrue(self.mocks["_doctor"].call_args.kwargs["strict_resume"])
+        # process plays nothing, so the optional ffplay is not checked
+        self.assertFalse(self.mocks["_doctor"].call_args.kwargs["player"])
 
         self.process("--redo", "transcribe")
         self.assertFalse(self.mocks["_doctor"].call_args.kwargs["strict_resume"])

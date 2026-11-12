@@ -385,7 +385,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _doctor(raw_key: str | None, config_path: Path, strict_resume: bool = False) -> int:
+def _doctor(
+    raw_key: str | None,
+    config_path: Path,
+    strict_resume: bool = False,
+    player: bool = True,
+) -> int:
     """The preflight; only paths, counts and models reach the console (TOOL-66).
 
     Exit 0 when nothing stops a run, warnings included; 2 on any error.
@@ -395,7 +400,9 @@ def _doctor(raw_key: str | None, config_path: Path, strict_resume: bool = False)
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
-    findings = preflight.run(config_path, key, strict_resume=strict_resume)
+    findings = preflight.run(
+        config_path, key, strict_resume=strict_resume, player=player
+    )
     for finding in findings:
         line = f"{finding.level}: {finding.check}: {finding.message}"
         print(line, file=sys.stdout if finding.level == "ok" else sys.stderr)
@@ -1202,7 +1209,7 @@ def _process(args: argparse.Namespace) -> int:
 
     def preflight(_: bool) -> int:
         """The strict preflight, then the lock and the log: nothing runs twice."""
-        code = _doctor(session, config, strict_resume=args.redo is None)
+        code = _doctor(session, config, strict_resume=args.redo is None, player=False)
         if code != pipeline.OK:
             return code
         try:
