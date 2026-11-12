@@ -41,7 +41,7 @@ from transcript.domain import DomainContext
 from transcript.jsonfile import DataFileError
 from transcript.pipeline import StepName
 from transcript.reference import load_reference
-from transcript.session import SessionPaths
+from transcript.session import SessionKey, SessionPaths
 from transcript.uncertainty import load_assessment
 
 # pending: not started; stale: there, but outdated or inconsistent, so it is
@@ -482,3 +482,22 @@ def summarize(paths: SessionPaths, steps: tuple[StepStatus, ...]) -> SessionStat
         resume_from=None if resume is None else resume.step,
         command=command,
     )
+
+
+def step_lines(key: SessionKey, found: SessionStatus) -> tuple[str, ...]:
+    """One aligned line per step: name, state and detail."""
+    width = max(len(step.step) for step in found.steps)
+    return tuple(
+        f"{key}: {step.step:<{width}}  {step.state:<7}  {step.detail}".rstrip()
+        for step in found.steps
+    )
+
+
+def summary(key: SessionKey, found: SessionStatus) -> str:
+    """The session's state, its last step done and how it goes on."""
+    line = f"{key}: {found.overall}"
+    if found.last_done is not None:
+        line += f", last done: {found.last_done}"
+    if found.resume_from is not None:
+        line += f"; next: {found.resume_from} with {found.command}"
+    return line

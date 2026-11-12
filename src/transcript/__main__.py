@@ -36,6 +36,7 @@ from transcript import (
     review_sheet,
     speaker_samples,
     speakers,
+    status,
     uncertainty,
     variant_suggestions,
     working,
@@ -47,7 +48,7 @@ from transcript.diarization.pyannote import PyannoteDiarizer
 from transcript.domain import DomainContext
 from transcript.jsonfile import DataFileError
 from transcript.narrata_client import NarrataClientError, fetch_context, read_token
-from transcript.session import SessionKey, SessionPaths
+from transcript.session import SessionKey, SessionPaths, input_root, input_sessions
 from transcript.timecode import format_ms, parse_timecode
 from transcript.transcription import (
     OUTCOME_STATUSES,
@@ -263,6 +264,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         "output/<session>/transcript.docx; reads nothing else.",
     )
     docx_command.add_argument("session", help="session key <group>/<ordinal>")
+    status_command = commands.add_parser(
+        "status",
+        help="Show what is done and what is left of a session, or of every "
+        "session under input/, from its files alone; changes nothing.",
+    )
+    status_command.add_argument(
+        "session",
+        nargs="?",
+        help="session key <group>/<ordinal> (default: every session)",
+    )
     process_command = commands.add_parser(
         "process",
         help="Run every step of a session from the preflight to the report, "
@@ -305,6 +316,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         export_command,
         txt_command,
         docx_command,
+        status_command,
         process_command,
     ):
         command.add_argument(
@@ -319,6 +331,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _show_config(args.config)
     if args.command == "doctor":
         return _doctor(args.session, args.config)
+    if args.command == "status":
+        return _status(args.session, args.config)
     with _log_to_stderr():  # pipeline steps log progress and failed attempts
         if args.command == "extract":
             return _extract(args.session, args.config, args.stream)
@@ -387,6 +401,30 @@ def _doctor(raw_key: str | None, config_path: Path) -> int:
         return 2
     checks = len({finding.check for finding in findings})
     print(f"preflight ok: {checks} checks, {warnings} warning(s)")
+    return 0
+
+
+def _status(raw_key: str | None, config_path: Path) -> int:
+    """Step and session states; step names, counts and paths only (TOOL-66).
+
+    With a session one line per step and a closing line, without one a line per
+    session under `input/`. Exit 0, or 2 on an error.
+    """
+    try:
+        key = None if raw_key is None else SessionKey.parse(raw_key)
+        config = _load_config(config_path)
+    except (ValueError, ConfigError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    if key is not None:
+        found = status.inspect(config.session_paths(key), config)
+        print("\n".join((*status.step_lines(key, found), status.summary(key, found))))
+        return 0
+    keys = input_sessions(config.root)
+    if not keys:
+        print(f"no session under {input_root(config.root)}")
+    for each in keys:
+        print(status.summary(each, status.inspect(config.session_paths(each), config)))
     return 0
 
 

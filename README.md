@@ -71,6 +71,30 @@ transcript process beispielgruppe/042 --redo transcribe
 - **Optionen:** `--consent` und `--num-speakers` gehen an `manifest` und `transcribe`. Ein anderer Audiostream braucht vorher `transcript extract --stream`.
 - **Exit-Code:** `0` fertig und ohne Lücken, `1` fertig mit Lücken oder abgebrochen bei unvollständigem Schritt, `2` Fehler, `3` angehalten für die manuellen Schritte. Die Abschlusszeile nennt jeden Schritt mit `ran`, `reused`, `incomplete`, `halted` oder `failed`.
 
+## Status einer Sitzung
+
+```bash
+transcript status beispielgruppe/042 # jeder Schritt und wie es weitergeht
+transcript status                    # eine Zeile je Sitzung unter input/
+```
+
+`transcript status` zeigt, was von einer Sitzung erledigt ist und was fehlt. Abgeleitet wird das nur aus den Dateien unter `input/`, `work/` und `output/`, mit denselben Ladern und Prüfungen wie in den Schritten selbst. Eine Statusdatei gibt es nicht. Der Befehl schreibt nichts, ruft kein Netz und lädt kein Modell. Ob das konfigurierte Modell noch zu den gespeicherten Transkripten passt, prüft `transcript doctor`.
+
+Jeder Schritt mit eigener Datei bekommt einen Status:
+
+- `pending`: noch nicht gelaufen
+- `done`: erledigt und aktuell
+- `partial`: erledigt, aber mit Lücken, etwa offene Review-Kandidaten, offene Sprecher-Labels oder fehlende Segmente
+- `waiting`: wartet auf eine Person, also auf ein unberührtes oder noch nicht eingelesenes Review-Sheet oder auf eine unberührte Zuordnungsvorlage
+- `failed`: gescheitert, etwa ein Segment in `transcribe` oder ein nicht anwendbarer Eintrag in der Zuordnung
+- `stale`: vorhanden, aber veraltet oder inkonsistent; zählt nie als erledigt
+
+Als veraltet gilt zum Beispiel ein Transkript, das `transcribe` wegen eines anderen Snapshots, anderer Keywords oder einer anderen Sprache neu machen würde. Ab `working` ist jede Datei `stale`, die nicht mehr genau dem entspricht, was die aktuellen Eingaben ergeben, auch nach einer Änderung von Hand.
+
+Die Schlusszeile nennt den Gesamtstatus, den letzten erledigten Schritt und den Befehl zum Fortsetzen, bei veralteten Ergebnissen mit `--redo <schritt>`. Der Gesamtstatus ist, in dieser Rangfolge: `failed`, `waiting_for_review`, `open` (ein Schritt fehlt oder ist veraltet), `partial` (alles aktuell, aber mit Lücken), `complete`. Sind alle Schritte `pending`, lautet er `not_started`.
+
+Die Ausgabe nennt Schritte, Zähler, Segmentnummern, Lückencodes und Pfade, nie Teilnehmende, Labels, Glossar oder Transkripttext. Exit-Code `0`, oder `2` bei einem ungültigen Session-Key oder einer fehlerhaften Konfiguration.
+
 ## Audiospur extrahieren
 
 ```bash
