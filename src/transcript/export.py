@@ -40,7 +40,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from transcript.contract import CONTRACT_VERSION, summarize, validate
+from transcript.contract import SINGLE_RECORDING_VERSION, summarize, validate
 from transcript.decisions import ReviewStatus
 from transcript.jsonfile import DataFileError, write_bytes_atomic
 from transcript.knowledge import load_snapshot
@@ -114,7 +114,7 @@ def build(
             _passage(found, passage_id, label, participant_id, manifest, split)
         )
     return {
-        "contract_version": CONTRACT_VERSION,
+        "contract_version": SINGLE_RECORDING_VERSION,
         "tool_version": report.pipeline.tool_version,
         "session": {
             "group": group_id,

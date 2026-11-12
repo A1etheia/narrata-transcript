@@ -1,4 +1,4 @@
-"""The Narrata transcript contract v1 (IOA-1214): its schema and its checks.
+"""The Narrata transcript contract v1 (IOA-1214, 1.1: IOA-1287): schema and checks.
 
 Narrata owns the contract. `contracts/transcript-v1.schema.json` is a copy of
 the schema in the Narrata repository, never a version of our own; `SCHEMA_SOURCE`
@@ -11,7 +11,15 @@ jenseits des Schemas"):
 - passage ids are unique;
 - passages are chronological: `start` never falls;
 - `end` is not before `start`;
-- `speaker_label` is a key of `speakers`.
+- `speaker_label` is a key of `speakers`;
+- `source.recordings` only from `RECORDINGS_SINCE` on;
+- `recordings[0]` repeats `source.file_name`, `duration_seconds` and
+  `audio_sha256` and starts at 0;
+- `recordings[].starts_at` never falls (recordings may overlap);
+- with `recordings`, every passage starts inside one of them.
+
+As in Narrata, a recording rule stays silent where the schema already reports
+the value, so one defect is one violation.
 
 The transcription context has a contract of its own with its own version
 (`narrata.SUPPORTED_MAJOR`); the two rise independently.
@@ -32,13 +40,15 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-CONTRACT_VERSION = "1.0"
+CONTRACT_VERSION = "1.1"  # the latest minor this copy knows
+SINGLE_RECORDING_VERSION = "1.0"  # a session of one recording needs nothing newer
+RECORDINGS_SINCE = "1.1"  # the first version whose `source` may hold `recordings`
 SUPPORTED_MAJOR = 1
 SCHEMA_FILE = "transcript-v1.schema.json"
 SCHEMA_SOURCE = (
-    "ios-archiv 303cd6562, ios-archiv-backend/resources/contracts/" + SCHEMA_FILE
+    "ios-archiv e8bfb9702, ios-archiv-backend/resources/contracts/" + SCHEMA_FILE
 )
-SCHEMA_SHA256 = "05bf34543f0ac28a70bd2d5199b23064c05587fea3f76a7b2aac321dedda352f"
+SCHEMA_SHA256 = "019ae2df0cbe2a27a35a6e39d6416284d01251be48c3593207236acadd48e41d"
 
 _VERSION = re.compile(r"([1-9][0-9]*)\.(0|[1-9][0-9]*)")
 
@@ -84,6 +94,7 @@ def validate(document: Any) -> tuple[str, ...]:
             for pointer, path, rule in found
         ),
         *_rules(data, passages),
+        *_recording_rules(data, passages),
     )
 
 
@@ -97,8 +108,14 @@ def summarize(violations: Sequence[str], shown: int = 10) -> str:
 
 def _major(version: Any) -> int | None:
     """The major of a well-formed `contract_version`; the schema reports others."""
+    parsed = _version(version)
+    return None if parsed is None else parsed[0]
+
+
+def _version(version: Any) -> tuple[int, int] | None:
+    """Major and minor of a well-formed `contract_version`."""
     match = _VERSION.fullmatch(version) if isinstance(version, str) else None
-    return None if match is None else int(match.group(1))
+    return None if match is None else (int(match.group(1)), int(match.group(2)))
 
 
 def _rules(data: dict[str, Any], passages: Sequence[Any]) -> Iterable[str]:
@@ -126,6 +143,69 @@ def _rules(data: dict[str, Any], passages: Sequence[Any]) -> Iterable[str]:
         label = passage.get("speaker_label")
         if isinstance(label, str) and label not in labels:
             yield f"{where}: speaker_label not in speakers"
+
+
+def _recording_rules(data: dict[str, Any], passages: Sequence[Any]) -> Iterable[str]:
+    source = data.get("source")
+    if not isinstance(source, dict):
+        return
+    recordings = source.get("recordings")
+    if not isinstance(recordings, list):
+        return
+    version = _version(data.get("contract_version"))
+    since = _version(RECORDINGS_SINCE)
+    if version is not None and since is not None and version < since:
+        yield f"/source/recordings: needs contract version {RECORDINGS_SINCE} or later"
+    spans = {
+        n: span
+        for n, recording in enumerate(recordings)
+        if (span := _span(recording)) is not None
+    }
+    if 0 in spans and _repeats_source(recordings[0], source) is False:
+        yield (
+            "/source/recordings/0: does not repeat source file_name, "
+            "duration_seconds and audio_sha256 or does not start at 0"
+        )
+    previous: float | None = None
+    for n, (starts_at, _) in spans.items():
+        if previous is not None and starts_at < previous:
+            yield f"/source/recordings/{n}/starts_at: before the previous recording"
+        previous = starts_at
+    if len(spans) != len(recordings):
+        return  # the timeline is unknown; the schema reports the recording
+    for n, passage in enumerate(passages):
+        start = _number(passage.get("start")) if isinstance(passage, dict) else None
+        if start is None or any(a <= start <= b for a, b in spans.values()):
+            continue
+        yield f"/passages/{n}/start{_passage_note(passage)}: in no recording"
+
+
+def _span(recording: Any) -> tuple[float, float] | None:
+    """Start and end of a recording on the session timeline, if both are usable."""
+    if not isinstance(recording, dict):
+        return None
+    starts_at = _number(recording.get("starts_at"))
+    duration = _number(recording.get("duration_seconds"))
+    if starts_at is None or duration is None or starts_at < 0 or duration < 0:
+        return None
+    return starts_at, starts_at + duration
+
+
+def _repeats_source(first: Any, source: dict[str, Any]) -> bool | None:
+    """Whether `first` is the top-level source; None when the schema has spoken."""
+    if not isinstance(first, dict):
+        return None
+    fields = ("file_name", "audio_sha256")
+    duration = _number(source.get("duration_seconds"))
+    if duration is None or not all(
+        isinstance(part.get(field), str) for part in (first, source) for field in fields
+    ):
+        return None
+    return (
+        all(first[field] == source[field] for field in fields)
+        and _number(first.get("duration_seconds")) == duration
+        and _number(first.get("starts_at")) == 0.0
+    )
 
 
 def _number(value: Any) -> float | None:
