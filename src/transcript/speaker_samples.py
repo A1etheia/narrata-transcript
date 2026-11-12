@@ -139,7 +139,7 @@ def render(
         "| user_id | name | role | membership |",
         "| --- | --- | --- | --- |",
     ]
-    for participant in sorted(participants, key=lambda p: p.is_former):
+    for participant in ordered(participants):
         membership = "former" if participant.is_former else "active"
         lines.append(
             f"| {participant.user_id} | {_cell(participant.display_name)} "
@@ -158,8 +158,18 @@ def render(
             )
         if found.samples:
             lines.append("")
-        lines += [_sample(sample) for sample in found.samples]
+        lines += [f"- {sample_line(sample)}" for sample in found.samples]
     return "\n".join(lines) + "\n"
+
+
+def ordered(participants: Iterable[Participant]) -> tuple[Participant, ...]:
+    """Present first, then active, then former members; by name within each."""
+    return tuple(
+        sorted(
+            participants,
+            key=lambda p: (p.present is not True, p.is_former, p.display_name),
+        )
+    )
 
 
 def _summary(found: LabelSamples, assignment: SpeakerMap) -> str:
@@ -169,11 +179,12 @@ def _summary(found: LabelSamples, assignment: SpeakerMap) -> str:
     return f"- speech time {format_ms(found.speech_ms)}{share}; assigned: {who}"
 
 
-def _sample(sample: Sample) -> str:
+def sample_line(sample: Sample) -> str:
+    """Session time, WAV time, passage and speech time of a sample, then its text."""
     session = "?" if sample.span is None else sample.span.timecode()
     local = "?" if sample.local_start_ms is None else format_ms(sample.local_start_ms)
     return (
-        f"- {session} (WAV {local}, passage {sample.passage}, "
+        f"{session} (WAV {local}, passage {sample.passage}, "
         f"{format_ms(sample.speech_ms)}): {sample.text}"
     )
 

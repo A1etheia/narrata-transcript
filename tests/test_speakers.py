@@ -28,6 +28,7 @@ from transcript.speakers import (
     set_effort,
     set_entry,
     template,
+    with_entry,
     write_assignment,
     write_template,
 )
@@ -191,6 +192,17 @@ class CheckTest(unittest.TestCase):
                     f.kind for f in check(assignment, [changed], PARTICIPANTS).findings
                 ]
                 self.assertEqual(kinds, ["stale"])
+
+    def test_with_entry_replaces_in_place_or_appends(self) -> None:
+        first, second = entry(FIRST, "SPEAKER_00"), entry(FIRST, "SPEAKER_01")
+        assignment = SpeakerAssignment((first, second), 3)
+        chosen = entry(FIRST, "SPEAKER_00", 11)
+        added = entry(SECOND, "SPEAKER_00", 12)
+
+        self.assertEqual(
+            with_entry(assignment, chosen), SpeakerAssignment((chosen, second), 3)
+        )
+        self.assertEqual(with_entry(assignment, added).entries, (first, second, added))
 
     def test_a_person_needs_a_user_id_and_only_a_person_has_one(self) -> None:
         with self.assertRaisesRegex(ValueError, "user_id"):

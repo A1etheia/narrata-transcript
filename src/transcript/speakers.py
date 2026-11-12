@@ -300,6 +300,19 @@ def _document(paths: SessionPaths, assignment: SpeakerAssignment) -> dict[str, A
     }
 
 
+def with_entry(
+    assignment: SpeakerAssignment, entry: AssignmentEntry
+) -> SpeakerAssignment:
+    """`assignment` with `entry` in place of the one for its label, or appended."""
+    entries = [e for e in assignment.entries if e.key != entry.key]
+    position = next(
+        (n for n, e in enumerate(assignment.entries) if e.key == entry.key),
+        len(entries),
+    )
+    entries.insert(position, entry)
+    return dataclasses.replace(assignment, entries=tuple(entries))
+
+
 def set_entry(paths: SessionPaths, entry: AssignmentEntry) -> None:
     """Store `entry` in place of the one for its label, or append it.
 

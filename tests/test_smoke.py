@@ -1726,6 +1726,59 @@ class SpeakersCommandTest(_DiarizedSession):
             "warning: segment 1: 2 labels assigned to one person, merged", stdout
         )
 
+    def assign(self, *answers: object, every: bool = False) -> tuple[int, str, str]:
+        """`speakers --assign` at a scripted terminal without a player."""
+        argv = ["speakers", str(KEY), "--assign", "--config", str(self.config)]
+        with (
+            mock.patch.object(transcript_main, "_interactive", return_value=True),
+            mock.patch.object(
+                transcript_main.speaker_player, "find_player", return_value=None
+            ),
+            mock.patch("builtins.input", side_effect=list(answers)),
+        ):
+            return run(*argv, *(["--all"] if every else []))
+
+    def test_assign_settles_the_labels_and_ends_with_the_check(self) -> None:
+        code, stdout, stderr = self.assign("p", "1", "u", "y")
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("ffplay not found; listen in", stdout)
+        self.assertIn("beispielgruppe/042: assigned 2 label(s), 0 left", stdout)
+        self.assertIn("0 multiple, 0 open, 1 person, 1 unknown", stdout)
+        data = json.loads(self.paths.speaker_assignment.read_text(encoding="utf-8"))
+        self.assertEqual(
+            [item["assigned"] for item in data["entries"]], ["person", "unknown"]
+        )
+        self.assertIsNotNone(data["effort_minutes"])
+
+    def test_assign_interrupted_keeps_what_was_confirmed(self) -> None:
+        code, stdout, _ = self.assign("1", KeyboardInterrupt())
+
+        self.assertEqual(code, 130)
+        self.assertIn("beispielgruppe/042: interrupted; 1 label(s) saved", stdout)
+        data = json.loads(self.paths.speaker_assignment.read_text(encoding="utf-8"))
+        self.assertEqual(
+            [item["assigned"] for item in data["entries"]], ["person", "open"]
+        )
+
+    def test_assign_without_a_terminal_stops_before_showing_anything(self) -> None:
+        code, stdout, stderr = run(
+            "speakers", str(KEY), "--assign", "--config", str(self.config)
+        )
+
+        self.assertEqual((code, stdout), (2, ""))
+        self.assertIn("needs an interactive terminal", stderr)
+        self.assert_nothing_secret(stderr)
+        self.assertFalse(self.paths.speaker_assignment.exists())
+
+    def test_all_needs_assign(self) -> None:
+        code, _, stderr = run(
+            "speakers", str(KEY), "--all", "--config", str(self.config)
+        )
+
+        self.assertEqual(code, 2)
+        self.assertIn("--all only works with --assign", stderr)
+
     def test_without_a_snapshot_asks_for_it(self) -> None:
         self.paths.knowledge_snapshot.unlink()
 
