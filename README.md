@@ -350,14 +350,16 @@ Pro Label zeigt der Dialog Redezeit, Anteil, den Vermerk „Kandidat für Zusamm
 
 | Eingabe | Wirkung |
 | --- | --- |
-| `p` oder Enter | nächste Hörprobe abspielen |
+| Buchstabe `a`–`e` | diese Hörprobe abspielen |
+| `p` oder Enter | nächste Hörprobe abspielen, beim ersten Mal Probe `a` |
 | `r` | dieselbe Probe noch einmal |
+| Strg+C während einer Probe | nur die Probe anhalten, der Dialog läuft weiter |
 | Zahl | die Person mit dieser Nummer aus der Teilnehmerliste |
 | `u` / `m` | `unknown` / `multiple` |
 | `s` | überspringen, das Label bleibt, wie es ist |
 | `q` | beenden; der Aufwand wird trotzdem angeboten |
 
-- **Hörproben:** `ffplay` spielt die Passage aus dem Segment-WAV ab, ab ihrer Zeit im WAV und höchstens 12 Sekunden lang. Fehlt `ffplay` oder gibt es keine Audioausgabe (etwa WSL ohne Ton), nennt der Dialog Datei und Zeit, und man hört in einem anderen Player nach.
+- **Hörproben:** Proben tragen Buchstaben, Personen Zahlen, damit sich beides nicht verwechseln lässt. Vor jeder Wiedergabe kündigt `▶ playing audio: sample b, 12 s` an, was gleich zu hören ist. `ffplay` spielt die Passage aus dem Segment-WAV ab, ab ihrer Zeit im WAV und höchstens 12 Sekunden lang. Tasten, die während der Wiedergabe getippt werden, verfallen, damit sie nicht als nächste Antwort gelten. Fehlt `ffplay` oder gibt es keine Audioausgabe (etwa WSL ohne Ton), nennt der Dialog Datei und Zeit, und man hört in einem anderen Player nach.
 - **Speichern:** Jede Wahl wird sofort und atomar in `assignment.json` geschrieben. Alle anderen Einträge bleiben inhaltlich, wie sie gelesen wurden, auch mit zusätzlichen Feldern; die Datei bekommt dabei die Standardformatierung. Wer nichts wählt, lässt die Datei unberührt.
 - **Zusammenlegen:** Spricht die gewählte Person im selben Segment schon als anderes Label, fragt der Dialog nach, weil die Labels dann zusammengeführt werden.
 - **Aufwand:** Am Ende schlägt der Dialog die gemessene Dauer als `effort_minutes` vor, zum bisherigen Wert addiert, und speichert sie nur nach `y`.

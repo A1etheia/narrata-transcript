@@ -2,11 +2,15 @@
 
 `ffplay` ships with ffmpeg. Without it, or without an audio output (WSL without
 sound), nothing plays and the caller names file and time instead. ffplay's own
-output is dropped: nothing in it is needed. This module logs nothing.
+output is dropped: nothing in it is needed. Ctrl+C stops the sample only, and
+keys typed while it plays are discarded, so they are not taken as the next
+answer. This module logs nothing.
 """
 
 import shutil
 import subprocess
+import sys
+import termios
 from pathlib import Path
 from typing import Literal
 
@@ -14,7 +18,7 @@ PLAYER = "ffplay"
 MAX_SAMPLE_MS = 12_000  # a sample is the passage, cut to this length
 _GRACE_SECONDS = 10  # beyond the sample, before a hanging player is given up
 
-Played = Literal["played", "missing", "failed"]
+Played = Literal["played", "stopped", "missing", "failed"]
 
 
 def find_player(search_path: str | None = None) -> Path | None:
@@ -47,7 +51,7 @@ def command(player: Path, wav: Path, start_ms: int, duration_ms: int) -> list[st
 
 
 def play(player: Path | None, wav: Path, start_ms: int, end_ms: int | None) -> Played:
-    """Play one sample and wait for it; Ctrl+C stops the player and propagates."""
+    """Play one sample and wait for it; Ctrl+C stops the sample, not the caller."""
     if player is None:
         return "missing"
     duration_ms = sample_ms(start_ms, end_ms)
@@ -60,6 +64,19 @@ def play(player: Path | None, wav: Path, start_ms: int, end_ms: int | None) -> P
             timeout=duration_ms / 1000 + _GRACE_SECONDS,
             check=False,
         )
+    except KeyboardInterrupt:  # subprocess.run has killed the player
+        return "stopped"
     except (OSError, subprocess.TimeoutExpired):
         return "failed"
+    finally:
+        _drop_typeahead()
     return "played" if result.returncode == 0 else "failed"
+
+
+def _drop_typeahead() -> None:
+    """Discard what was typed at the terminal while the sample played."""
+    try:
+        if sys.stdin.isatty():
+            termios.tcflush(sys.stdin, termios.TCIFLUSH)
+    except (OSError, ValueError):
+        pass

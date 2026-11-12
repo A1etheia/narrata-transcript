@@ -20,14 +20,14 @@ from transcript import speakers
 from transcript.narrata import Participant
 from transcript.reference import ReferenceTranscript
 from transcript.session import SessionPaths
-from transcript.speaker_player import Played
+from transcript.speaker_player import Played, sample_ms
 from transcript.speaker_samples import LabelSamples, ordered, sample_line
 from transcript.speakers import AssignmentEntry, SpeakerAssignment, SpeakerMap, UserId
 from transcript.timecode import format_ms
 
-_HELP = (
-    "[p] next sample, [r] again, [1-{n}] person, [u]nknown, [m]ultiple, [s]kip, [q]uit"
-)
+_LETTERS = "abcdefghijkl"  # samples, short of the command keys; numbers are people
+_HELP_PLAY = "play audio: [{first}-{last}] that sample, [p] next, [r] again"
+_HELP_ASSIGN = "assign: [1-{n}] person, [u]nknown, [m]ultiple; [s]kip, [q]uit"
 _SKIP: Literal["skip"] = "skip"
 _QUIT: Literal["quit"] = "quit"
 
@@ -93,7 +93,7 @@ class _Dialogue:
         self.participants = participants
         self.console = console
         self.people = ordered(participants)
-        self.help = _HELP.format(n=len(self.people))
+        self.help_assign = _HELP_ASSIGN.format(n=len(self.people))
         self.versions = {
             r.segment.index: speakers.labels_version(r) for r in references
         }
@@ -136,22 +136,28 @@ class _Dialogue:
             f"[{position}/{total}] segment {found.segment}, {found.label}: {_measure(found)}"
         )
         say(f"  now: {self._now(found)}")
-        for number, sample in enumerate(found.samples, start=1):
-            say(f"  {number}. {sample_line(sample)}")
-        if not found.samples:
+        letters = _LETTERS[: len(found.samples)]
+        for letter, sample in zip(letters, found.samples, strict=False):
+            say(f"  {letter}) {sample_line(sample)}")
+        if letters:
+            play_help = _HELP_PLAY.format(first=letters[0], last=letters[-1])
+            help_line = f"{play_help}\n{self.help_assign}"
+        else:
             say("  no passage with speech time")
+            help_line = self.help_assign
         played: int | None = None
         while True:
-            answer = self.console.ask(self.help + ": ").strip().lower()
+            answer = self.console.ask(f"{help_line}\n> ").strip().lower()
+            if letters and (answer in ("p", "", "r") or answer in letters):
+                if answer in letters:
+                    played = letters.index(answer)
+                elif answer == "r":
+                    played = played or 0
+                else:
+                    played = 0 if played is None else (played + 1) % len(letters)
+                self._play(found, played)
+                continue
             if answer in ("p", "", "r"):
-                if found.samples:
-                    if answer == "r":
-                        played = played or 0
-                    else:
-                        played = (
-                            0 if played is None else (played + 1) % len(found.samples)
-                        )
-                    self._play(found, played)
                 continue
             if answer == "s":
                 return _SKIP
@@ -161,7 +167,7 @@ class _Dialogue:
                 return self._entry(found, "unknown" if answer == "u" else "multiple")
             person = self._person(answer)
             if person is None:
-                say(f"  not a choice; {self.help}")
+                say(f"  not a choice: {answer}")
             elif self._confirm_merge(found, person):
                 return self._entry(found, "person", person.user_id)
 
@@ -223,13 +229,19 @@ class _Dialogue:
 
     def _play(self, found: LabelSamples, index: int) -> None:
         sample = found.samples[index]
+        letter = _LETTERS[index]
         if sample.local_start_ms is None:
-            self.console.say(f"  sample {index + 1} has no time to play from")
+            self.console.say(f"  sample {letter} has no time to play from")
             return
         wav = self.paths.segment_wav(found.segment)
-        self.console.say(f"  playing sample {index + 1} …")
+        seconds = sample_ms(sample.local_start_ms, sample.local_end_ms) / 1000
+        self.console.say(
+            f"  ▶ playing audio: sample {letter}, {seconds:.0f} s (Ctrl+C stops it) …"
+        )
         played = self.console.play(wav, sample.local_start_ms, sample.local_end_ms)
-        if played != "played":
+        if played == "stopped":
+            self.console.say("  ■ stopped")
+        elif played != "played":
             reason = "ffplay not found" if played == "missing" else "playback failed"
             where = f"{wav} at {format_ms(sample.local_start_ms)}"
             self.console.say(f"  {reason}; listen in {where}")

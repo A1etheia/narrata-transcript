@@ -116,9 +116,9 @@ class DialogueTest(_SessionCase):
         write_assignment(self.paths, assignment)
         self.assignment = assignment
 
-    def run_dialogue(self, script: Script, every: bool = False):
+    def run_dialogue(self, script: Script, every: bool = False, labels=LABELS):
         return run(
-            self.paths, LABELS, REFERENCES, PARTICIPANTS, self.assignment,
+            self.paths, labels, REFERENCES, PARTICIPANTS, self.assignment,
             script.console(), every,
         )  # fmt: skip
 
@@ -156,6 +156,47 @@ class DialogueTest(_SessionCase):
 
         wav = self.paths.segment_wav(1)
         self.assertEqual(script.played, [(wav, 4_000, 6_500)] * 2)
+
+    def test_a_letter_plays_that_sample_and_says_audio_is_coming(self) -> None:
+        first = LABELS[1].samples[0]
+        later = dataclasses.replace(first, local_start_ms=9_000, local_end_ms=30_000)
+        labels = (
+            LABELS[0],
+            dataclasses.replace(LABELS[1], samples=(first, later)),
+            LABELS[2],
+        )
+        script = Script("b", "a", "p", "s", "s", "s", "")
+
+        self.run_dialogue(script, labels=labels)
+
+        self.assertIn("  b) ?", [line[:6] for line in script.said])
+        self.assertEqual(
+            [start for _, start, _ in script.played], [9_000, 4_000, 9_000]
+        )
+        self.assertIn(
+            "  ▶ playing audio: sample b, 12 s (Ctrl+C stops it) …", script.said
+        )
+        self.assertTrue(
+            any(p.startswith("play audio: [a-b] that sample") for p in script.said)
+        )
+
+    def test_a_stopped_sample_keeps_the_dialogue_going(self) -> None:
+        script = Script("p", "1", "s", "s", "")
+        script.result = "stopped"
+
+        outcome = self.run_dialogue(script)
+
+        self.assertIn("  ■ stopped", script.said)
+        self.assertFalse(outcome.interrupted)
+        self.assertEqual(outcome.saved, 1)
+
+    def test_a_number_picks_a_person_never_a_sample(self) -> None:
+        script = Script("1", "s", "s", "")
+
+        self.run_dialogue(script)
+
+        self.assertEqual(script.played, [])
+        self.assertEqual(self.stored(), {(1, "SPEAKER_01"): ("person", 11)})
 
     def test_without_player_the_file_and_time_are_named(self) -> None:
         script = Script("p", "s", "s", "s", "")

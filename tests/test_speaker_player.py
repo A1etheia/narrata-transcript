@@ -65,6 +65,22 @@ class PlayTest(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(self.run_with(**result)[0], "failed")
 
+    def test_ctrl_c_stops_the_sample_only(self) -> None:
+        played, _ = self.run_with(error=KeyboardInterrupt())
+
+        self.assertEqual(played, "stopped")
+
+    def test_keys_typed_while_playing_are_dropped(self) -> None:
+        with (
+            mock.patch.object(speaker_player.sys.stdin, "isatty", return_value=True),
+            mock.patch.object(speaker_player.termios, "tcflush") as flush,
+        ):
+            self.run_with(code=0)
+
+        flush.assert_called_once_with(
+            speaker_player.sys.stdin, speaker_player.termios.TCIFLUSH
+        )
+
     def test_without_player_nothing_runs(self) -> None:
         with mock.patch.object(speaker_player.subprocess, "run") as run:
             self.assertEqual(play(None, WAV, 0, 1_000), "missing")
