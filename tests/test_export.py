@@ -6,7 +6,7 @@ from typing import Any
 from test_candidates import ONLY_FIRST
 from test_decisions import NONE
 from test_report import BLOCK_MS, _KnownSession, _ReportCase
-from test_session_time import MANIFEST, SECOND, SOURCE
+from test_session_time import FIRST, MANIFEST, SECOND, SOURCE
 from test_speakers import NAME, PARTICIPANTS, entry
 from test_uncertainty import diarized, transcript
 from test_working import SURE, UNSURE, spoken
@@ -30,6 +30,21 @@ from transcript.working import compose as compose_working
 
 GROUP_ID = 7  # made up, like every id here
 GROUPS = {"beispielgruppe": GROUP_ID}
+OTHER_SOURCE = dataclasses.replace(SOURCE, file="zweite.m4a", sha256="cd" * 32)
+# The recordings back to back, as `transcript manifest` lays them out
+TWO_RECORDINGS = dataclasses.replace(
+    MANIFEST,
+    segments=(
+        FIRST,
+        dataclasses.replace(
+            SECOND,
+            source=OTHER_SOURCE,
+            start_ms=FIRST.end_ms,
+            end_ms=FIRST.end_ms + SECOND.duration_ms,
+            overlap_before_ms=0,
+        ),
+    ),
+)
 
 
 def at(passage: Passage, start_ms: int | None) -> Passage:
@@ -135,6 +150,53 @@ class DocumentTest(_ExportCase):
 
         self.assertEqual(set(self.passages(document, "segment_ref")), {"segment-01"})
         self.assertEqual(validate(document), ())
+
+    def test_a_split_recording_is_one_recording_of_contract_1_0(self) -> None:
+        document = self.exported(manifest=MANIFEST)
+
+        self.assertEqual(document["contract_version"], "1.0")
+        self.assertEqual(
+            document["source"],
+            {
+                "file_name": SOURCE.file,
+                "duration_seconds": MANIFEST.duration_ms / 1000,
+                "audio_sha256": SOURCE.sha256,
+            },
+        )
+
+
+class RecordingsTest(_ExportCase):
+    """A session recorded as two files: contract 1.1 with `source.recordings`."""
+
+    def test_two_recordings_are_listed_in_session_order(self) -> None:
+        document = self.exported(manifest=TWO_RECORDINGS)
+
+        first = {
+            "file_name": SOURCE.file,
+            "duration_seconds": FIRST.duration_ms / 1000,
+            "audio_sha256": SOURCE.sha256,
+        }
+        second = {
+            "file_name": OTHER_SOURCE.file,
+            "duration_seconds": SECOND.duration_ms / 1000,
+            "audio_sha256": OTHER_SOURCE.sha256,
+            "starts_at": FIRST.duration_ms / 1000,
+        }
+        self.assertEqual(document["contract_version"], "1.1")
+        self.assertEqual(
+            document["source"],
+            {**first, "recordings": [{**first, "starts_at": 0.0}, second]},
+        )
+        self.assertEqual(validate(document), ())
+
+    def test_two_recordings_are_written_as_one_file(self) -> None:
+        stored, report = self.reported(manifest=TWO_RECORDINGS)
+
+        write_export(
+            self.paths, build(stored, TWO_RECORDINGS, report, PARTICIPANTS, GROUP_ID)
+        )
+
+        self.assertTrue(self.paths.transcript_export.is_file())
 
 
 class ReviewTest(_ExportCase):
@@ -262,19 +324,6 @@ class RefusalTest(_ExportCase):
         message = str(raised.exception)
         self.assertIn("segment 1, passage 2: no start or end time", message)
         self.assertNotIn("wort", message)
-
-    def test_several_recordings_are_refused(self) -> None:
-        other = dataclasses.replace(SOURCE, file="zweite.m4a", sha256="cd" * 32)
-        manifest = dataclasses.replace(
-            MANIFEST,
-            segments=(
-                ONLY_FIRST.segments[0],
-                dataclasses.replace(SECOND, source=other),
-            ),
-        )
-
-        with self.assertRaisesRegex(ExportError, "2 recordings.*IOA-1287"):
-            self.exported(manifest=manifest)
 
     def test_a_play_session_id_that_is_no_integer_is_refused(self) -> None:
         manifest = dataclasses.replace(ONLY_FIRST, play_session_id="ps-4711")

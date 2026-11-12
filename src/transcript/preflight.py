@@ -238,16 +238,6 @@ def _check_input(
             f"{len(recordings)} recording(s), {format_ms(total_ms)} in total",
         )
     )
-    if len(recordings) > 1:
-        findings.append(
-            Finding(
-                "warning",
-                "session-input",
-                f"{len(recordings)} recordings: they are transcribed as segments, "
-                "but the JSON export of several recordings needs contract 1.1 "
-                "(IOA-1287)",
-            )
-        )
     return recordings, infos
 
 

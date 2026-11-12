@@ -50,7 +50,7 @@ Vor einem langen Lauf prüft `transcript doctor`, ob alles bereitsteht. Ohne Ses
 - ob der Wissens-Snapshot gültig und aktuell ist
 - ob `audio.json`, Manifest und gespeicherte Transkripte zueinander und zu den Aufnahmen passen; `audio.json` wird nur über Dateiname und Größe verglichen
 
-Jede Prüfung meldet `ok`, `warning` oder `error`, und alle laufen durch, auch nach einem Fehler. Fehler blockieren den Start, Warnungen nicht. Warnungen gibt es etwa bei einem CPU-Lauf trotz `asr.device: auto`, bei mehreren Aufnahmen (Export erst mit Contract 1.1, IOA-1287), bei fehlendem oder veraltetem Snapshot, bei fehlender Einwilligungsnotiz und bei Segmenten, die `transcribe` neu transkribieren würde (dieselbe Regel wie beim Wiederverwenden). Die `ok`-Zeilen und `preflight ok: …` gehen auf stdout, Warnungen, Fehler und `preflight failed: …` auf stderr. Exit-Code 0 heißt: nichts hält den Lauf auf, auch mit Warnungen. Exit-Code 2 heißt: mindestens ein Fehler.
+Jede Prüfung meldet `ok`, `warning` oder `error`, und alle laufen durch, auch nach einem Fehler. Fehler blockieren den Start, Warnungen nicht. Warnungen gibt es etwa bei einem CPU-Lauf trotz `asr.device: auto`, bei fehlendem oder veraltetem Snapshot, bei fehlender Einwilligungsnotiz und bei Segmenten, die `transcribe` neu transkribieren würde (dieselbe Regel wie beim Wiederverwenden). Die `ok`-Zeilen und `preflight ok: …` gehen auf stdout, Warnungen, Fehler und `preflight failed: …` auf stderr. Exit-Code 0 heißt: nichts hält den Lauf auf, auch mit Warnungen. Exit-Code 2 heißt: mindestens ein Fehler.
 
 Der Preflight schreibt nichts und legt keine Verzeichnisse an. Er braucht weder ein Alttranskript noch, bei gespeichertem Kontext, ein Token. Die Ausgabe nennt Pfade, Zähler und Modelle, nie Teilnehmende, Glossar oder Transkripttext.
 
@@ -618,8 +618,9 @@ transcript working beispielgruppe/042
 transcript export beispielgruppe/042
 ```
 
-- **Contract:** Das Schema gehört Narrata. `src/transcript/contracts/transcript-v1.schema.json` ist eine Kopie, deren Herkunft und SHA-256 in `transcript.contract` stehen; ein Test prüft beides. Vor dem Schreiben prüft `contract.validate` die Datei gegen das Schema und die Regeln jenseits davon (bekannte Major, eindeutige IDs, chronologisch, `end` nicht vor `start`, Label in `speakers`). Bei einem Verstoß wird nichts geschrieben.
-- **Grundlage:** wie beim [Abschlussbericht](#abschlussbericht) die aktuelle Arbeitsfassung. `stats` ist der Bericht, `contract_version` ist `"1.0"`.
+- **Contract:** Das Schema gehört Narrata. `src/transcript/contracts/transcript-v1.schema.json` ist eine Kopie, deren Herkunft und SHA-256 in `transcript.contract` stehen; ein Test prüft beides. Vor dem Schreiben prüft `contract.validate` die Datei gegen das Schema und die Regeln jenseits davon (bekannte Major, eindeutige IDs, chronologisch, `end` nicht vor `start`, Label in `speakers`; bei `source.recordings` außerdem Version ab 1.1, erste Aufnahme gleich `source` mit `starts_at` 0, `starts_at` nie fallend, jede Passage beginnt in einer Aufnahme). Bei einem Verstoß wird nichts geschrieben.
+- **Grundlage:** wie beim [Abschlussbericht](#abschlussbericht) die aktuelle Arbeitsfassung. `stats` ist der Bericht.
+- **Aufnahmen und Version:** Eine Aufnahme sind die aufeinanderfolgenden Segmente aus derselben Datei in `input/`. Bei einer Aufnahme ist `contract_version` `"1.0"`, und `source` nennt Dateiname, Länge und SHA-256 der Aufnahme. Bei mehreren Aufnahmen ist sie `"1.1"` (IOA-1287): `source` nennt die erste, `source.recordings[]` alle in Sitzungsreihenfolge, jede mit `starts_at`, ihrem Beginn auf der Session-Zeitachse. Pausen zwischen den Aufnahmen sind unbekannt, deshalb liegen sie lückenlos hintereinander.
 - **Sitzung:** `session.group` kommt aus `narrata.groups` der Konfiguration, Ordinal, `play_session_id` und Datum aus dem Manifest. Fehlt der Eintrag für die Gruppe, bricht der Export ab.
 - **Sprecher:** Labels gelten pro Segment, im Contract für die Sitzung, daher `s01-SPEAKER_00`. Passagen ohne Label heißen `unlabelled`. In `speakers` steht nur bei einer zugeordneten Person `participant_id` (User-ID) und `display_name` aus dem Wissens-Snapshot; `open`, `unknown`, `multiple` und `unlabelled` sind `null`.
 - **Passagen-ID:** `p-<Sitzungsstart in ms, 8-stellig>-<Slug des Labels>`, etwa `p-00734120-s01-speaker-00`, bei gleichem Start und Label mit `-2`, `-3`. Start und Label stammen aus dem Referenztranskript, das kein Review ändert. Ein Re-Export nach weiterem Review behält deshalb jede ID. Neu transkribieren oder neu diarisieren erzeugt neue Passagen und damit neue IDs.
@@ -636,8 +637,8 @@ transcript export beispielgruppe/042
 | `text` (`null` bei `unintelligible`) | `text` (`""` bei `unintelligible`) |
 | `asr_text` | `asr_text`, nur wenn es vom Text abweicht, sonst `null` |
 
-- **Leer in v1:** `review_note` (`null`), `knowledge_hints` und `layers` (`[]`, `{}`). `segment_ref` ist `segment-NN`, wenn die Aufnahme geteilt wurde, sonst `null`.
-- **Verweigert:** eine Passage ohne Start oder Ende (der Contract verlangt beide, nichts wird ergänzt), eine Sitzung aus mehreren Aufnahmen (v1 kennt nur eine `source`, IOA-1287), eine `play_session_id` oder User-ID, die keine ganze Zahl ist, und eine leere Arbeitsfassung.
+- **Leer in v1:** `review_note` (`null`), `knowledge_hints` und `layers` (`[]`, `{}`). `segment_ref` ist `segment-NN`, wenn die Sitzung mehr als ein Segment hat, sonst `null`.
+- **Verweigert:** eine Passage ohne Start oder Ende (der Contract verlangt beide, nichts wird ergänzt), eine `play_session_id` oder User-ID, die keine ganze Zahl ist, und eine leere Arbeitsfassung.
 - **Gleiche Eingaben, gleiche Datei:** sortierte Keys, kein Zeitstempel.
 - **Daten:** Die Datei enthält Text, Anzeigenamen und User-IDs. Sie bleibt unter `output/` und geht nur über den Import nach Narrata. Die Konsole zeigt nur Zahlen, Codes und den Pfad, etwa `export: 539 passage(s), 16 open, 5 speaker label(s)`. Fehlermeldungen nennen Segment, Passage, JSON-Pfad und Regel, nie einen Wert.
 - **Exit-Code:** `0` geschrieben, auch mit offenen Passagen (die Lücken aus dem Bericht stehen auf stderr), `2` Fehler oder Verweigerung.

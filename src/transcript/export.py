@@ -19,10 +19,15 @@ What the contract needs and the working version holds differently:
 - An unintelligible passage has the text `""` and an `unintelligible` marker;
   the recognised text stays in `asr_text`. An open passage is
   `review_status: open`, not a marker.
+- A recording is the run of segments cut from one source file; `starts_at` is
+  where its first segment starts on the session timeline. A session of one
+  recording is contract 1.0 without `source.recordings`, so its export stays as
+  it was; a session of several is 1.1, with `source` naming the first and
+  `source.recordings` all of them (IOA-1287).
 
-The contract needs a start and an end for every passage, one recording per
-session (more: IOA-1287) and integer Narrata ids; a working version that cannot
-give them is an `ExportError`, never filled in.
+The contract needs a start and an end for every passage and integer Narrata
+ids; a working version that cannot give them is an `ExportError`, never filled
+in.
 
 `write_export` stores the document as `output/<s>/transcript.json` after
 `contract.validate` found nothing; with sorted keys and no time stamp, equal
@@ -34,13 +39,19 @@ an id.
 
 import dataclasses
 import hashlib
+import itertools
 import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from transcript.contract import SINGLE_RECORDING_VERSION, summarize, validate
+from transcript.contract import (
+    RECORDINGS_SINCE,
+    SINGLE_RECORDING_VERSION,
+    summarize,
+    validate,
+)
 from transcript.decisions import ReviewStatus
 from transcript.jsonfile import DataFileError, write_bytes_atomic
 from transcript.knowledge import load_snapshot
@@ -113,8 +124,9 @@ def build(
         passages.append(
             _passage(found, passage_id, label, participant_id, manifest, split)
         )
+    contract_version, source = _source(manifest)
     return {
-        "contract_version": SINGLE_RECORDING_VERSION,
+        "contract_version": contract_version,
         "tool_version": report.pipeline.tool_version,
         "session": {
             "group": group_id,
@@ -122,7 +134,7 @@ def build(
             "play_session_id": _integer(manifest.play_session_id, "play_session_id"),
             "session_date": manifest.session_date.isoformat(),
         },
-        "source": _source(manifest),
+        "source": source,
         "pipeline": _pipeline(report.pipeline, stored.inputs.knowledge_snapshot_id),
         "speakers": speakers,
         "stats": report_json(report),
@@ -270,20 +282,29 @@ def _review_status(block: Block) -> str:
     return _REVIEW_STATUS[block.status]
 
 
-def _source(manifest: Manifest) -> dict[str, Any]:
-    recordings = {
-        segment.source.sha256: segment.source for segment in manifest.segments
-    }
-    if len(recordings) > 1:
-        raise ExportError(
-            f"the session has {len(recordings)} recordings; contract v1 holds one "
-            "(see IOA-1287)"
+def _source(manifest: Manifest) -> tuple[str, dict[str, Any]]:
+    """The contract version the session's recordings need, and its `source`."""
+    runs = [
+        tuple(run)
+        for _, run in itertools.groupby(
+            manifest.segments, key=lambda s: (s.source.file, s.source.sha256)
         )
-    (source,) = recordings.values()
+    ]
+    first = _recording(runs[0])
+    if len(runs) == 1:
+        return SINGLE_RECORDING_VERSION, first
+    recordings = [
+        {**_recording(run), "starts_at": _seconds(run[0].start_ms)} for run in runs
+    ]
+    return RECORDINGS_SINCE, {**first, "recordings": recordings}
+
+
+def _recording(run: Sequence[Segment]) -> dict[str, Any]:
+    """File, length and hash of the recording the segments of `run` were cut from."""
     return {
-        "file_name": source.file,
-        "duration_seconds": _seconds(manifest.duration_ms),
-        "audio_sha256": source.sha256,
+        "file_name": run[0].source.file,
+        "duration_seconds": _seconds(run[-1].end_ms - run[0].start_ms),
+        "audio_sha256": run[0].source.sha256,
     }
 
 
