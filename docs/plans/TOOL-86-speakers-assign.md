@@ -82,6 +82,7 @@ Danach ordnet `transcript speakers <session> --assign` alle offenen Labels einer
 - IOA-1294: Transcript-Import setzt eine fremde `participant_id` auf `null`, statt den Import abzulehnen (wie `docs/transcript-contract.md:122`).
 - TOOL-87: automatische Vorschläge über Stimmprofile.
 - TOOL-79: Kandidaten auf Anwesende eingrenzen, sobald Narrata Anwesenheit liefert.
+- IOA-1295: Sprecherzuordnung in Narrata nachträglich anzeigen und korrigieren, auch pro Passage für gemischte Labels; Korrekturen überstehen einen erneuten Import.
 
 ## Chunk-Tabelle
 | Chunk | Scope | Clear context after? |
