@@ -131,12 +131,16 @@ def build(
 
 
 def compose(
-    paths: SessionPaths, manifest: Manifest, groups: Mapping[str, int]
+    paths: SessionPaths,
+    manifest: Manifest,
+    groups: Mapping[str, int],
+    closing: SessionReport | None = None,
 ) -> dict[str, Any]:
     """The export of the session's stored working version.
 
-    `groups` maps group slugs to Narrata group ids (`narrata.groups`). A missing,
-    outdated or invalid input is a `DataFileError`.
+    `groups` maps group slugs to Narrata group ids (`narrata.groups`); `closing`
+    is the report of the current files if the caller has composed it already.
+    A missing, outdated or invalid input is a `DataFileError`.
     """
     group_id = groups.get(paths.key.group)
     if group_id is None:
@@ -144,7 +148,8 @@ def compose(
             f"narrata.groups has no group id for {paths.key.group}; "
             "add it to the configuration"
         )
-    closing = compose_report(paths, manifest)  # refuses an outdated working version
+    if closing is None:
+        closing = compose_report(paths, manifest)  # refuses an outdated working version
     return build(
         load_working(paths),
         manifest,
@@ -154,14 +159,19 @@ def compose(
     )
 
 
+def encode(document: dict[str, Any]) -> bytes:
+    """The bytes `write_export` writes for `document`."""
+    return (
+        json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    ).encode("utf-8")
+
+
 def write_export(paths: SessionPaths, document: dict[str, Any]) -> None:
     """Validate `document` as it would be read back, then replace the export.
 
     A document with a contract violation is an `ExportError`; nothing is written.
     """
-    raw = (
-        json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
-    ).encode("utf-8")
+    raw = encode(document)
     violations = validate(json.loads(raw))
     if violations:
         raise ExportError(

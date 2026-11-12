@@ -201,7 +201,7 @@ class DoctorCommandTest(unittest.TestCase):
         *_, checked = self.doctor([], "beispielgruppe/42", "--config", "other.yaml")
 
         checked.assert_called_once_with(
-            Path("other.yaml"), SessionKey("beispielgruppe", 42)
+            Path("other.yaml"), SessionKey("beispielgruppe", 42), strict_resume=False
         )
 
     def test_invalid_session_key_is_an_error(self) -> None:
@@ -1107,6 +1107,31 @@ class TranscribeCommandTest(unittest.TestCase):
             stderr,
         )
         self.assertNotIn(SECRET, stdout + stderr)
+
+    def test_failed_attempts_stay_in_the_pipeline_log_without_text(self) -> None:
+        """TOOL-77: the warnings outlive the console, cleaned as there."""
+        self.backend = session_backend(fail_on=2)
+
+        _, _, stderr = self.transcribe()
+
+        log = self.paths.pipeline_log.read_text(encoding="utf-8")
+        self.assertRegex(
+            log,
+            r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d+ WARNING beispielgruppe/042 "
+            r"segment 2: fake: attempt 1/3 failed: ResourceError: "
+            r"fake: out of memory; retrying in 0 s",
+        )
+        self.assertIn("attempt 3/3 failed", log)
+        for secret in (SECRET, "SPEAKER_", "Traceback"):
+            self.assertNotIn(secret, log)
+        self.assertNotIn("Traceback", stderr)
+
+    def test_without_a_work_directory_no_log_is_written(self) -> None:
+        run("transcribe", "beispielgruppe/043", "--config", str(self.config))
+
+        self.assertFalse(
+            SessionPaths(SessionKey("beispielgruppe", 43), self.root).work_dir.exists()
+        )
 
     def test_passing_failure_is_retried_with_exit_0(self) -> None:
         self.backend = session_backend(errors={2: [ResourceError("fake: oom")]})

@@ -40,6 +40,34 @@ class SessionKey:
         return f"{self.group}/{self.ordinal:03d}"
 
 
+def input_root(root: Path) -> Path:
+    """The directory that holds every session's recordings."""
+    return root / "input"
+
+
+def input_sessions(root: Path) -> tuple[SessionKey, ...]:
+    """The sessions with a directory `input/<group>/<ordinal>` under `root`, sorted.
+
+    A directory whose path is not a session key as written, such as `x/42`
+    for `x/042`, is no session.
+    """
+    raws = (
+        f"{directory.parent.name}/{directory.name}"
+        for directory in sorted(input_root(root).glob("*/*"))
+        if directory.is_dir()
+    )
+    return tuple(key for key in map(_written_key, raws) if key is not None)
+
+
+def _written_key(raw: str) -> SessionKey | None:
+    """The key `raw` spells exactly, or None."""
+    try:
+        key = SessionKey.parse(raw)
+    except ValueError:
+        return None
+    return key if str(key) == raw else None
+
+
 def segment_name(index: int) -> str:
     """File stem of the `index`-th segment, counted from 1: `segment-NN`."""
     if index < 1:
@@ -61,7 +89,7 @@ class SessionPaths:
 
     @property
     def input_dir(self) -> Path:
-        return self.root / "input" / str(self.key)
+        return input_root(self.root) / str(self.key)
 
     @property
     def work_dir(self) -> Path:
@@ -205,3 +233,13 @@ class SessionPaths:
     @property
     def debug_log(self) -> Path:
         return self.work_dir / "debug.log"
+
+    @property
+    def pipeline_log(self) -> Path:
+        """Step changes and failed attempts, appended; for people, never read back."""
+        return self.work_dir / "pipeline.log"
+
+    @property
+    def process_lock(self) -> Path:
+        """The running `process` of the session; left behind by an interrupted one."""
+        return self.work_dir / "process.lock"

@@ -3,7 +3,7 @@ import unittest
 
 from test_candidates import ONLY_FIRST
 from test_decisions import MOMENT, NONE
-from test_review_sheet import SECRET, _SheetCase, parsed
+from test_review_sheet import SECRET, _SheetCase, parsed, save_rows
 
 from transcript.candidates import collect
 from transcript.decisions import SessionDecisions
@@ -28,11 +28,7 @@ class ReviewImportTest(_SheetCase):
         return parsed(review_sheet(self.found, decisions, include_all=True))
 
     def save(self, rows: list[dict[str, str]], columns=SHEET_COLUMNS) -> None:
-        lines = [";".join(columns)]
-        for row in rows:
-            cells = (row.get(c, "") for c in columns)
-            lines.append(";".join('"' + c.replace('"', '""') + '"' for c in cells))
-        self.sheet.write_bytes(("\r\n".join(lines) + "\r\n").encode("utf-8-sig"))
+        save_rows(self.sheet, rows, columns)
 
     def reimport(self, decisions: SessionDecisions = NONE) -> ImportResult:
         return import_rows(

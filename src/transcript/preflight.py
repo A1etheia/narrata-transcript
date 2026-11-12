@@ -73,11 +73,14 @@ def run(
     key: SessionKey | None = None,
     *,
     diarize: bool = True,
+    strict_resume: bool = False,
     probes: Probes = _PROBES,
 ) -> list[Finding]:
     """Check the environment and, with `key`, that session.
 
-    `diarize=False` leaves the diarization out.
+    `diarize=False` leaves the diarization out. `strict_resume` makes stored
+    transcripts that `transcribe` would make again an error rather than a
+    warning, for `process`, which must not transcribe again unasked.
     """
     findings: list[Finding] = []
     tools = _check_audio_tools(findings, probes)
@@ -94,7 +97,7 @@ def run(
         _check_disk(findings, paths, config, infos, probes)
         _check_context(findings, paths, config, probes)
         snapshot = _check_snapshot(findings, paths, config)
-        _check_resume(findings, paths, config, recordings, asr, snapshot)
+        _check_resume(findings, paths, config, recordings, asr, snapshot, strict_resume)
     return findings
 
 
@@ -357,13 +360,14 @@ def _check_resume(
     recordings: Sequence[Path] | None,
     asr: _Asr | None,
     snapshot: knowledge.Snapshot | None,
+    strict: bool = False,
 ) -> None:
     """Whether the artifacts of an earlier run fit the input and each other."""
     if not paths.audio_metadata.is_file() and not paths.manifest.is_file():
         findings.append(Finding("ok", "resume", "no earlier artifacts"))
         return
     if paths.audio_metadata.is_file() and recordings is not None:
-        problem = _audio_metadata_problem(paths, recordings)
+        problem = manifest.audio_metadata_problem(paths, recordings)
         if problem is not None:
             findings.append(Finding("error", "resume", problem))
     if not paths.manifest.is_file():
@@ -414,16 +418,15 @@ def _check_resume(
         )
     )
     if again:
-        findings.append(
-            Finding(
-                "warning",
-                "resume",
-                "segment(s) "
-                + ", ".join(str(index) for index in again)
-                + " are transcribed again: model, settings, snapshot, keywords "
-                "or language differ from the stored result",
-            )
+        message = (
+            "segment(s) "
+            + ", ".join(str(index) for index in again)
+            + " are transcribed again: model, settings, snapshot, keywords "
+            "or language differ from the stored result"
         )
+        if strict:
+            message += "; --redo transcribe runs them again on purpose"
+        findings.append(Finding("error" if strict else "warning", "resume", message))
 
 
 def _passed_knowledge(
@@ -435,28 +438,6 @@ def _passed_knowledge(
         return None, (() if biasing else None)
     keywords = DomainContext.from_snapshot(snapshot).transcription_keywords()
     return snapshot.snapshot_id, (tuple(keywords) if biasing else None)
-
-
-def _audio_metadata_problem(
-    paths: SessionPaths, recordings: Sequence[Path]
-) -> str | None:
-    """Whether `audio.json` was extracted from these recordings, by name and size.
-
-    Hashing hours of audio has no place in a preflight; `transcript extract`
-    and the manifest check the content.
-    """
-    try:
-        sources = manifest.audio_sources(paths)
-    except DataFileError as error:
-        return str(error)
-    extracted = [(source.file, source.size_bytes) for source in sources]
-    present = [(path.name, path.stat().st_size) for path in recordings]
-    if extracted != present:
-        return (
-            f"{paths.audio_metadata}: does not match the recordings in "
-            f"{paths.input_dir}; run transcript extract again"
-        )
-    return None
 
 
 def _existing_ancestor(path: Path) -> Path:

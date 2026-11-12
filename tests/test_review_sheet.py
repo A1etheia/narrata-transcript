@@ -26,6 +26,15 @@ def parsed(sheet: ReviewSheet) -> list[dict[str, str]]:
     return list(csv.DictReader(io.StringIO(text, newline=""), delimiter=";"))
 
 
+def save_rows(path, rows: list[dict[str, str]], columns=SHEET_COLUMNS) -> None:
+    """Write `rows` as a spreadsheet saves the sheet: quoted, CRLF, with BOM."""
+    lines = [";".join(columns)]
+    for row in rows:
+        cells = (row.get(c, "") for c in columns)
+        lines.append(";".join('"' + c.replace('"', '""') + '"' for c in cells))
+    path.write_bytes(("\r\n".join(lines) + "\r\n").encode("utf-8-sig"))
+
+
 class _SheetCase(_SessionCase):
     def setUp(self) -> None:
         super().setUp()

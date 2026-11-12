@@ -1,5 +1,7 @@
 """`transcript process`: the steps wired to their commands, halts and reruns."""
 
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,7 +11,7 @@ from test_reference import KEY
 from test_smoke import _ExportableSession, run
 
 from transcript import __main__ as transcript_main
-from transcript import candidates, decisions, manifest
+from transcript import candidates, decisions, jsonfile, lock, manifest
 from transcript.session import SessionPaths
 
 # the commands before the manual steps; they need models, ffmpeg or Narrata
@@ -182,6 +184,98 @@ class WiringTest(_Patched):
         self.assertEqual(code, 2)
         self.assertIn("error:", stderr)
         self.mocks["_doctor"].assert_not_called()
+
+
+def finished_pid() -> int:
+    """The id of a process that has ended, as an interrupted run leaves it."""
+    child = subprocess.Popen(["true"])
+    child.wait()
+    return child.pid
+
+
+class LockAndLogTest(_Patched):
+    """The lock against a second run, `pipeline.log` and the strict preflight."""
+
+    def write_lock(self, pid: int) -> None:
+        jsonfile.write_atomic(self.paths.process_lock, {"pid": pid})
+
+    def log(self) -> str:
+        return self.paths.pipeline_log.read_text(encoding="utf-8")
+
+    def test_the_preflight_is_strict_unless_a_step_is_redone(self) -> None:
+        self.process()
+        self.assertTrue(self.mocks["_doctor"].call_args.kwargs["strict_resume"])
+
+        self.process("--redo", "transcribe")
+        self.assertFalse(self.mocks["_doctor"].call_args.kwargs["strict_resume"])
+
+    def test_a_run_takes_the_lock_and_leaves_none(self) -> None:
+        seen: list[str | None] = []
+        self.mocks["_extract"].side_effect = lambda *_, **__: (
+            seen.append(lock.state(self.paths)) or 0
+        )
+
+        code, _, stderr = self.process()
+
+        self.assertEqual(code, 3, stderr)
+        self.assertEqual(seen, ["running"])
+        self.assertFalse(self.paths.process_lock.exists())
+
+    def test_a_running_process_keeps_a_second_one_out(self) -> None:
+        self.write_lock(os.getpid())  # alive
+
+        code, stdout, stderr = self.process()
+
+        self.assertEqual(code, 2)
+        self.assertIn(f"transcript process {KEY} is running", stderr)
+        self.assertIn("process: preflight failed", stdout)
+        self.mocks["_extract"].assert_not_called()
+        self.assertTrue(self.paths.process_lock.exists())
+
+    def test_the_lock_of_an_interrupted_run_is_replaced(self) -> None:
+        self.write_lock(finished_pid())
+        self.assertEqual(lock.state(self.paths), "interrupted")
+
+        code, stdout, _ = self.process()
+
+        self.assertEqual(code, 3)
+        self.assertIn("replaced the lock of an interrupted run", stdout)
+        self.assertIsNone(lock.state(self.paths))
+
+    def test_ctrl_c_leaves_the_lock_for_status(self) -> None:
+        self.mocks["_transcribe"].side_effect = KeyboardInterrupt
+
+        with self.assertRaises(KeyboardInterrupt):
+            self.process()
+
+        # once this process has ended, the lock it left reads as interrupted
+        stored = jsonfile.read_object(self.paths.process_lock, "process lock")
+        self.assertEqual(stored["pid"], os.getpid())
+        self.assertIn(f"{KEY}: process: interrupted", self.log())
+
+    def test_the_log_has_the_console_lines_and_the_exit_codes_with_a_time(
+        self,
+    ) -> None:
+        _, stdout, stderr = self.process()
+
+        log = self.log()
+        self.assertRegex(log, r"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d+ INFO ")
+        self.assertIn(f"{KEY}: preflight exit 0", log)
+        self.assertIn(f"{KEY}: process: extract\n", log)
+        self.assertIn("process: extract\n", stdout)
+        self.assertIn(f"{KEY}: transcribe exit 0", log)
+        self.assertIn(f"{KEY}: process: preflight ran, extract ran", log)
+        self.assertIn(f"{KEY}: process: halted for review, speakers", log)
+        self.assertNotIn("exit 0", stdout + stderr)  # the exit codes: file only
+
+    def test_a_second_run_appends(self) -> None:
+        self.process()
+        first = self.log()
+
+        self.process()
+
+        self.assertTrue(self.log().startswith(first))
+        self.assertGreater(len(self.log()), len(first))
 
 
 class RerunTest(_ExportableSession):

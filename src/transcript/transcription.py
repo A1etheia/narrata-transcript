@@ -285,9 +285,24 @@ def reusable(
     `keywords` is `None` for a backend without `keyword_biasing`: it ignores them.
     """
     asr = reference.asr
+    return found.matches(asr.info, asr.settings) and same_input(
+        reference, language, knowledge_snapshot_id, keywords
+    )
+
+
+def same_input(
+    reference: ReferenceTranscript,
+    language: str | None,
+    knowledge_snapshot_id: str | None,
+    keywords: tuple[str, ...] | None,
+) -> bool:
+    """Whether `reference` was made from this knowledge and language.
+
+    The part of `reusable` that needs no backend; `keywords` as there.
+    """
+    asr = reference.asr
     return (
-        found.matches(asr.info, asr.settings)
-        and asr.knowledge_snapshot_id == knowledge_snapshot_id
+        asr.knowledge_snapshot_id == knowledge_snapshot_id
         and (keywords is None or _same_keywords(asr.keywords_used, keywords))
         and (language is None or asr.language == language)
     )
