@@ -557,6 +557,23 @@ class SummarizeTest(unittest.TestCase):
     def summary(self, **states: str) -> status.SessionStatus:
         return status.summarize(self.paths, _steps(**states))
 
+    def test_a_live_lock_is_running_whatever_the_steps_say(self) -> None:
+        found = status.summarize(self.paths, _steps(txt="failed"), "running")
+
+        self.assertEqual(found.overall, "running")
+
+    def test_a_dead_lock_is_interrupted_unless_a_step_failed_or_waits(self) -> None:
+        pending = {name: "pending" for name in status.STEPS}
+        for steps, overall in (
+            (_steps(**pending), "interrupted"),
+            (_steps(export="stale"), "interrupted"),
+            (_steps(), "interrupted"),
+            (_steps(review="waiting"), "waiting_for_review"),
+            (_steps(txt="failed"), "failed"),
+        ):
+            found = status.summarize(self.paths, steps, "interrupted")
+            self.assertEqual(found.overall, overall, steps)
+
     def test_every_step_pending_is_not_started(self) -> None:
         names = {name: "pending" for name in status.STEPS}
 

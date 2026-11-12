@@ -26,6 +26,7 @@ from transcript import (
     docx_render,
     export,
     knowledge,
+    lock,
     manifest,
     narrata,
     rendering,
@@ -48,7 +49,14 @@ from transcript.uncertainty import load_assessment
 # run again and never counts as done; waiting: for a person to fill in a file
 StepState = Literal["pending", "done", "partial", "failed", "waiting", "stale"]
 SessionState = Literal[
-    "not_started", "failed", "waiting_for_review", "open", "partial", "complete"
+    "running",
+    "not_started",
+    "failed",
+    "waiting_for_review",
+    "interrupted",  # the lock of a run that did not end is still there
+    "open",
+    "partial",
+    "complete",
 ]
 
 _BUILD_ERRORS = (ValueError, DataFileError)  # what the steps' builders raise
@@ -121,7 +129,7 @@ def inspect(paths: SessionPaths, config: Config) -> SessionStatus:
     """The status of every step that writes a file, in run order, and overall."""
     files = _Files(paths, config)
     steps = tuple(StepStatus(step, *check(files)) for step, check in _CHECKS)
-    return summarize(paths, steps)
+    return summarize(paths, steps, lock.state(paths))
 
 
 def _extract(files: _Files) -> _Found:
@@ -442,16 +450,27 @@ _SUCCEEDED: frozenset[StepState] = frozenset({"done", "partial"})
 _RESUMES_WHEN_PARTIAL: frozenset[StepName] = frozenset({"transcribe"})
 
 
-def summarize(paths: SessionPaths, steps: tuple[StepStatus, ...]) -> SessionStatus:
-    """The session's state from its steps' states, and where `process` goes on."""
+def summarize(
+    paths: SessionPaths,
+    steps: tuple[StepStatus, ...],
+    run: lock.LockState | None = None,
+) -> SessionStatus:
+    """The session's state from its steps' states, and where `process` goes on.
+
+    `run` is the state of a `process` lock, if one is there.
+    """
     states = {step.state for step in steps}
     overall: SessionState
-    if states == {"pending"}:
+    if run == "running":
+        overall = "running"
+    elif states == {"pending"} and run is None:
         overall = "not_started"
     elif "failed" in states:
         overall = "failed"
     elif "waiting" in states:
         overall = "waiting_for_review"
+    elif run == "interrupted":
+        overall = "interrupted"
     elif states & {"pending", "stale"}:
         overall = "open"
     elif "partial" in states:

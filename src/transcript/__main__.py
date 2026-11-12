@@ -12,6 +12,7 @@ import os
 import sys
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
+from typing import TextIO
 
 from transcript import (
     __version__,
@@ -26,6 +27,7 @@ from transcript import (
     export,
     hints,
     knowledge,
+    lock,
     manifest,
     narrata,
     pipeline,
@@ -63,6 +65,11 @@ _DOTENV = Path(".env")
 _SHORT_ID = knowledge.SHORT_ID
 _SHOWN_FINDINGS = 10  # the rest is in the diagnosis report
 _SNAPSHOT_BEHIND = f"warning: {knowledge.BEHIND_CONTEXT}"
+# the steps of a `process` run, for `pipeline.log` only: the console has its own lines
+_PROCESS_LOG = logging.getLogger("transcript.process")
+_PROCESS_LOG.propagate = False
+_PROCESS_LOG.setLevel(logging.INFO)
+_PROCESS_LOG.addHandler(logging.NullHandler())
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -333,7 +340,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _doctor(args.session, args.config)
     if args.command == "status":
         return _status(args.session, args.config)
-    with _log_to_stderr():  # pipeline steps log progress and failed attempts
+    # pipeline steps log progress and failed attempts, to the console and the file
+    with _log_to_stderr(), _session_log(args):
         if args.command == "extract":
             return _extract(args.session, args.config, args.stream)
         if args.command == "context":
@@ -377,7 +385,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _doctor(raw_key: str | None, config_path: Path) -> int:
+def _doctor(raw_key: str | None, config_path: Path, strict_resume: bool = False) -> int:
     """The preflight; only paths, counts and models reach the console (TOOL-66).
 
     Exit 0 when nothing stops a run, warnings included; 2 on any error.
@@ -387,7 +395,7 @@ def _doctor(raw_key: str | None, config_path: Path) -> int:
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
-    findings = preflight.run(config_path, key)
+    findings = preflight.run(config_path, key, strict_resume=strict_resume)
     for finding in findings:
         line = f"{finding.level}: {finding.check}: {finding.message}"
         print(line, file=sys.stdout if finding.level == "ok" else sys.stderr)
@@ -1178,13 +1186,38 @@ def _process(args: argparse.Namespace) -> int:
         stop_on_incomplete: bool = False,
     ) -> pipeline.Step:
         def announced(forced: bool) -> int:
-            print(f"process: {name}{' (redo)' if forced else ''}", flush=True)
-            return run(forced)
+            say(f"{name}{' (redo)' if forced else ''}")
+            code = run(forced)
+            _PROCESS_LOG.info("%s: %s exit %d", session, name, code)
+            return code
 
         return pipeline.Step(name, announced, reusable, manual, stop_on_incomplete)
 
+    def say(message: str, stream: TextIO = sys.stdout) -> None:
+        """A `process:` line on the console and the same line in `pipeline.log`."""
+        print(f"process: {message}", file=stream, flush=True)
+        _PROCESS_LOG.info("%s: process: %s", session, message)
+
+    after_preflight = contextlib.ExitStack()  # the lock and the log, to the end
+
+    def preflight(_: bool) -> int:
+        """The strict preflight, then the lock and the log: nothing runs twice."""
+        code = _doctor(session, config, strict_resume=args.redo is None)
+        if code != pipeline.OK:
+            return code
+        try:
+            paths().work_dir.mkdir(parents=True, exist_ok=True)
+            replaced = after_preflight.enter_context(lock.held(paths()))
+        except (OSError, lock.LockedError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return pipeline.FAILED
+        after_preflight.enter_context(_pipeline_log(paths()))
+        if replaced:
+            say("replaced the lock of an interrupted run")
+        return pipeline.OK
+
     steps = [
-        step("preflight", lambda _: _doctor(session, config)),
+        step("preflight", preflight),
         step(
             "extract",
             lambda _: _extract(session, config, stream=0),
@@ -1226,18 +1259,23 @@ def _process(args: argparse.Namespace) -> int:
         step("docx", lambda _: _render(session, config, "docx")),
         step("report", lambda _: _report(session, config)),
     ]
-    outcome = pipeline.run(steps, args.redo)
-    print(
-        "process: "
-        + ", ".join(f"{result.step} {result.status}" for result in outcome.results)
-    )
-    if outcome.stopped_at is not None:
-        print(
-            f"process: stopped at {outcome.stopped_at} (exit {outcome.exit_code})",
-            file=sys.stderr,
-        )
-    if outcome.exit_code == pipeline.HALTED:
-        _print_halt(key, paths(), outcome.halted)
+    with after_preflight:  # an exception, Ctrl-C too, leaves the lock for `status`
+        try:
+            outcome = pipeline.run(steps, args.redo)
+        except BaseException:
+            _PROCESS_LOG.info("%s: process: interrupted", session)
+            raise
+        say(", ".join(f"{r.step} {r.status}" for r in outcome.results))
+        if outcome.stopped_at is not None:
+            say(
+                f"stopped at {outcome.stopped_at} (exit {outcome.exit_code})",
+                sys.stderr,
+            )
+        if outcome.exit_code == pipeline.HALTED:
+            _print_halt(key, paths(), outcome.halted)
+            _PROCESS_LOG.info(
+                "%s: process: halted for %s", session, ", ".join(outcome.halted)
+            )
     return outcome.exit_code
 
 
@@ -1444,6 +1482,47 @@ def _positive_int(text: str) -> int:
     if value < 1:
         raise argparse.ArgumentTypeError("must be a positive whole number")
     return value
+
+
+@contextlib.contextmanager
+def _pipeline_log(paths: SessionPaths) -> Iterator[None]:
+    """Append the `transcript` logs and the run's steps to `pipeline.log` (TOOL-77).
+
+    Only once `work/<s>/` exists; the file is opened on the first line. The text
+    logger `transcript.text.*` does not propagate, and failed attempts are logged
+    without `exc_info`, so neither text nor a runtime's own message gets here.
+    """
+    if not paths.work_dir.is_dir():
+        yield
+        return
+    loggers = (logging.getLogger("transcript"), _PROCESS_LOG)
+    handler = logging.FileHandler(paths.pipeline_log, encoding="utf-8", delay=True)
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    handler.setLevel(logging.INFO)
+    for logger in loggers:
+        logger.addHandler(handler)
+    try:
+        yield
+    finally:
+        for logger in loggers:
+            logger.removeHandler(handler)
+        handler.close()
+
+
+def _session_log(args: argparse.Namespace) -> contextlib.AbstractContextManager[None]:
+    """`_pipeline_log` for a command's session, if it names a valid one.
+
+    A command with an invalid key or configuration says so itself; `process`
+    opens the log after its preflight, once it has made `work/<s>/`.
+    """
+    raw = getattr(args, "session", None)
+    if raw is None or args.command == "process":
+        return contextlib.nullcontext()
+    try:
+        paths = _load_config(args.config).session_paths(SessionKey.parse(raw))
+    except (ValueError, ConfigError):
+        return contextlib.nullcontext()
+    return _pipeline_log(paths)
 
 
 @contextlib.contextmanager

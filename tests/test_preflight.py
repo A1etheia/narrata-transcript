@@ -505,6 +505,30 @@ class SessionTest(PreflightTestCase):
             self.message(findings, "resume", "warning"),
         )
 
+    def test_strict_resume_refuses_to_transcribe_again_unasked(self) -> None:
+        """For `process`: a model change only runs with `--redo transcribe`."""
+        self.prepared()
+        self.extract()
+        self.reference(model="other")
+
+        findings = self.run_preflight(KEY, strict_resume=True)
+
+        self.assertIn(
+            "segment(s) 1 are transcribed again",
+            self.message(findings, "resume", "error"),
+        )
+        self.assertIn("--redo transcribe", self.message(findings, "resume", "error"))
+        self.assertTrue(preflight.blocked(findings))
+
+    def test_strict_resume_passes_a_reusable_session(self) -> None:
+        self.prepared()
+        self.extract()
+        self.reference()
+
+        findings = self.run_preflight(KEY, strict_resume=True)
+
+        self.assertEqual(self.problems(findings), [])
+
     def test_reference_of_another_snapshot_is_transcribed_again(self) -> None:
         """The same rule as `transcribe`: new knowledge means a new run."""
         self.prepared()

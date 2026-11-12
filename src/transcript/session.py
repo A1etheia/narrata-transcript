@@ -233,3 +233,13 @@ class SessionPaths:
     @property
     def debug_log(self) -> Path:
         return self.work_dir / "debug.log"
+
+    @property
+    def pipeline_log(self) -> Path:
+        """Step changes and failed attempts, appended; for people, never read back."""
+        return self.work_dir / "pipeline.log"
+
+    @property
+    def process_lock(self) -> Path:
+        """The running `process` of the session; left behind by an interrupted one."""
+        return self.work_dir / "process.lock"
