@@ -39,7 +39,7 @@ Danach ordnet `transcript speakers <session> --assign` alle offenen Labels einer
 ## Contract-Check
 - JSON-Contract IOA-1214: *N/A because `--assign` schreibt nur die interne `assignment.json`; der Export (`export.py:207`) bildet `person` → `participant_id` unverändert ab, `transcript-v1` 1.0 bleibt.*
 - Narrata-Änderung: *N/A because die Kandidaten kommen aus dem Transkriptionskontext und der Import akzeptiert genau diese IDs.*
-- Abweichung in ios-archiv: *handled — `docs/transcript-contract.md:122` sagt „fremde ID wird zu null“, der Importer lehnt ab; Doku-Angleichung in IOA-1294.*
+- Abweichung in ios-archiv: *handled — `docs/transcript-contract.md:122` sagt „fremde ID wird zu null“, der Importer lehnt den ganzen Import ab. IOA-1294 stellt den Importer auf das Verhalten der Doku um (ID → `null`, Hinweis im Importergebnis). `--assign` bietet nur Snapshot-IDs an und funktioniert mit beiden Verhalten.*
 
 ## Resume-Check
 - Abbruch: *handled — Schreiben nach jeder Wahl, Strg+C → Exit 130 mit gültiger Datei.*
@@ -79,7 +79,7 @@ Danach ordnet `transcript speakers <session> --assign` alle offenen Labels einer
 - AC: Haltanweisung und Doku nennen `--assign`; Übergabe aus TOOL-55 erledigt.
 
 ## Folge-Tickets
-- IOA-1294: `docs/transcript-contract.md:122` an `TranscriptImporter` angleichen (fremde `participant_id` → Import abgelehnt).
+- IOA-1294: Transcript-Import setzt eine fremde `participant_id` auf `null`, statt den Import abzulehnen (wie `docs/transcript-contract.md:122`).
 - TOOL-87: automatische Vorschläge über Stimmprofile.
 - TOOL-79: Kandidaten auf Anwesende eingrenzen, sobald Narrata Anwesenheit liefert.
 
