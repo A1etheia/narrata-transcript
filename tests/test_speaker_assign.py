@@ -180,6 +180,18 @@ class DialogueTest(_SessionCase):
             any(p.startswith("play audio: [a-b] that sample") for p in script.said)
         )
 
+    def test_every_prompt_lists_the_people_to_choose_from(self) -> None:
+        script = Script("p", "s", "s", "s", "")
+
+        self.run_dialogue(script)
+
+        prompts = [line for line in script.said if line.endswith("> ")]
+        self.assertEqual(len(prompts), 4)  # twice for the first label, once each
+        people = ordered(PARTICIPANTS)
+        for prompt in prompts:
+            self.assertIn(f"[1] {people[0].display_name} ({people[0].role})", prompt)
+            self.assertIn(f"[{len(people)}] {people[-1].display_name}", prompt)
+
     def test_a_stopped_sample_keeps_the_dialogue_going(self) -> None:
         script = Script("p", "1", "s", "s", "")
         script.result = "stopped"

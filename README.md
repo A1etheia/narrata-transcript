@@ -354,7 +354,7 @@ Pro Label zeigt der Dialog Redezeit, Anteil, den Vermerk „Kandidat für Zusamm
 | `p` oder Enter | nächste Hörprobe abspielen, beim ersten Mal Probe `a` |
 | `r` | dieselbe Probe noch einmal |
 | Strg+C während einer Probe | nur die Probe anhalten, der Dialog läuft weiter |
-| Zahl | die Person mit dieser Nummer aus der Teilnehmerliste |
+| Zahl | die Person mit dieser Nummer; die Liste steht in jeder Eingabezeile |
 | `u` / `m` | `unknown` / `multiple` |
 | `s` | überspringen, das Label bleibt, wie es ist |
 | `q` | beenden; der Aufwand wird trotzdem angeboten |

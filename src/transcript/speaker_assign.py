@@ -27,7 +27,7 @@ from transcript.timecode import format_ms
 
 _LETTERS = "abcdefghijkl"  # samples, short of the command keys; numbers are people
 _HELP_PLAY = "play audio: [{first}-{last}] that sample, [p] next, [r] again"
-_HELP_ASSIGN = "assign: [1-{n}] person, [u]nknown, [m]ultiple; [s]kip, [q]uit"
+_HELP_ASSIGN = "assign: {people}\n        [u]nknown, [m]ultiple; [s]kip, [q]uit"
 _SKIP: Literal["skip"] = "skip"
 _QUIT: Literal["quit"] = "quit"
 
@@ -93,7 +93,14 @@ class _Dialogue:
         self.participants = participants
         self.console = console
         self.people = ordered(participants)
-        self.help_assign = _HELP_ASSIGN.format(n=len(self.people))
+        # shown at every prompt, so no one scrolls back for the numbers
+        self.help_assign = _HELP_ASSIGN.format(
+            people=" · ".join(
+                f"[{number}] {person.display_name} "
+                f"({'former' if person.is_former else person.role})"
+                for number, person in enumerate(self.people, start=1)
+            )
+        )
         self.versions = {
             r.segment.index: speakers.labels_version(r) for r in references
         }
@@ -109,10 +116,6 @@ class _Dialogue:
         start = self.console.clock()
         saved = 0
         interrupted = False
-        say("Participants:")
-        for number, person in enumerate(self.people, start=1):
-            membership = "former" if person.is_former else person.role
-            say(f"  {number}. {person.display_name} ({membership})")
         try:
             for position, found in enumerate(todo, start=1):
                 choice = self._ask_label(found, position, len(todo))
