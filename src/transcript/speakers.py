@@ -3,7 +3,9 @@
 Diarization (TOOL-76) gives each segment generic labels such as `SPEAKER_00`;
 they hold per segment only, so the key of an assignment is (segment, label).
 A person fills `speakers/assignment.json` by hand. The tool writes it once as a
-template with every label `open` and never touches it again.
+template with every label `open` and never replaces it; only the interactive
+`speakers --assign` (TOOL-86) changes it, one confirmed entry at a time, and
+writes every other entry back as it was read.
 
 An entry names the `labels_version` of the segment it was made on. When the
 segment is transcribed or diarized again with another outcome, the entry is
@@ -285,15 +287,57 @@ def write_template(
 
 def write_assignment(paths: SessionPaths, assignment: SpeakerAssignment) -> None:
     """Replace the assignment file atomically."""
-    write_atomic(
-        paths.speaker_assignment,
-        {
-            "format_version": ASSIGNMENT_FORMAT_VERSION,
-            "session": str(paths.key),
-            "effort_minutes": assignment.effort_minutes,
-            "entries": [dataclasses.asdict(entry) for entry in assignment.entries],
-        },
-    )
+    write_atomic(paths.speaker_assignment, _document(paths, assignment))
+
+
+def _document(paths: SessionPaths, assignment: SpeakerAssignment) -> dict[str, Any]:
+    """The file content of `assignment`."""
+    return {
+        "format_version": ASSIGNMENT_FORMAT_VERSION,
+        "session": str(paths.key),
+        "effort_minutes": assignment.effort_minutes,
+        "entries": [dataclasses.asdict(entry) for entry in assignment.entries],
+    }
+
+
+def set_entry(paths: SessionPaths, entry: AssignmentEntry) -> None:
+    """Store `entry` in place of the one for its label, or append it.
+
+    Every other entry is written back as it was read, extra fields included.
+    """
+    data = _load_raw(paths)
+    entries: list[Any] = data["entries"]
+    new = dataclasses.asdict(entry)
+    for position, item in enumerate(entries):
+        if (item.get("segment"), item.get("label")) == entry.key:
+            entries[position] = new
+            break
+    else:
+        entries.append(new)
+    _store(paths, data)
+
+
+def set_effort(paths: SessionPaths, minutes: int) -> None:
+    """Store `effort_minutes`; the entries stay as they were read."""
+    data = _load_raw(paths)
+    data["effort_minutes"] = minutes
+    _store(paths, data)
+
+
+def _load_raw(paths: SessionPaths) -> dict[str, Any]:
+    """The stored file as read, or an empty assignment if there is none."""
+    path = paths.speaker_assignment
+    if not path.is_file():
+        return _document(paths, SpeakerAssignment())
+    data = _read_json(path, "speaker assignment")
+    _parse(data, paths)  # refuse a broken file before changing it
+    return data
+
+
+def _store(paths: SessionPaths, data: dict[str, Any]) -> None:
+    """Check `data` as an assignment, then replace the file with it."""
+    _parse(data, paths)
+    write_atomic(paths.speaker_assignment, data)
 
 
 def load_assignment(paths: SessionPaths) -> SpeakerAssignment | None:
@@ -301,7 +345,11 @@ def load_assignment(paths: SessionPaths) -> SpeakerAssignment | None:
     path = paths.speaker_assignment
     if not path.is_file():
         return None
-    data = _read_json(path, "speaker assignment")
+    return _parse(_read_json(path, "speaker assignment"), paths)
+
+
+def _parse(data: dict[str, Any], paths: SessionPaths) -> SpeakerAssignment:
+    path = paths.speaker_assignment
     if data.get("format_version") != ASSIGNMENT_FORMAT_VERSION:
         # no "run …" hint: the assignment is made by hand, nothing can rebuild it
         raise AssignmentError(f"{path}: unsupported format_version")
