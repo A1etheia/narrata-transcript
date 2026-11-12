@@ -357,14 +357,14 @@ class SessionTest(PreflightTestCase):
         self.assertEqual(self.levels(findings, "session-input"), ["error"])
         self.assertEqual(self.by_check(findings, "disk"), [])
 
-    def test_several_recordings_are_a_warning_about_the_contract(self) -> None:
+    def test_several_recordings_are_counted_without_a_warning(self) -> None:
         self.prepared()
         self.recording("aufnahme 2.mp3")
 
         findings = self.preflight()
 
-        self.assertIn("IOA-1287", self.message(findings, "session-input", "warning"))
-        self.assertEqual(preflight.errors(findings), 0)
+        self.assertEqual(self.levels(findings, "session-input"), ["ok"])
+        self.assertIn("2 recording(s)", self.message(findings, "session-input", "ok"))
 
     def test_work_path_that_is_a_file_is_an_error(self) -> None:
         self.prepared()

@@ -70,6 +70,14 @@
         "audio_sha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
+        },
+        "recordings": {
+          "description": "Since 1.1, optional: every recording of the session in session order; the first equals the top-level source fields.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/recording"
+          }
         }
       }
     },
@@ -126,6 +134,32 @@
     }
   },
   "$defs": {
+    "recording": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file_name", "duration_seconds", "audio_sha256", "starts_at"],
+      "properties": {
+        "file_name": {
+          "description": "Audio file name without any path.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^/\\\\]+$"
+        },
+        "duration_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "audio_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "starts_at": {
+          "description": "Absolute seconds on the session timeline at which this recording starts.",
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
     "speaker_label": {
       "type": "string",
       "minLength": 1,
