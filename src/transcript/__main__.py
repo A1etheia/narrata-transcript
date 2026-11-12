@@ -36,6 +36,8 @@ from transcript import (
     report,
     review_import,
     review_sheet,
+    speaker_assign,
+    speaker_player,
     speaker_samples,
     speakers,
     status,
@@ -241,6 +243,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         "template if there is none, and check the assignment.",
     )
     speakers_command.add_argument("session", help="session key <group>/<ordinal>")
+    speakers_command.add_argument(
+        "--assign",
+        action="store_true",
+        help="assign the open labels one by one in the terminal, with samples to "
+        "listen to; every choice is stored at once",
+    )
+    speakers_command.add_argument(
+        "--all",
+        dest="every",
+        action="store_true",
+        help="with --assign, also ask for labels already assigned",
+    )
     working_command = commands.add_parser(
         "working",
         help="Apply the review decisions and the speaker assignment to the "
@@ -370,7 +384,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "review-import":
             return _review_import(args.session, args.config)
         if args.command == "speakers":
-            return _speakers(args.session, args.config)
+            return _speakers(args.session, args.config, args.assign, args.every)
         if args.command == "working":
             return _working(args.session, args.config)
         if args.command == "report":
@@ -385,7 +399,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _doctor(raw_key: str | None, config_path: Path, strict_resume: bool = False) -> int:
+def _doctor(
+    raw_key: str | None,
+    config_path: Path,
+    strict_resume: bool = False,
+    player: bool = True,
+) -> int:
     """The preflight; only paths, counts and models reach the console (TOOL-66).
 
     Exit 0 when nothing stops a run, warnings included; 2 on any error.
@@ -395,7 +414,9 @@ def _doctor(raw_key: str | None, config_path: Path, strict_resume: bool = False)
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
-    findings = preflight.run(config_path, key, strict_resume=strict_resume)
+    findings = preflight.run(
+        config_path, key, strict_resume=strict_resume, player=player
+    )
     for finding in findings:
         line = f"{finding.level}: {finding.check}: {finding.message}"
         print(line, file=sys.stdout if finding.level == "ok" else sys.stderr)
@@ -955,11 +976,26 @@ def _review_import(raw_key: str, config_path: Path) -> int:
     return 2 if result.problems or not suggested else 0
 
 
-def _speakers(raw_key: str, config_path: Path) -> int:
+def _speakers(
+    raw_key: str, config_path: Path, assign: bool = False, every: bool = False
+) -> int:
     """Only counts, segment and entry numbers reach the console (TOOL-66).
 
-    Exit 0, 1 if an entry of the assignment is not applied, 2 on an error.
+    `assign` asks for the labels in the terminal, which then shows names and
+    passage text; it refuses to run without an interactive terminal.
+    Exit 0, 1 if an entry of the assignment is not applied, 2 on an error,
+    130 when the dialogue is interrupted (what was confirmed is stored).
     """
+    if every and not assign:
+        print("error: --all only works with --assign", file=sys.stderr)
+        return 2
+    if assign and not _interactive():
+        print(
+            "error: speakers --assign needs an interactive terminal; without one, "
+            "edit the assignment file by hand",
+            file=sys.stderr,
+        )
+        return 2
     try:
         key = SessionKey.parse(raw_key)
         paths = _load_config(config_path).session_paths(key)
@@ -970,8 +1006,21 @@ def _speakers(raw_key: str, config_path: Path) -> int:
             raise ValueError(f"{key}: no diarized segment; run transcript diarize")
         created = speakers.write_template(paths, references)
         assignment = speakers.load_assignment(paths) or speakers.SpeakerAssignment()
-        applied = speakers.check(assignment, references, participants)
         labels = speaker_samples.label_samples(found_manifest, references)
+        if assign:
+            outcome = speaker_assign.run(
+                paths, labels, references, participants, assignment,
+                _assign_console(), every,
+            )  # fmt: skip
+            if outcome.interrupted:
+                print(f"{key}: interrupted; {outcome.saved} label(s) saved")
+                return 130
+            print(
+                f"{key}: assigned {outcome.saved} label(s), "
+                f"{outcome.skipped} left as they were"
+            )
+            assignment = speakers.load_assignment(paths) or assignment
+        applied = speakers.check(assignment, references, participants)
         speaker_samples.write_samples(
             paths, speaker_samples.render(key, labels, participants, applied)
         )
@@ -1002,6 +1051,20 @@ def _speakers(raw_key: str, config_path: Path) -> int:
         print(f"wrote template {paths.speaker_assignment}")
     print(f"wrote {paths.speaker_samples}")
     return 1 if applied.findings else 0
+
+
+def _interactive() -> bool:
+    """Whether both ends of the console are a terminal a person sits at."""
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _assign_console() -> speaker_assign.Console:
+    player = speaker_player.find_player()  # once per run
+    return speaker_assign.Console(
+        ask=input,
+        say=print,
+        play=lambda wav, start, end: speaker_player.play(player, wav, start, end),
+    )
 
 
 def _suggest_variants(
@@ -1202,7 +1265,7 @@ def _process(args: argparse.Namespace) -> int:
 
     def preflight(_: bool) -> int:
         """The strict preflight, then the lock and the log: nothing runs twice."""
-        code = _doctor(session, config, strict_resume=args.redo is None)
+        code = _doctor(session, config, strict_resume=args.redo is None, player=False)
         if code != pipeline.OK:
             return code
         try:
@@ -1328,8 +1391,8 @@ def _print_halt(
         print(f"  review: fill in the decisions in {paths.review_sheet}")
     if "speakers" in halted:
         print(
-            f"  speakers: assign the labels in {paths.speaker_assignment}, "
-            f"passages to listen to are in {paths.speaker_samples}"
+            f"  speakers: run transcript speakers {key} --assign, or edit "
+            f"{paths.speaker_assignment} by hand with {paths.speaker_samples}"
         )
     print(
         f"then run transcript process {key} again; what is left open stays "

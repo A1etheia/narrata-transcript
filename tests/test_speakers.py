@@ -25,7 +25,10 @@ from transcript.speakers import (
     check,
     labels_version,
     load_assignment,
+    set_effort,
+    set_entry,
     template,
+    with_entry,
     write_assignment,
     write_template,
 )
@@ -190,6 +193,17 @@ class CheckTest(unittest.TestCase):
                 ]
                 self.assertEqual(kinds, ["stale"])
 
+    def test_with_entry_replaces_in_place_or_appends(self) -> None:
+        first, second = entry(FIRST, "SPEAKER_00"), entry(FIRST, "SPEAKER_01")
+        assignment = SpeakerAssignment((first, second), 3)
+        chosen = entry(FIRST, "SPEAKER_00", 11)
+        added = entry(SECOND, "SPEAKER_00", 12)
+
+        self.assertEqual(
+            with_entry(assignment, chosen), SpeakerAssignment((chosen, second), 3)
+        )
+        self.assertEqual(with_entry(assignment, added).entries, (first, second, added))
+
     def test_a_person_needs_a_user_id_and_only_a_person_has_one(self) -> None:
         with self.assertRaisesRegex(ValueError, "user_id"):
             AssignmentEntry(1, "SPEAKER_00", "v", "person")
@@ -294,6 +308,53 @@ class AssignmentFileTest(_SessionCase):
                     load_assignment(self.paths)
                 self.assertNotIn(SECRET_LABEL, str(caught.exception))
                 self.assertNotIn("11", str(caught.exception).split(": ", 1)[1])
+
+    def test_set_entry_changes_only_its_label_and_keeps_the_rest_as_read(
+        self,
+    ) -> None:
+        other = {
+            "note": "von Hand",  # an extra field survives
+            "labels_version": "w",
+            "segment": 2,
+            "label": "SPEAKER_00",
+            "assigned": "unknown",
+        }
+        replaced = {**self.stored()["entries"][0], "note": "zur alten Wahl"}
+        self.stored(entries=[replaced, other])
+        chosen = AssignmentEntry(1, SECRET_LABEL, "v2", "multiple")
+
+        set_entry(self.paths, chosen)
+
+        written = json.loads(self.paths.speaker_assignment.read_text("utf-8"))
+        self.assertEqual(written["entries"][1], other)
+        self.assertEqual(list(written["entries"][1]), list(other))
+        # the chosen entry is written fresh; a note on the old choice goes with it
+        self.assertEqual(written["entries"][0], dataclasses.asdict(chosen))
+        self.assertEqual(written["effort_minutes"], 7)
+
+    def test_set_entry_appends_a_new_label_and_set_effort_keeps_entries(
+        self,
+    ) -> None:
+        data = self.stored()
+        added = entry(SECOND, "SPEAKER_00", 12)
+
+        set_entry(self.paths, added)
+        set_effort(self.paths, 9)
+
+        loaded = load_assignment(self.paths)
+        assert loaded is not None
+        self.assertEqual(loaded.entries[1], added)
+        self.assertEqual(loaded.effort_minutes, 9)
+        written = json.loads(self.paths.speaker_assignment.read_text("utf-8"))
+        self.assertEqual(written["entries"][0], data["entries"][0])
+
+    def test_set_entry_refuses_an_invalid_file_and_writes_nothing(self) -> None:
+        self.stored(format_version=2)
+        before = self.paths.speaker_assignment.read_bytes()
+
+        with self.assertRaisesRegex(AssignmentError, "format_version"):
+            set_entry(self.paths, entry(FIRST, "SPEAKER_00", 11))
+        self.assertEqual(self.paths.speaker_assignment.read_bytes(), before)
 
     def test_written_assignment_keeps_person_entries(self) -> None:
         assignment = SpeakerAssignment((entry(FIRST, "SPEAKER_00", 11),), 5)

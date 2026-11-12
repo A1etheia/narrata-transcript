@@ -82,9 +82,8 @@ class WiringTest(_Patched):
         self.assertIn(
             f"review: fill in the decisions in {self.paths.review_sheet}", stdout
         )
-        self.assertIn(
-            f"speakers: assign the labels in {self.paths.speaker_assignment}", stdout
-        )
+        self.assertIn(f"speakers: run transcript speakers {KEY} --assign", stdout)
+        self.assertIn(f"edit {self.paths.speaker_assignment} by hand", stdout)
         self.assertIn(f"then run transcript process {KEY} again", stdout)
         self.assertIn("review halted, speakers halted", stdout)
 
@@ -205,6 +204,8 @@ class LockAndLogTest(_Patched):
     def test_the_preflight_is_strict_unless_a_step_is_redone(self) -> None:
         self.process()
         self.assertTrue(self.mocks["_doctor"].call_args.kwargs["strict_resume"])
+        # process plays nothing, so the optional ffplay is not checked
+        self.assertFalse(self.mocks["_doctor"].call_args.kwargs["player"])
 
         self.process("--redo", "transcribe")
         self.assertFalse(self.mocks["_doctor"].call_args.kwargs["strict_resume"])

@@ -26,7 +26,9 @@ from transcript.timecode import format_ms
 SAMPLES_PER_LABEL = 5
 MERGE_SHARE = 0.03  # below this share of its segment's speech time, a label is suspect
 _INTRO = (
-    "Assign each label in `assignment.json` next to this file: `assigned` is "
+    "`transcript speakers <session> --assign` asks for each label in the "
+    "terminal and plays these passages. By hand, assign each label in "
+    "`assignment.json` next to this file: `assigned` is "
     "`person` with a `user_id` from the list below, `unknown`, `multiple` or "
     "`open`. Labels hold per segment only. Note the minutes spent in "
     "`effort_minutes`."
@@ -38,6 +40,7 @@ class Sample:
     passage: int
     speech_ms: int  # of the label within the passage
     local_start_ms: int | None  # in the segment's WAV
+    local_end_ms: int | None
     span: SessionSpan | None
     text: str
 
@@ -110,6 +113,7 @@ def label_samples(
                             passage=p.index,
                             speech_ms=ms,
                             local_start_ms=p.start_ms,
+                            local_end_ms=p.end_ms,
                             span=passage_span(segment, p),
                             text=" ".join(p.text.split()),
                         )
@@ -137,7 +141,7 @@ def render(
         "| user_id | name | role | membership |",
         "| --- | --- | --- | --- |",
     ]
-    for participant in sorted(participants, key=lambda p: p.is_former):
+    for participant in ordered(participants):
         membership = "former" if participant.is_former else "active"
         lines.append(
             f"| {participant.user_id} | {_cell(participant.display_name)} "
@@ -156,8 +160,18 @@ def render(
             )
         if found.samples:
             lines.append("")
-        lines += [_sample(sample) for sample in found.samples]
+        lines += [f"- {sample_line(sample)}" for sample in found.samples]
     return "\n".join(lines) + "\n"
+
+
+def ordered(participants: Iterable[Participant]) -> tuple[Participant, ...]:
+    """Present first, then active, then former members; by name within each."""
+    return tuple(
+        sorted(
+            participants,
+            key=lambda p: (p.present is not True, p.is_former, p.display_name),
+        )
+    )
 
 
 def _summary(found: LabelSamples, assignment: SpeakerMap) -> str:
@@ -167,11 +181,12 @@ def _summary(found: LabelSamples, assignment: SpeakerMap) -> str:
     return f"- speech time {format_ms(found.speech_ms)}{share}; assigned: {who}"
 
 
-def _sample(sample: Sample) -> str:
+def sample_line(sample: Sample) -> str:
+    """Session time, WAV time, passage and speech time of a sample, then its text."""
     session = "?" if sample.span is None else sample.span.timecode()
     local = "?" if sample.local_start_ms is None else format_ms(sample.local_start_ms)
     return (
-        f"- {session} (WAV {local}, passage {sample.passage}, "
+        f"{session} (WAV {local}, passage {sample.passage}, "
         f"{format_ms(sample.speech_ms)}): {sample.text}"
     )
 
