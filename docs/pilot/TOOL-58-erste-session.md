@@ -37,11 +37,35 @@ Stand 2026-11-12. Dieser Bericht enthält nur Kennzahlen, Codes und nachgestellt
 
 ## Sprecherzuordnung
 
-_folgt (Chunk 2)_
+Interaktiv mit `transcript speakers <s> --assign` (TOOL-86): **4 min** für 7 Labels in 2 Segmenten, gemessen vom Befehl selbst (`effort_minutes`). Ergebnis: 6 Labels einer Person zugeordnet, 1 `multiple`, 0 offen, 0 `unknown`. Der Vorlauf mit 8 Labels hatte 8 min gebraucht.
 
 ## Review
 
-_folgt (Chunk 2)_
+Review in `review.csv`, sortiert nach `order`, Timebox **60 min**, gestoppt von der Projektverantwortlichen. Angehört wurde mit einem Hilfsskript, das eine Passage über ihre Kandidaten-ID abspielt (siehe Workarounds).
+
+| | Anzahl |
+| --- | --- |
+| Kandidaten | 870 (185 `uncertain`, 685 `needs_review`), 160 pro Stunde Audio |
+| entschieden | 35: 9 `confirmed`, 23 `corrected`, 3 `unintelligible`, 0 `kept` |
+| offen | 835 |
+| Hörfehler-Vorschläge | 4 neu, 32 Korrekturen ohne Glossar-Begriff |
+
+- **Tempo:** 35 Entscheidungen pro Stunde. Hochgerechnet bräuchte das vollständige Review dieser Sitzung rund 25 Stunden, fast fünfmal so lange wie die Aufnahme.
+- **Trefferquote oben in der Liste:** 26 der 35 entschiedenen Kandidaten waren falsch erkannt oder unverständlich (74 %). Die Reihenfolge `order` bringt die Fehler also nach vorn.
+- **Die Auswahl trennt kaum:** 870 der 997 Passagen sind Kandidaten (87 %). Die 127 automatisch übernommenen Passagen decken nur 10:21 min der 5:26 h ab, also 3 %. Praktisch die ganze Aufnahme steht zur Prüfung. Ein Grund sind lange Passagen: Whisper-Passagen dauern im Mittel rund 20 s, und schon ein einziges unsicheres Wort macht die ganze Passage zum Kandidaten (Regel `very_low_confidence`).
+- **Halluzination am Aufnahmeende:** Die letzte Passage von Segment 2 (1,7 s, Wort-Confidence nahezu 0) ist von Whisper erfundener Text. Sie wurde richtig als `uncertain` markiert und im Review als `unintelligible` entschieden.
+
+## Ergebnis
+
+`transcript process <s>` nach Zuordnung und Review: Exit 1, einzige Lücke `open_passages` in beiden Segmenten.
+
+| Datei | Inhalt |
+| --- | --- |
+| `transcript.json` | Contract 1.1, `source.recordings[]` mit 2 Aufnahmen, 997 Passagen; vor dem Schreiben gegen die Schema-Kopie und die Regeln aus `contract.validate` geprüft |
+| `transcript.txt`, `transcript.docx` | 481 Absätze, offene Passagen als `[unklar …]` markiert |
+| `report.json`, `report.md` | 3 `unintelligible`, 3 `crosstalk`, 835 offen; 4 Personen hinter 7 Labels |
+
+**Grober manueller Aufwand:** 4 min Zuordnung und 60 min Review (35 von 870 Kandidaten), dazu wenige Minuten für die Befehle. Ein vollständiges Review läge bei rund 25 h (siehe oben).
 
 ## Fehlerstichprobe
 
@@ -56,3 +80,5 @@ _folgt (Chunk 4)_
 - **Alte Handdateien vor `--redo transcribe`:** Die alte `speakers/assignment.json` und `review/review.csv` stammten aus einem früheren Lauf. Nach einer neuen ASR wären ihre Einträge `stale`, und `process` hätte keine frischen Vorlagen geschrieben. Deshalb wurden sie vorher nach `work/<s>/pre-tool58/` verschoben.
 - **CUDA-Bibliotheken für faster-whisper:** Der erste Versuch scheiterte nach 6 min an beiden Segmenten mit `BackendUnavailableError … CUDA libraries not found`, weil `LD_LIBRARY_PATH` in der Shell fehlte (Voraussetzung laut README, Abschnitt „Spracherkennung“). Workaround: den Pfad setzen und `--redo transcribe` wiederholen. Das alte ASR-Ergebnis blieb dabei unverändert.
 - **Preflight meldet die ASR zu früh als `ok`:** `transcript doctor` zeigte `asr: … on cuda` als `ok`, obwohl faster-whisper cuBLAS und cuDNN nicht laden konnte. Der Fehler fiel erst nach Snapshot und Diarisierung auf. Der Preflight sollte das Laden der Bibliotheken prüfen, ohne das Modell zu laden.
+- **Aufruf ohne aktivierte venv:** Ohne `source .venv/bin/activate` kennt die Shell `transcript` nicht, und `LD_LIBRARY_PATH` muss in jeder Shell neu gesetzt werden. Workaround auf dem Pilotrechner: ein Startskript `~/.local/bin/transcript`, das beides übernimmt. Aufgerufen wird es weiterhin aus dem Projektordner, weil `paths.root` relativ ist.
+- **Keine Abspielhilfe im Review:** Fast jede Zeile muss angehört werden, aber die Pipeline spielt nur im Sprecher-Dialog ab. Wer Segment und Zeit von Hand aus der CSV in einen Player überträgt, verliert viel Zeit, und bei der Spalte `start` (Session-Zeit statt Segment-Zeit) springt der Player hinter das Segmentende und bleibt stumm. Workaround: das Skript `~/.local/bin/hoer <id>`, das Segment und Zeiten aus `candidates.json` liest und die Passage mit 2 s Vorlauf und 1 s Nachlauf abspielt. Ein Review-Dialog nach dem Vorbild von `speakers --assign` würde den Aufwand vermutlich spürbar senken.
