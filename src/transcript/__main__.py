@@ -47,7 +47,16 @@ from transcript import (
 )
 from transcript.asr import BackendError
 from transcript.asr.whisper import WhisperBackend
-from transcript.config import LEVELS, Config, ConfigError, format_config, load_config
+from transcript.config import (
+    DEFAULT_CONFIG,
+    DOTENV,
+    EXAMPLE_CONFIG,
+    LEVELS,
+    Config,
+    ConfigError,
+    format_config,
+    load_config,
+)
 from transcript.diarization.pyannote import PyannoteDiarizer
 from transcript.domain import DomainContext
 from transcript.jsonfile import DataFileError
@@ -61,9 +70,9 @@ from transcript.transcription import (
     transcribe_session,
 )
 
-_DEFAULT_CONFIG = Path("config/config.yaml")
-_EXAMPLE_CONFIG = Path("config/example.yaml")
-_DOTENV = Path(".env")
+# module-level so tests can point them at a temporary folder
+_DEFAULT_CONFIG = DEFAULT_CONFIG
+_DOTENV = DOTENV
 _SHORT_ID = knowledge.SHORT_ID
 _SHOWN_FINDINGS = 10  # the rest is in the diagnosis report
 _SNAPSHOT_BEHIND = f"warning: {knowledge.BEHIND_CONTEXT}"
@@ -1624,7 +1633,7 @@ def _show_config(path: Path) -> int:
 
 def _load_config(path: Path) -> Config:
     if path == _DEFAULT_CONFIG and not path.exists():
-        raise ConfigError(f"{path} not found; copy {_EXAMPLE_CONFIG} to create it")
+        raise ConfigError(f"{path} not found; copy {EXAMPLE_CONFIG} to create it")
     return load_config(path)
 
 

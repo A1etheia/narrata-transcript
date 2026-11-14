@@ -13,6 +13,14 @@ import yaml
 from transcript.narrata import ENTRY_TYPES
 from transcript.session import SessionKey, SessionPaths
 
+# The checkout this package runs from; the setup installs it editable (src layout).
+# A relative `paths.root` (also in a `--config` file from elsewhere) and the default
+# config and `.env` hang off it, so the CLI works from any directory.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_CONFIG = PROJECT_ROOT / "config" / "config.yaml"
+EXAMPLE_CONFIG = PROJECT_ROOT / "config" / "example.yaml"
+DOTENV = PROJECT_ROOT / ".env"
+
 _LANGUAGE_PATTERN = re.compile(r"[a-z]{2}")
 _TOP_LEVEL_KEYS = {
     "language",
@@ -300,7 +308,7 @@ def load_config(path: Path) -> Config:
 
     return Config(
         language=language,
-        root=Path(root),
+        root=PROJECT_ROOT / root,  # an absolute root stays as it is
         debug=debug,
         segment_length_seconds=length,
         segment_overlap_seconds=overlap,

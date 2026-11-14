@@ -17,7 +17,7 @@ from transcript import audio, audio_tools, knowledge, manifest, narrata, speaker
 from transcript.asr.backend import Backend, BackendError, BackendIdentity, BackendInfo
 from transcript.asr.backend import identity as backend_identity
 from transcript.asr.whisper import LIBRARY_HINT, WhisperBackend, preload_cuda_libraries
-from transcript.config import Config, ConfigError, load_config
+from transcript.config import DOTENV, Config, ConfigError, load_config
 from transcript.diarization.pyannote import PyannoteDiarizer
 from transcript.domain import DomainContext
 from transcript.jsonfile import DataFileError
@@ -56,7 +56,7 @@ class Probes:
     diarizer: Callable[[Config], _Diarizer] = PyannoteDiarizer.from_config
     # where the Narrata token is looked up
     environ: Mapping[str, str] = field(default_factory=lambda: os.environ)
-    dotenv: Path = Path(".env")
+    dotenv: Path = DOTENV
     disk_free: Callable[[Path], int] = lambda path: shutil.disk_usage(path).free
     player: Callable[[], Path | None] = speaker_player.find_player
 
