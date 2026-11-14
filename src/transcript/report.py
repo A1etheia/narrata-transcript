@@ -711,6 +711,7 @@ def _runtime_lines(runtime: Runtime) -> list[str]:
         f"| {s.segment} | {clock(s.asr_ms)} | {clock(s.diarization_ms)} |"
         for s in runtime.segments
     ]
+    asr, diarization = map(format_clock, (runtime.asr_ms, runtime.diarization_ms))
     return [
         "## Laufzeit",
         "",
@@ -719,8 +720,7 @@ def _runtime_lines(runtime: Runtime) -> list[str]:
         "| Segment | ASR | Diarisierung |",
         "| --- | --- | --- |",
         *rows,
-        f"| gesamt | {format_clock(runtime.asr_ms)} "
-        f"| {format_clock(runtime.diarization_ms)} |",
+        f"| gesamt | {asr} | {diarization} |",
         "",
     ]
 
