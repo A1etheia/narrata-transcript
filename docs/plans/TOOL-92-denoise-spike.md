@@ -17,22 +17,22 @@ Gemessen wird, ob ein lokaler Rauschfilter vor ASR und Diarisierung an der Pilot
 - **Ganzes Segment 1 statt Ausschnitt.** Whisper und pyannote verhalten sich auf 5 h anders als auf einem Clip (Kontext, Clustering). Ein Kandidat kostet rund 10 min Rechenzeit plus den Filter, und das läuft im Hintergrund. Segment 2 hat keine Referenz und bleibt draußen.
 - **Kandidaten, gestuft:**
   1. `base` (Roh-WAV, in der Schattenwurzel neu gerechnet)
-  2. `base-2` (Wiederholung, misst das Lauf-zu-Lauf-Rauschen)
-  3. `hp` (`highpass=f=80`)
-  4. `hp-afftdn` (`highpass=f=80,afftdn=nf=-25`, die mittlere Kette aus TOOL-91)
-  5. `arnndn` (RNNoise-Modell `cb.rnnn`, bei 48 kHz)
-  6. `dfn` (DeepFilterNet 3, `deep-filter`, bei 48 kHz)
+  2. `hp` (`highpass=f=80`)
+  3. `hp-afftdn` (`highpass=f=80,afftdn=nf=-25`, die mittlere Kette aus TOOL-91)
+  4. `arnndn` (RNNoise-Modell `lq.rnnn` für Stimme unter allgemeinem Störgeräusch, bei 48 kHz)
+  5. `dfn` (DeepFilterNet 3, `deep-filter`, bei 48 kHz)
 
   Eine `hp`-Variante von `arnndn` oder `dfn` kommt nur dazu, wenn einer der beiden die Basis schlägt.
+- **Drei Läufe pro Kandidat (Nachtrag nach den ersten Läufen).** Zwei Läufe von `base` auf demselben WAV lagen an B bei 46,4 % und 33,7 % WER. Vermutete Ursache ist der Temperatur-Fallback von faster-whisper, der ohne festen Seed Stichproben zieht; das Backend setzt `temperature` nicht (`src/transcript/asr/whisper.py:48`). Jeder Kandidat läuft deshalb dreimal in eigenen Wurzeln `<kandidat>.run<n>` mit demselben WAV, verglichen werden Mittelwert und Spanne. Zusätzlich läuft `base-t0` zweimal mit `temperature=0` (nur im Spike, über die festen Whisper-Einstellungen, im Transkript vermerkt). Der Kandidat zeigt, ob der Fallback die Streuung und die Auslassungen verursacht, und ist ein Eingang für TOOL-93.
 - **Länge exakt halten:** Nach jedem Filter folgt `aresample=16000,apad,atrim=end_sample=<frames>`, danach prüft das Skript die Frames gegen das Manifest.
 - **Kennzahlen:**
-  - WER A/B über `calibration.measure` auf den Schattenpfaden. Wie in TOOL-62 gelten 1–2 Punkte als Rauschen, `base-2` prüft das.
+  - WER A/B über `calibration.measure` auf den Schattenpfaden. Das Rauschen ergibt sich aus der Spanne der drei `base`-Läufe, nicht aus den 1–2 Punkten von TOOL-62.
   - Halluzination wie in TOOL-62: Wortzahl, Anteil der 5-Wort-Folgen, die mindestens dreimal vorkommen, Anteil verschiedener Wörter, alles über Segment 1.
   - Unsicherheit: Passagen und Zeitanteil je Stufe über Segment 1 (`segment_assessment`).
   - Diarisierung: Zahl der Labels in Segment 1, WDER an A nach der TOOL-20-Methode, Übereinstimmung der Labels mit `base` nach der besten 1:1-Zuordnung.
   - Laufzeit: Filter pro Stunde Audio, ASR und Diarisierung aus `elapsed_ms`.
 - **Keine Hörstichprobe** im Spike. Eine blinde Stichprobe wie in TOOL-20 lohnt sich erst, wenn ein Kandidat Go bekommt. Dann gehört sie ins Umsetzungsticket.
-- **Go-Regel:** Go nur, wenn ein Kandidat die WER an A und B um mehr als den `base`/`base-2`-Abstand plus 2 Punkte senkt, ohne dass Halluzinationen oder WDER steigen. Hilft er nur einer Seite, bekommt nur diese Seite die gefilterte Eingabe (Leitplanke im Ticket).
+- **Go-Regel:** Go nur, wenn ein Kandidat die WER an A und B im Mittel der drei Läufe so weit senkt, dass sich die Spannen von Kandidat und `base` nicht überlappen, ohne dass Halluzinationen oder WDER steigen. Hilft er nur einer Seite, bekommt nur diese Seite die gefilterte Eingabe (Leitplanke im Ticket).
 
 ## Daten-Check
 - Audio, Schattenwurzeln, Transkripte und Läufe: *handled*. Alles liegt unter `work/<s>/experiments/denoise/`, `work/` ist gitignored.
@@ -51,7 +51,7 @@ Gemessen wird, ob ein lokaler Rauschfilter vor ASR und Diarisierung an der Pilot
 
 ## Dependency-Check
 - ffmpeg-Filter `highpass`, `afftdn`, `arnndn`: *handled*. Schon installiert (4.4.2), lokal, CPU.
-- RNNoise-Modell `cb.rnnn` (GregorR/rnnoise-models): *handled*. Wird einmal nach `~/.cache/narrata-spike/denoise/` geladen, nicht ins Repo. Die Lizenz wird beim Download geprüft und im Bericht genannt.
+- RNNoise-Modell `lq.rnnn` (GregorR/rnnoise-models; laut README nicht urheberrechtlich geschützt): *handled*. Wird einmal nach `~/.cache/narrata-spike/denoise/` geladen, nicht ins Repo. Die Lizenz wird beim Download geprüft und im Bericht genannt.
 - DeepFilterNet 3: *handled*. Das vorgebaute `deep-filter`-Binary (MIT/Apache-2.0) aus den GitHub-Releases nach `~/.cache/narrata-spike/denoise/`, ohne Python-Abhängigkeit und ohne Konflikt mit torch in der venv. Es läuft auf der CPU. Dauert es über 60 min für 5 h, wird nur gemessen und das im Bericht als Kostenargument vermerkt.
 - `pyproject.toml`: *N/A*, weil keine neue Paket-Abhängigkeit dazukommt.
 
