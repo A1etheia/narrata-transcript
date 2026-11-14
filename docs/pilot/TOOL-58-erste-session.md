@@ -53,6 +53,7 @@ Review in `review.csv`, sortiert nach `order`, Timebox **60 min**, gestoppt von 
 - **Tempo:** 35 Entscheidungen pro Stunde. Hochgerechnet bräuchte das vollständige Review dieser Sitzung rund 25 Stunden, fast fünfmal so lange wie die Aufnahme.
 - **Trefferquote oben in der Liste:** 26 der 35 entschiedenen Kandidaten waren falsch erkannt oder unverständlich (74 %). Die Reihenfolge `order` bringt die Fehler also nach vorn.
 - **Die Auswahl trennt kaum:** 870 der 997 Passagen sind Kandidaten (87 %). Die 127 automatisch übernommenen Passagen decken nur 10:21 min der 5:26 h ab, also 3 %. Praktisch die ganze Aufnahme steht zur Prüfung. Ein Grund sind lange Passagen: Whisper-Passagen dauern im Mittel rund 20 s, und schon ein einziges unsicheres Wort macht die ganze Passage zum Kandidaten (Regel `very_low_confidence`).
+- **Zusammenhang beim Hören hilft:** Die Projektverantwortliche hat Wörter in langen Passagen besser erkannt als in kurzen Ausschnitten. Kürzere Hörproben sparen also kaum Zeit. Ansatzpunkte sind eher weniger Kandidaten, hervorgehobene unsichere Wörter beim Abspielen der ganzen Passage und ein Dialog statt der CSV.
 - **Halluzination am Aufnahmeende:** Die letzte Passage von Segment 2 (1,7 s, Wort-Confidence nahezu 0) ist von Whisper erfundener Text. Sie wurde richtig als `uncertain` markiert und im Review als `unintelligible` entschieden.
 
 ## Ergebnis
@@ -69,7 +70,26 @@ Review in `review.csv`, sortiert nach `order`, Timebox **60 min**, gestoppt von 
 
 ## Fehlerstichprobe
 
-_folgt (Chunk 3)_
+Zwei Handreferenzen der Projektverantwortlichen aus Segment 1, ausgewertet mit `transcript calibrate`. Ausschnitt B ist derselbe Clip wie in TOOL-62 und TOOL-35.
+
+| | A: 0:00:00–0:04:06 | B: 1:20:00–1:23:00 |
+| --- | --- | --- |
+| Wörter in der Referenz | 551 | 489 |
+| WER | 23,6 % (130 Fehler) | 32,9 % (161 Fehler) |
+| Ersetzungen / Auslassungen / Einfügungen | 66 / 49 / 15 | 61 / 92 / 8 |
+| Fehler je Sprecher | S1 16,8 %, S2 50,0 % (20 Wörter), S3 31,2 % | ohne Sprecherkennung |
+| Passagen markiert | 9 von 9 (100 % der Zeit) | 7 von 8 (95,6 % der Zeit) |
+| Fehler in markierten Passagen | 130 von 130 | 157 von 161 |
+| übersehen (`confident`) | 0 | 4, alle Auslassungen |
+| Fehlalarme (markiert, ohne Fehler) | 0 | 0 |
+| AUC der Word-Confidence | 0,78 | 0,75 |
+| falsche Wörter unter den unsichersten 30 % | 67,9 % | 60,9 % |
+
+- **Die Auswahl ist nicht zu großzügig, das Transkript ist zu fehlerhaft.** Keine einzige markierte Passage war fehlerfrei. Bei einer WER von 24–33 % und Passagen von im Mittel 18 s (Median 13 s, 312 von 997 länger als 30 s) enthält fast jede Passage mindestens einen Fehler. Dass 87 % der Passagen Kandidaten sind, ist also richtig gemessen. Strengere Regeln würden echte Fehler verstecken, nicht Fehlalarme sparen.
+- **Auslassungen** sind 38 % (A) bzw. 57 % (B) der Fehler. Sie haben keine Word-Confidence und fallen nur über `gap`, `sparse` oder `crosstalk` auf. Die 4 übersehenen Fehler sind alle Auslassungen.
+- **Übersprechen:** In A tragen die 4 Passagen mit `crosstalk` 69 der 130 Fehler.
+- **Regeln über die ganze Sitzung:** `very_low_confidence` (mindestens ein Wort unter 0,2) schlägt in 683 der 870 Kandidaten an, in 103 als einziger Grund. Danach folgen `low_confidence` (341), `gap` (316), `low_logprob` (209) und `crosstalk` (185).
+- **Abweichung zu TOOL-35:** Dort waren 36 % der Passagen markiert, hier 87 %. Die WER am selben Clip B ist praktisch gleich (32,9 % gegen 32,4 %). Der Unterschied liegt bei den Regeln und den Passagen, nicht beim Wortlaut. Warum, ist nicht geklärt; Kandidaten sind der neuere Snapshot mit mehr Hinweisen und die Regel `crosstalk`.
 
 ## Narrata-Gegenprobe
 
