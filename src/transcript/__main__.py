@@ -998,7 +998,8 @@ def _speakers(
         return 2
     try:
         key = SessionKey.parse(raw_key)
-        paths = _load_config(config_path).session_paths(key)
+        config = _load_config(config_path)
+        paths = config.session_paths(key)
         found_manifest = manifest.load_manifest(paths)
         participants = knowledge.load_snapshot(paths).participants
         references = speakers.diarized_references(paths, found_manifest)
@@ -1010,7 +1011,7 @@ def _speakers(
         if assign:
             outcome = speaker_assign.run(
                 paths, labels, references, participants, assignment,
-                _assign_console(), every,
+                _assign_console(config.playback_filter), every,
             )  # fmt: skip
             if outcome.interrupted:
                 print(f"{key}: interrupted; {outcome.saved} label(s) saved")
@@ -1058,12 +1059,19 @@ def _interactive() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
 
 
-def _assign_console() -> speaker_assign.Console:
+def _assign_console(playback_filter: str | None) -> speaker_assign.Console:
     player = speaker_player.find_player()  # once per run
+    audio_filter = playback_filter
+    if player is not None and playback_filter is not None:
+        audio_filter = speaker_player.usable_filter(playback_filter)  # once per run
+        if audio_filter is None:
+            print("note: playback filter not usable; samples play unfiltered")
     return speaker_assign.Console(
         ask=input,
         say=print,
-        play=lambda wav, start, end: speaker_player.play(player, wav, start, end),
+        play=lambda wav, start, end: speaker_player.play(
+            player, wav, start, end, audio_filter
+        ),
     )
 
 

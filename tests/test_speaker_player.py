@@ -1,18 +1,24 @@
+import os
+import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
+from media import sine, synth
 from test_audio_tools import write_stub
 
 from transcript import speaker_player
+from transcript.audio import sha256_file
+from transcript.config import DEFAULT_PLAYBACK_FILTER
 from transcript.speaker_player import (
     MAX_SAMPLE_MS,
     command,
     find_player,
     play,
     sample_ms,
+    usable_filter,
 )
 
 PLAYER = Path("/opt/fake/ffplay")
@@ -29,6 +35,15 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(argv[-1], str(WAV))
         self.assertIn("-nodisp", argv)
         self.assertIn("-autoexit", argv)
+
+    def test_a_filter_goes_before_the_input(self) -> None:
+        argv = command(PLAYER, WAV, 0, 1_000, "highpass=f=80,afftdn")
+
+        self.assertEqual(argv[argv.index("-af") + 1], "highpass=f=80,afftdn")
+        self.assertLess(argv.index("-af"), argv.index(str(WAV)))
+
+    def test_without_a_filter_the_raw_signal_plays(self) -> None:
+        self.assertNotIn("-af", command(PLAYER, WAV, 0, 1_000))
 
     def test_a_long_or_open_passage_is_cut_to_the_cap(self) -> None:
         self.assertEqual(sample_ms(0, 60_000), MAX_SAMPLE_MS)
@@ -85,6 +100,52 @@ class PlayTest(unittest.TestCase):
         with mock.patch.object(speaker_player.subprocess, "run") as run:
             self.assertEqual(play(None, WAV, 0, 1_000), "missing")
         run.assert_not_called()
+
+
+class UsableFilterTest(unittest.TestCase):
+    CHAIN = "highpass=f=80,afftdn=nf=-25"
+
+    def with_ffmpeg(self, body: str | None) -> str | None:
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            if body is not None:
+                write_stub(folder, "ffmpeg", body)
+            return usable_filter(self.CHAIN, str(folder))
+
+    def test_a_chain_ffmpeg_builds_is_used(self) -> None:
+        self.assertEqual(self.with_ffmpeg("exit 0"), self.CHAIN)
+
+    def test_a_chain_ffmpeg_rejects_plays_unfiltered(self) -> None:
+        self.assertIsNone(self.with_ffmpeg("exit 1"))
+
+    def test_without_ffmpeg_samples_play_unfiltered(self) -> None:
+        self.assertIsNone(self.with_ffmpeg(None))
+
+    @unittest.skipIf(shutil.which("ffmpeg") is None, "ffmpeg not installed")
+    def test_real_ffmpeg_accepts_the_default_and_rejects_unknown_filters(
+        self,
+    ) -> None:
+        self.assertEqual(
+            usable_filter(DEFAULT_PLAYBACK_FILTER), DEFAULT_PLAYBACK_FILTER
+        )
+        self.assertIsNone(usable_filter("nosuchfilter"))
+        self.assertIsNone(usable_filter("afftdn=nosuchoption=1"))
+
+
+class FilteredPlaybackTest(unittest.TestCase):
+    @unittest.skipIf(shutil.which("ffplay") is None, "ffplay not installed")
+    def test_playing_through_the_filter_leaves_the_wav_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            wav = Path(directory) / "segment-001.wav"
+            synth(wav, *sine(seconds=0.5, rate=16_000), "-ac", "1")
+            before = sha256_file(wav)
+
+            # dummy audio driver: ffplay decodes and filters, nothing is heard
+            with mock.patch.dict(os.environ, {"SDL_AUDIODRIVER": "dummy"}):
+                played = play(find_player(), wav, 0, 300, DEFAULT_PLAYBACK_FILTER)
+
+            self.assertEqual(played, "played")
+            self.assertEqual(sha256_file(wav), before)
 
 
 class FindPlayerTest(unittest.TestCase):
