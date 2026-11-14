@@ -93,7 +93,24 @@ Zwei Handreferenzen der Projektverantwortlichen aus Segment 1, ausgewertet mit `
 
 ## Narrata-Gegenprobe
 
-_folgt (Chunk 4)_
+Lokales Narrata (ios-archiv `main`) mit PHP 8.5 nativ und MySQL über Sail. Die leere lokale DB bekam Platzhalter mit denselben IDs wie der Export: Gruppe, Spielsitzung mit Ordinal und vier Personen als Mitglieder.
+
+| Schritt | Ergebnis |
+| --- | --- |
+| `scripts/artisan transcript:validate <transcript.json>` | `conforms to the transcript contract`, Exit 0 |
+| `transcript:import`, 1. Lauf | 997 created, 0 updated, 0 removed; 0 Hinweise verworfen; Exit 0 |
+| `transcript:import`, 2. Lauf mit derselben Datei | `already holds this file; nothing changed`, Exit 0 |
+
+- **Ohne Korrektur:** Contract 1.1 mit zwei Aufnahmen wird von Narrata so angenommen, wie die Pipeline ihn schreibt. `contract.validate` und Narratas Validator sind sich an der echten Datei einig.
+- **Idempotent:** Ein erneuter Import derselben Datei ändert nichts.
+- **Aufräumen:** Das importierte Transkript wurde danach aus der lokalen DB gelöscht, die Passagen gingen über den Fremdschlüssel mit. Die Platzhalter enthalten keine echten Daten.
+- **Die Exportdatei** bleibt lokal unter `output/` und ging in kein Repo. Die Fixtures aus IOA-1214 und IOA-1287 decken die Form ab.
+
+Einrichtung der lokalen Umgebung, nur beim ersten Mal:
+
+- **IPv6 in WSL defekt:** `scripts/bootstrap-wsl-php.sh` brach beim Anlegen der PHP-Paketquelle mit `Connection timed out` ab, weil Launchpad per IPv6 nicht erreichbar war (IPv4 antwortet in 0,2 s). Workaround: IPv4 in `/etc/gai.conf` bevorzugen (`precedence ::ffff:0:0/96 100`).
+- **Gruppe `docker`:** Nach der Aufnahme in die Gruppe kennen laufende Shells sie erst nach einem neuen Login. Bis dahin hilft `sg docker -c "…"`.
+- **Import mit nativem PHP:** `DB_HOST=127.0.0.1 scripts/artisan transcript:import <datei>` erreicht das MySQL im Container. So muss die Exportdatei nicht in das Narrata-Repo kopiert werden.
 
 ## Blockierende Fehler und Workarounds
 
