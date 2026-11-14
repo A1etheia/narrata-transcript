@@ -10,6 +10,7 @@ Messages never repeat a runtime message, which may quote hotwords.
 import ctypes
 import dataclasses
 import gc
+import importlib.util
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -52,22 +53,51 @@ FIXED_SETTINGS = {
 # Without tokenizer.json faster-whisper would fetch one from the Hub.
 _MODEL_FILES = ("model.bin", "tokenizer.json")
 _DEFAULT_COMPUTE_TYPES = {"cuda": "float16", "cpu": "int8"}
-_INSTALL_HINT = "install it with pip install -e '.[whisper]'"
-LIBRARY_HINT = "set LD_LIBRARY_PATH as in the README, section Spracherkennung"
-# What CTranslate2 4.8 loads lazily on the GPU, at the first segment; its wheel
-# names no cuDNN library. dlopen follows LD_LIBRARY_PATH like CTranslate2 does.
-CUDA_LIBRARIES = ("libcublas.so.12",)
-_load_library: Callable[[str], object] = ctypes.CDLL  # tests replace it
+_PIP_INSTALL = "pip install -e '.[whisper]'"
+_INSTALL_HINT = f"install it with {_PIP_INSTALL}"
+LIBRARY_HINT = f"install the GPU libraries with {_PIP_INSTALL}"
+# What CTranslate2 4.8 loads lazily on the GPU, at the first segment, and the pip
+# package that ships it; its wheel names no cuDNN library.
+CUDA_LIBRARIES = {"libcublas.so.12": "nvidia.cublas"}
+# tests replace both
+_load_library: Callable[..., object] = ctypes.CDLL
+_find_spec = importlib.util.find_spec
 
 
-def missing_cuda_library() -> str | None:
-    """The first of CUDA_LIBRARIES that cannot be loaded, without any model."""
-    for name in CUDA_LIBRARIES:
-        try:
-            _load_library(name)
-        except OSError:
+def preload_cuda_libraries() -> str | None:
+    """Load CUDA_LIBRARIES into the process; the first that does not load, if any.
+
+    Each comes from its pip package by absolute path, else from the system by name.
+    RTLD_GLOBAL makes CTranslate2's later dlopen by name find the loaded copy, so
+    no LD_LIBRARY_PATH is needed. No model is involved.
+    """
+    for name, package in CUDA_LIBRARIES.items():
+        wheel = _wheel_library(package, name)
+        candidates = [str(wheel), name] if wheel else [name]
+        if not any(_loads(candidate) for candidate in candidates):
             return name
     return None
+
+
+def _wheel_library(package: str, name: str) -> Path | None:
+    """`name` in the `lib` folder of the installed `package`, if it is there."""
+    try:
+        spec = _find_spec(package)
+    except ImportError:  # the parent package `nvidia` is missing
+        return None
+    for location in (spec and spec.submodule_search_locations) or ():
+        path = Path(location) / "lib" / name
+        if path.is_file():
+            return path
+    return None
+
+
+def _loads(library: str) -> bool:
+    try:
+        _load_library(library, mode=ctypes.RTLD_GLOBAL)
+    except OSError:
+        return False
+    return True
 
 
 class WhisperBackend:
@@ -109,7 +139,7 @@ class WhisperBackend:
     def load(self) -> None:
         faster_whisper, model_path, identity = self._prepare()
         device = identity.settings["device"]
-        if device == "cuda" and (library := missing_cuda_library()) is not None:
+        if device == "cuda" and (library := preload_cuda_libraries()) is not None:
             # without this check the run fails only at the first segment
             raise BackendUnavailableError(
                 f"{BACKEND_ID}: {library} cannot be loaded, {LIBRARY_HINT}"

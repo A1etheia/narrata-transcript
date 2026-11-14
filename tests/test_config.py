@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from transcript.config import (
+    PROJECT_ROOT,
     SUGGESTED_PLAYBACK_FILTER,
     Config,
     ConfigError,
@@ -38,7 +39,15 @@ class LoadConfigTest(unittest.TestCase):
         config = load_config(REPO_ROOT / "config" / "example.yaml")
 
         self.assertEqual(config.language, "de")
-        self.assertEqual(config.root, Path("."))
+        self.assertEqual(config.root, REPO_ROOT)
+
+    def test_project_root_is_the_checkout(self) -> None:
+        self.assertEqual(PROJECT_ROOT, REPO_ROOT)
+
+    def test_relative_root_counts_from_the_project_not_the_working_dir(self) -> None:
+        config = self.load("language: de\npaths:\n  root: sessions/pilot\n")
+
+        self.assertEqual(config.root, REPO_ROOT / "sessions" / "pilot")
 
     def test_defaults_apply_to_optional_values(self) -> None:
         self.assertEqual(

@@ -34,7 +34,7 @@ transcript doctor
 
 `transcript doctor` prüft die Umgebung, siehe [Preflight](#preflight).
 
-**Ohne aktivierte venv** startet `scripts/transcript` die CLI. Das Skript nimmt cuBLAS aus der venv in den `LD_LIBRARY_PATH` (siehe [Spracherkennung](#spracherkennung)), wechselt in den Projektordner und ruft dort `.venv/bin/transcript` mit denselben Argumenten auf. Verlinkt, etwa mit `ln -s "$PWD/scripts/transcript" ~/.local/bin/transcript`, läuft es aus jedem Verzeichnis. Relative Pfadangaben wie `--config` oder `--from-file` gelten dann relativ zum Projektordner.
+**Ohne aktivierte venv** läuft `.venv/bin/transcript` direkt. Verlinkt, etwa mit `ln -s "$PWD/.venv/bin/transcript" ~/.local/bin/transcript`, läuft es aus jedem Verzeichnis. Die Standard-Konfiguration `config/config.yaml`, `.env` und ein relativer `paths.root` gelten immer ab dem Projektordner, egal, wo der Aufruf startet. Relative Pfadangaben in Argumenten wie `--config` oder `--from-file` gelten wie üblich ab dem aktuellen Verzeichnis.
 
 ## Preflight
 
@@ -43,7 +43,7 @@ transcript doctor                    # Umgebung: Werkzeuge, Konfiguration, Model
 transcript doctor beispielgruppe/042 # zusätzlich die Session
 ```
 
-Vor einem langen Lauf prüft `transcript doctor`, ob alles bereitsteht. Ohne Session prüft der Befehl `ffmpeg` und `ffprobe` (Version und Pfad), ob `ffplay` für Hörproben da ist (fehlt es, ist das nur eine Warnung; der Preflight von `process` prüft es nicht), die Konfiguration, das ASR-Modell im lokalen Cache samt Gerät und das Diarisierungsmodell. Läuft die Spracherkennung auf der GPU, prüft er außerdem, ob sich cuBLAS laden lässt; fehlt `LD_LIBRARY_PATH` (siehe [Spracherkennung](#spracherkennung)), ist das ein Fehler, auch bei `asr.device: auto`, weil die Pipeline dann nicht auf die CPU ausweicht. Die Modelle werden dabei nicht geladen. Mit Session kommen hinzu:
+Vor einem langen Lauf prüft `transcript doctor`, ob alles bereitsteht. Ohne Session prüft der Befehl `ffmpeg` und `ffprobe` (Version und Pfad), ob `ffplay` für Hörproben da ist (fehlt es, ist das nur eine Warnung; der Preflight von `process` prüft es nicht), die Konfiguration, das ASR-Modell im lokalen Cache samt Gerät und das Diarisierungsmodell. Läuft die Spracherkennung auf der GPU, prüft er außerdem, ob sich cuBLAS laden lässt (siehe [Spracherkennung](#spracherkennung)); lässt es sich nicht laden, ist das ein Fehler, auch bei `asr.device: auto`, weil die Pipeline dann nicht auf die CPU ausweicht. Die Modelle werden dabei nicht geladen. Mit Session kommen hinzu:
 
 - die Aufnahmen in `input/`, jede per ffprobe geprüft
 - ob `work/` und `output/` beschreibbar sind
@@ -220,14 +220,7 @@ pip install -e '.[dev,whisper]'
 python -c "from faster_whisper import download_model; download_model('large-v3-turbo')"
 ```
 
-Für die GPU bringt das Extra cuBLAS als pip-Paket mit; cuDNN braucht CTranslate2 4.8 nicht. faster-whisper findet cuBLAS nur über `LD_LIBRARY_PATH`, etwa in `.venv/bin/activate` oder vor jedem Lauf:
-
-```bash
-SP=$(python -c "import site; print(site.getsitepackages()[0])")
-export LD_LIBRARY_PATH=$SP/nvidia/cublas/lib
-```
-
-`scripts/transcript` (siehe [Setup](#setup)) setzt den Pfad selbst.
+Für die GPU bringt das Extra cuBLAS als pip-Paket mit (`nvidia-cublas-cu12`); cuDNN braucht CTranslate2 4.8 nicht. Vor dem Modell lädt die Pipeline `libcublas.so.12` aus diesem Paket per absolutem Pfad in den Prozess, sodass CTranslate2 es ohne `LD_LIBRARY_PATH` findet. Fehlt das Paket, nimmt sie eine systemweit installierte Bibliothek.
 
 Erprobt sind faster-whisper 1.2.1, ctranslate2 4.8 und cuBLAS 12.9.
 
@@ -311,7 +304,7 @@ Pro Segment entsteht `work/<gruppe>/<ordinal>/diarization/segment-NN.json` mit d
 
 **Fehler.** Fehlt die Runtime, das Modell im Cache oder eine GPU bei `diarization.device: cuda`, meldet der Befehl `BackendUnavailableError` mit dem nächsten Schritt und endet mit Exit-Code 2; Speichermangel kommt als `ResourceError`. Ein Fehler an einem Segment wird wie bei der [Spracherkennung](#spracherkennung) wiederholt (`diarization.retries`) und protokolliert. Schlägt es endgültig fehl, zeigt die Konsole `failed`, gespeicherte Turns und Labels des Segments bleiben unverändert, die übrigen Segmente laufen weiter, und der Befehl endet mit Exit-Code 1. Der nächste Aufruf versucht das Segment erneut. Die Meldungen nennen Modell, Gerät und Segmentdatei, nie Labels oder Text.
 
-**Smoke-Test** mit beiden echten Modellen: ffmpeg spricht mit zwei `flite`-Stimmen zwei erfundene Sätze, Whisper transkribiert, pyannote vergibt die Labels, ein zweiter Lauf verwendet sie wieder. `LD_LIBRARY_PATH` wie unter [Spracherkennung](#spracherkennung).
+**Smoke-Test** mit beiden echten Modellen: ffmpeg spricht mit zwei `flite`-Stimmen zwei erfundene Sätze, Whisper transkribiert, pyannote vergibt die Labels, ein zweiter Lauf verwendet sie wieder.
 
 ```bash
 TRANSCRIPT_DIARIZATION_SMOKE=1 python -m unittest discover -s tests -p test_diarization_smoke.py -v
@@ -702,7 +695,7 @@ Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht 
 | Schlüssel | Pflicht | Default | Bedeutung |
 | --- | --- | --- | --- |
 | `language` | ja | | Sprache der Aufnahmen als zweistelliger Code, z. B. `de` |
-| `paths.root` | ja | | Wurzel für `input/`, `work/`, `output/`; ein relativer Pfad gilt ab dem aktuellen Arbeitsverzeichnis |
+| `paths.root` | ja | | Wurzel für `input/`, `work/`, `output/`; ein relativer Pfad gilt ab dem Projektordner, auch in einer Datei aus `--config` |
 | `segmentation.length_seconds` | nein | `null` | bleibt `null`: Das V0.1-Backend braucht keine eigene Segmentierung ([TOOL-62](docs/spikes/TOOL-62-asr-vergleich.md)); nur für ein Backend, das in Blöcken arbeiten muss |
 | `segmentation.overlap_seconds` | nein | `null` | wie oben; muss kleiner als die Segmentlänge sein |
 | `audio.sample_rate` | nein | `16000` | Abtastrate der extrahierten Audiospur in Hz; die Spur ist immer WAV mit 16 bit PCM |

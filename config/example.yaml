@@ -6,7 +6,7 @@ language: de
 
 paths:
   # Pflicht: Wurzel für input/, work/ und output/.
-  # Ein relativer Pfad gilt ab dem aktuellen Arbeitsverzeichnis.
+  # Ein relativer Pfad gilt ab dem Projektordner, egal, wo der Aufruf startet.
   root: .
 
 # Bleibt null: Das V0.1-Backend (Whisper large-v3-turbo) verarbeitet ganze Aufnahmen

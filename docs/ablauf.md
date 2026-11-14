@@ -30,13 +30,13 @@ Modelle einmalig mit Netz in den lokalen Cache laden (Details: README [Spracherk
 
 Danach brauchen die Läufe kein Netz für Modelle mehr.
 
-**Startskript.** `scripts/transcript` startet die CLI ohne aktivierte venv und setzt `LD_LIBRARY_PATH` für cuBLAS selbst. Ohne den Pfad scheitert die GPU-Erkennung. Am bequemsten einmal verlinken:
+**Aufruf.** `.venv/bin/transcript` läuft ohne aktivierte venv und aus jedem Verzeichnis. cuBLAS lädt die Pipeline selbst, ein `LD_LIBRARY_PATH` ist nicht nötig. Am bequemsten einmal verlinken:
 
 ```bash
-ln -s "$PWD/scripts/transcript" ~/.local/bin/transcript
+ln -s "$PWD/.venv/bin/transcript" ~/.local/bin/transcript
 ```
 
-Das Skript wechselt in den Projektordner. Relative Pfade in Argumenten, etwa `--from-file`, gelten deshalb ab dort. Wer lieber die venv aktiviert, setzt den Pfad wie im README unter [Spracherkennung](../README.md#spracherkennung). Alle Beispiele unten schreiben `transcript`.
+Die Standard-Konfiguration, `.env` und `paths.root` gelten ab dem Projektordner. Relative Pfade in Argumenten, etwa `--from-file`, gelten ab dem aktuellen Verzeichnis. Alle Beispiele unten schreiben `transcript`.
 
 **WSL-Speicher.** Erkennung und Diarisierung brauchen auf 5 h Audio je bis knapp 14 GB RAM, nacheinander. In `%UserProfile%\.wslconfig` etwa `memory=26GB` setzen, das Standardlimit reicht kaum.
 
@@ -208,7 +208,7 @@ Unter `work/beispielgruppe/042/`, alles lokal und nicht im Repo (Baum: README [S
 
 ### `BackendUnavailableError … libcublas.so.12 cannot be loaded`
 
-`LD_LIBRARY_PATH` fehlt. `transcript doctor` meldet das vorher als Fehler. Abhilfe: `scripts/transcript` verwenden oder den Pfad wie im README setzen. Das gilt auch für `transcript: command not found` ohne aktivierte venv.
+Im Pilot fehlte `LD_LIBRARY_PATH`. Seit TOOL-95 lädt die Pipeline cuBLAS aus dem pip-Paket selbst. Tritt der Fehler trotzdem auf, fehlt das Paket `nvidia-cublas-cu12`. `transcript doctor` meldet das vorher als Fehler. Abhilfe: `pip install -e '.[whisper]'`. Bei `transcript: command not found` ohne aktivierte venv hilft der Link aus [Abschnitt 1](#1-einmalig-einrichten) bzw. `.venv/bin/transcript`.
 
 ### Nach `--redo transcribe` oder neuem Snapshot
 

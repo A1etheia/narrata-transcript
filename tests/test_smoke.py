@@ -7,6 +7,7 @@ import os
 import tempfile
 import unittest
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -64,6 +65,18 @@ from transcript.session import SessionKey, SessionPaths
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REAL_LOAD_MANIFEST = manifest_module.load_manifest  # before any test patches it
+_DATA_ROOT_CONFIG = "language: de\npaths:\n  root: /data\n"
+
+
+@contextlib.contextmanager
+def _working_dir(path: str) -> Iterator[None]:
+    """contextlib.chdir, which needs Python 3.11."""
+    previous = Path.cwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(previous)
 
 
 def run(*argv: str) -> tuple[int, str, str]:
@@ -131,16 +144,37 @@ class ConfigCommandTest(unittest.TestCase):
         self.assertNotIn("Traceback", stderr)
 
     def test_missing_default_file_points_to_the_example(self) -> None:
-        previous = Path.cwd()
         with tempfile.TemporaryDirectory() as directory:
-            os.chdir(directory)
-            try:
+            missing = Path(directory) / "config" / "config.yaml"
+            with mock.patch.object(transcript_main, "_DEFAULT_CONFIG", missing):
                 code, _, stderr = run("config")
-            finally:
-                os.chdir(previous)
 
         self.assertEqual(code, 2)
-        self.assertIn("config/example.yaml", stderr)
+        self.assertIn(f"{missing} not found", stderr)
+        self.assertIn(str(REPO_ROOT / "config" / "example.yaml"), stderr)
+
+    def test_default_file_is_found_from_any_working_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            default = Path(directory) / "project" / "config.yaml"
+            default.parent.mkdir()
+            default.write_text(_DATA_ROOT_CONFIG, "utf-8")
+            with (
+                _working_dir(directory),
+                mock.patch.object(transcript_main, "_DEFAULT_CONFIG", default),
+            ):
+                code, stdout, _ = run("config")
+
+        self.assertEqual(code, 0)
+        self.assertIn("root: /data", stdout)
+
+    def test_relative_config_argument_counts_from_the_working_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "mine.yaml").write_text(_DATA_ROOT_CONFIG, "utf-8")
+            with _working_dir(directory):
+                code, stdout, _ = run("config", "--config", "mine.yaml")
+
+        self.assertEqual(code, 0)
+        self.assertIn("root: /data", stdout)
 
 
 class DoctorCommandTest(unittest.TestCase):

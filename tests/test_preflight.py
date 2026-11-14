@@ -182,7 +182,7 @@ class EnvironmentTest(PreflightTestCase):
         self.assertEqual(
             asr.message,
             "fake tiny (abc123) on cuda, but libcublas.so.12 cannot be loaded; "
-            "set LD_LIBRARY_PATH as in the README, section Spracherkennung",
+            "install the GPU libraries with pip install -e '.[whisper]'",
         )
         self.assertTrue(preflight.blocked(findings))
         self.assertEqual(self.levels(findings, "diarization"), ["ok"])
