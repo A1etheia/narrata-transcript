@@ -9,9 +9,11 @@ from test_speakers import PARTICIPANTS, entry
 from test_uncertainty import PROCESSED_AT, diarized, transcript
 from test_working import SURE, UNSURE, _WorkingCase, spoken
 
+from transcript.asr import BackendInfo
 from transcript.candidates import collect
 from transcript.config import DEFAULT_KEYWORD_BUDGET
 from transcript.decisions import ReviewDecision, SessionDecisions, write_decisions
+from transcript.diarization import DiarizationRun, write_run
 from transcript.knowledge import build_snapshot
 from transcript.manifest import Manifest
 from transcript.narrata import store_context
@@ -20,7 +22,9 @@ from transcript.report import (
     Gap,
     LabelReport,
     Note,
+    Runtime,
     SegmentReport,
+    SegmentRuntime,
     SessionReport,
     Used,
     build,
@@ -52,8 +56,11 @@ class _ReportCase(_WorkingCase):
         manifest: Manifest = ONLY_FIRST,
         reference: ReferenceTranscript | None = None,
         others: tuple[ReferenceTranscript, ...] = (),
+        diarization_ms: dict[int, int | None] | None = None,
     ) -> SessionReport:
-        return self.reported(decisions, assignment, manifest, reference, others)[1]
+        return self.reported(
+            decisions, assignment, manifest, reference, others, diarization_ms
+        )[1]
 
     def reported(
         self,
@@ -62,6 +69,7 @@ class _ReportCase(_WorkingCase):
         manifest: Manifest = ONLY_FIRST,
         reference: ReferenceTranscript | None = None,
         others: tuple[ReferenceTranscript, ...] = (),
+        diarization_ms: dict[int, int | None] | None = None,
     ) -> tuple[WorkingTranscript, SessionReport]:
         """The working version and its report."""
         reference = reference or self.reference
@@ -74,6 +82,7 @@ class _ReportCase(_WorkingCase):
             {r.segment.index: r for r in (reference, *others)},
             found,
             {r.segment: load_assessment(self.paths, r.segment) for r in found.rated},
+            diarization_ms or {},
             assignment,
             "1.1",
         )
@@ -323,10 +332,53 @@ class NoteTest(_ReportCase):
                 Note("untimed_passages", (1,)),
                 Note("segment_without_hints", (1,)),
                 Note("snapshot_differs", (1,)),
+                Note("runtime_not_recorded", (1,)),
             ),
         )
         self.assertEqual(report.passages.untimed, 1)
         self.assertEqual(report.speakers.labels, ())
+
+
+class RuntimeTest(_ReportCase):
+    def test_recorded_times_are_listed_and_summed(self) -> None:
+        timed = dataclasses.replace(
+            self.reference,
+            processing=dataclasses.replace(
+                self.reference.processing, elapsed_ms=377_000
+            ),
+        )
+
+        report = self.report(
+            manifest=MANIFEST,
+            reference=timed,
+            others=(failed_segment(2),),
+            diarization_ms={1: 18_000},
+        )
+
+        self.assertEqual(
+            report.runtime,
+            Runtime((SegmentRuntime(1, 377_000, 18_000),), 377_000, 18_000),
+        )
+        self.assertNotIn("runtime_not_recorded", [n.code for n in report.notes])
+
+    def test_a_missing_time_is_a_note_per_segment(self) -> None:
+        report = self.report(diarization_ms={1: None})
+
+        self.assertEqual(report.runtime.segments, (SegmentRuntime(1, None, None),))
+        self.assertEqual(report.runtime.asr_ms, 0)
+        self.assertIn(Note("runtime_not_recorded", (1,)), report.notes)
+
+    def test_a_segment_without_diarization_needs_no_diarization_time(self) -> None:
+        reference = dataclasses.replace(
+            transcript(spoken(1, *SURE, label=None)),
+            processing=dataclasses.replace(self.reference.processing, elapsed_ms=1_000),
+        )
+        self.rated(reference)
+
+        report = self.report(reference=reference)
+
+        self.assertEqual(report.runtime.segments, (SegmentRuntime(1, 1_000, None),))
+        self.assertNotIn("runtime_not_recorded", [n.code for n in report.notes])
 
 
 class _KnownSession(_ReportCase):
@@ -355,6 +407,20 @@ class ComposeTest(_KnownSession):
         self.assertEqual(report.passages.total, 6)
         self.assertEqual(report.speakers.effort_minutes, 5)
         self.assertEqual(report.pipeline.context_contract_version, "1.1")
+
+    def test_the_diarization_time_comes_from_the_raw_file(self) -> None:
+        write_run(
+            self.paths,
+            1,
+            DiarizationRun(
+                BackendInfo("fake", "fake"), "cd" * 32, (), elapsed_ms=18_000
+            ),
+        )
+        write_working(self.paths, compose_working(self.paths, ONLY_FIRST))
+
+        report = compose(self.paths, ONLY_FIRST)
+
+        self.assertEqual(report.runtime.diarization_ms, 18_000)
 
     def test_without_working_version_there_is_no_report(self) -> None:
         with self.assertRaisesRegex(WorkingError, "not found; run transcript working"):
@@ -393,7 +459,7 @@ class FileTest(_KnownSession):
     def test_the_json_file_names_its_format_and_session(self) -> None:
         data = json.loads(self.written()[0])
 
-        self.assertEqual(data["format_version"], 1)
+        self.assertEqual(data["format_version"], 2)
         self.assertEqual(data["session"], "beispielgruppe/042")
         self.assertEqual(data["passages"]["total"], 6)
 
@@ -420,6 +486,9 @@ class MarkdownTest(_ReportCase):
             "| 2 | 00:10:00 | fehlgeschlagen (ResourceError, wiederholbar) |", text
         )
         self.assertIn("| 1 | SPEAKER_00 | offen | 00:00:05 |", text)  # 6 × 850 ms
+        self.assertIn("## Laufzeit", text)
+        self.assertIn("| 1 | — | — |", text)  # failed segment 2 has no row
+        self.assertIn("- Rechenzeit nicht erfasst: Segment 1", text)
         self.assertNotIn("%", text)
 
     def test_a_complete_session_has_no_gaps(self) -> None:
