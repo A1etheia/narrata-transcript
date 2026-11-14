@@ -34,6 +34,8 @@ transcript doctor
 
 `transcript doctor` prüft die Umgebung, siehe [Preflight](#preflight).
 
+**Ohne aktivierte venv** startet `scripts/transcript` die CLI. Das Skript nimmt cuBLAS aus der venv in den `LD_LIBRARY_PATH` (siehe [Spracherkennung](#spracherkennung)), wechselt in den Projektordner und ruft dort `.venv/bin/transcript` mit denselben Argumenten auf. Verlinkt, etwa mit `ln -s "$PWD/scripts/transcript" ~/.local/bin/transcript`, läuft es aus jedem Verzeichnis. Relative Pfadangaben wie `--config` oder `--from-file` gelten dann relativ zum Projektordner.
+
 ## Preflight
 
 ```bash
@@ -224,6 +226,8 @@ Für die GPU bringt das Extra cuBLAS als pip-Paket mit; cuDNN braucht CTranslate
 SP=$(python -c "import site; print(site.getsitepackages()[0])")
 export LD_LIBRARY_PATH=$SP/nvidia/cublas/lib
 ```
+
+`scripts/transcript` (siehe [Setup](#setup)) setzt den Pfad selbst.
 
 Erprobt sind faster-whisper 1.2.1, ctranslate2 4.8 und cuBLAS 12.9.
 

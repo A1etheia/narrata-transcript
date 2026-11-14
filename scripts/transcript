@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Start the transcript CLI without an activated venv: run from any directory,
+# also through a symlink (e.g. in ~/.local/bin). Puts the venv's cuBLAS on
+# LD_LIBRARY_PATH and switches to the project folder, since `paths.root` and the
+# default `--config` are relative to it.
+set -euo pipefail
+shopt -s nullglob
+
+root="$(readlink -f "${BASH_SOURCE[0]}")"
+root="${root%/*/*}"
+venv="$root/.venv"
+
+if [[ ! -x "$venv/bin/transcript" ]]; then
+  echo "transcript: missing $venv/bin/transcript. Run the setup from the README first." >&2
+  exit 2
+fi
+
+for lib in "$venv"/lib/python3*/site-packages/nvidia/cublas/lib; do
+  export LD_LIBRARY_PATH="$lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+done
+
+cd "$root"
+exec "$venv/bin/transcript" "$@"
