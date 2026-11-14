@@ -218,18 +218,18 @@ pip install -e '.[dev,whisper]'
 python -c "from faster_whisper import download_model; download_model('large-v3-turbo')"
 ```
 
-Für die GPU bringt das Extra cuBLAS und cuDNN als pip-Pakete mit. faster-whisper findet sie nur über `LD_LIBRARY_PATH`, etwa in `.venv/bin/activate` oder vor jedem Lauf:
+Für die GPU bringt das Extra cuBLAS als pip-Paket mit; cuDNN braucht CTranslate2 4.8 nicht. faster-whisper findet cuBLAS nur über `LD_LIBRARY_PATH`, etwa in `.venv/bin/activate` oder vor jedem Lauf:
 
 ```bash
 SP=$(python -c "import site; print(site.getsitepackages()[0])")
-export LD_LIBRARY_PATH=$SP/nvidia/cublas/lib:$SP/nvidia/cudnn/lib
+export LD_LIBRARY_PATH=$SP/nvidia/cublas/lib
 ```
 
-Erprobt sind faster-whisper 1.2.1, ctranslate2 4.8, cuBLAS 12.9 und cuDNN 8.9.
+Erprobt sind faster-whisper 1.2.1, ctranslate2 4.8 und cuBLAS 12.9.
 
 **Hardware.** Getestet auf einer NVIDIA-GPU mit 12 GB VRAM (RTX 3080 Ti, unter WSL). Ohne GPU läuft dasselbe auf der CPU (`int8`), aber um ein Vielfaches langsamer. Eine Aufnahme von 5 h braucht bis 10,5 GB RAM. Die [Diarisierung](#diarisierung) braucht auf 5 h bis 13,8 GB und darf nicht gleichzeitig laufen; das Whisper-Modell wird vorher freigegeben. Unter WSL reicht das Standardlimit von 15 GB dafür kaum, in `%UserProfile%\.wslconfig` etwa `memory=26GB` wie auf dem Testrechner setzen.
 
-**Lizenzen.** faster-whisper und CTranslate2 stehen unter MIT. Das Modell `mobiuslabsgmbh/faster-whisper-large-v3-turbo` (auf Hugging Face inzwischen unter `dropbox-dash/faster-whisper-large-v3-turbo`) ist laut Modellkarte eine FP16-Konvertierung von `openai/whisper-large-v3-turbo` und steht wie dieses unter MIT. cuBLAS und cuDNN unterliegen den NVIDIA-Lizenzen für Laufzeitbibliotheken; sie werden nur lokal installiert, nicht weitergegeben.
+**Lizenzen.** faster-whisper und CTranslate2 stehen unter MIT. Das Modell `mobiuslabsgmbh/faster-whisper-large-v3-turbo` (auf Hugging Face inzwischen unter `dropbox-dash/faster-whisper-large-v3-turbo`) ist laut Modellkarte eine FP16-Konvertierung von `openai/whisper-large-v3-turbo` und steht wie dieses unter MIT. cuBLAS unterliegt der NVIDIA-Lizenz für Laufzeitbibliotheken; es wird nur lokal installiert, nicht weitergegeben.
 
 **Fehler.** Fehlt die Runtime, das Modell im Cache, eine GPU bei `asr.device: cuda` oder eine CUDA-Bibliothek, meldet das Backend `BackendUnavailableError` mit dem nächsten Schritt; Speichermangel kommt als `ResourceError`. Eine fehlende CUDA-Bibliothek fällt schon beim Laden des Modells auf, nicht erst am ersten Segment, und `transcript doctor` meldet sie vor dem Lauf. Die Meldungen nennen Modell, Gerät und Audiodatei, nie Transkripttext oder Begriffe.
 
@@ -272,7 +272,7 @@ TRANSCRIPT_WHISPER_SMOKE=1 TRANSCRIPT_WHISPER_DEVICE=cpu python -m unittest disc
 
 Wer wann spricht, bestimmt pyannote `speaker-diarization-community-1` (`transcript.diarization.pyannote.PyannoteDiarizer`, Wahl und Messwerte in [TOOL-20](docs/spikes/TOOL-20-diarisierung.md)). Die Diarisierung läuft nach der Transkription, automatisch am Ende von `transcript transcribe` oder als eigener Befehl, vollständig lokal und nur aus dem lokalen Modell-Cache.
 
-**Installation.** Ebenfalls ein optionales Extra; es bringt torch mit und macht die venv um einige GB größer. Es verträgt sich mit dem Whisper-Extra in derselben venv: torch nutzt CUDA 13 und cuDNN 9, faster-whisper CUDA 12 und cuDNN 8, in getrennten Paketen.
+**Installation.** Ebenfalls ein optionales Extra; es bringt torch mit und macht die venv um einige GB größer. Es verträgt sich mit dem Whisper-Extra in derselben venv: torch nutzt CUDA 13 und cuDNN 9, faster-whisper cuBLAS aus CUDA 12, in getrennten Paketen.
 
 ```bash
 pip install -e '.[dev,whisper,diarization]'
