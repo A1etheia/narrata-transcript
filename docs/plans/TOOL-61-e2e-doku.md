@@ -80,6 +80,7 @@ Eine weitere Session lässt sich ohne Entwicklungswissen von der Aufnahme bis zu
 - AC: Im README steht keine veraltete Stand- oder Secret-Aussage mehr, und der Baum entspricht `SessionPaths`.
 
 ## Folge-Tickets
+- TOOL-95: cuBLAS in `whisper.py` vorladen und `paths.root` verankern, damit die CLI ohne `scripts/transcript` aus jedem Einstieg und Verzeichnis läuft (aus dem Altitude-Review von `/simplify` in Chunk 2)
 - Review-Dialog mit Abspielen nach dem Vorbild von `speakers --assign` [kein Ticket: hängt an der Review-Kanal-Entscheidung in TOOL-60, dort schon vermerkt]
 
 ## Chunk-Tabelle
