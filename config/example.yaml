@@ -113,5 +113,13 @@ render:
   # Sprecherwechsel, passage an jeder Passage.
   timestamps: turn
 
+playback:
+  # ffmpeg-Filterkette für die Hörproben in transcript speakers --assign; false
+  # spielt das Rohsignal. Im Pilot klang das Rohsignal am besten. Bei verrauschten
+  # Aufnahmen hilft highpass=f=80,afftdn=nf=-25 (Hochpass gegen Trittschall und
+  # Brummen, dann Entrauschen). Nur die Wiedergabe, Erkennung und Export bleiben
+  # unberührt.
+  filter: false
+
 # Schreibt Transkripttext nach work/<gruppe>/<ordinal>/debug.log, nie auf die Konsole.
 debug: false

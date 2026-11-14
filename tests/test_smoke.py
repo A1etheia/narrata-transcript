@@ -47,7 +47,11 @@ from transcript.__main__ import main
 from transcript.asr import AudioInputError, BackendUnavailableError, ResourceError
 from transcript.asr.fake import FakeBackend
 from transcript.audio_tools import AudioToolError, AudioTools, ToolInfo
-from transcript.config import DEFAULT_KEYWORD_BUDGET, UncertaintyThresholds
+from transcript.config import (
+    DEFAULT_KEYWORD_BUDGET,
+    SUGGESTED_PLAYBACK_FILTER,
+    UncertaintyThresholds,
+)
 from transcript.preflight import Finding
 from transcript.reference import (
     Diarization,
@@ -1750,6 +1754,44 @@ class SpeakersCommandTest(_DiarizedSession):
             [item["assigned"] for item in data["entries"]], ["person", "unknown"]
         )
         self.assertIsNotNone(data["effort_minutes"])
+
+    def play_one_sample(
+        self, usable: str | None, configured: bool = True
+    ) -> tuple[str | None, str, mock.MagicMock]:
+        """Play sample a and quit; the filter the player got, stdout, the check."""
+        if configured:
+            with self.config.open("a", encoding="utf-8") as file:
+                file.write(f"playback:\n  filter: {SUGGESTED_PLAYBACK_FILTER}\n")
+        player = transcript_main.speaker_player
+        argv = ["speakers", str(KEY), "--assign", "--config", str(self.config)]
+        with (
+            mock.patch.object(player, "find_player", return_value=Path("/opt/ffplay")),
+            mock.patch.object(player, "usable_filter", return_value=usable) as check,
+            mock.patch.object(player, "play", return_value="played") as play,
+            mock.patch.object(transcript_main, "_interactive", return_value=True),
+            mock.patch("builtins.input", side_effect=["p", "q", "n"]),
+        ):
+            _, stdout, _ = run(*argv)
+        return play.call_args.args[-1], stdout, check
+
+    def test_assign_plays_the_raw_signal_by_default(self) -> None:
+        played_with, stdout, check = self.play_one_sample(None, configured=False)
+
+        self.assertIsNone(played_with)
+        check.assert_not_called()
+        self.assertNotIn("playback filter not usable", stdout)
+
+    def test_assign_plays_through_the_filter_ffmpeg_accepts(self) -> None:
+        played_with, stdout, _ = self.play_one_sample(SUGGESTED_PLAYBACK_FILTER)
+
+        self.assertEqual(played_with, SUGGESTED_PLAYBACK_FILTER)
+        self.assertNotIn("playback filter not usable", stdout)
+
+    def test_assign_plays_unfiltered_when_ffmpeg_rejects_the_filter(self) -> None:
+        played_with, stdout, _ = self.play_one_sample(None)
+
+        self.assertIsNone(played_with)
+        self.assertIn("note: playback filter not usable", stdout)
 
     def test_assign_interrupted_keeps_what_was_confirmed(self) -> None:
         code, stdout, _ = self.assign("1", KeyboardInterrupt())

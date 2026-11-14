@@ -25,6 +25,7 @@ _TOP_LEVEL_KEYS = {
     "knowledge",
     "review",
     "render",
+    "playback",
     "debug",
 }
 _PATHS_KEYS = {"root"}
@@ -64,6 +65,12 @@ _RENDER_KEYS = {"timestamps"}
 # or at each passage.
 TimestampRule = Literal["turn", "passage"]
 TIMESTAMP_RULES: tuple[TimestampRule, ...] = get_args(TimestampRule)
+
+_PLAYBACK_KEYS = {"filter"}
+# A filter chain for speaker samples that was tried on the pilot (TOOL-91): a
+# high-pass against footfall and hum, then FFT denoising. Off by default, since the
+# raw samples sounded best there; playback only, nothing else reads it.
+SUGGESTED_PLAYBACK_FILTER = "highpass=f=80,afftdn=nf=-25"
 
 
 class ConfigError(Exception):
@@ -163,6 +170,7 @@ class Config:
     review_similar: SimilarThresholds = SimilarThresholds()
     review_uncertainty: UncertaintyThresholds = UncertaintyThresholds()
     render_timestamps: TimestampRule = "turn"
+    playback_filter: str | None = None  # an ffmpeg filter chain; None plays the raw WAV
 
     def session_paths(self, key: SessionKey) -> SessionPaths:
         return SessionPaths(key, self.root)
@@ -281,6 +289,15 @@ def load_config(path: Path) -> Config:
         path, render, "render", "timestamps", Config.render_timestamps, TIMESTAMP_RULES
     )
 
+    playback = _section(path, data, "playback", _PLAYBACK_KEYS)
+    playback_filter = playback.get("filter")
+    if playback_filter is False:
+        playback_filter = None
+    elif playback_filter is not None and not _is_text(playback_filter):
+        raise _invalid(
+            path, "playback.filter", "must be an ffmpeg filter chain or false"
+        )
+
     return Config(
         language=language,
         root=Path(root),
@@ -305,6 +322,7 @@ def load_config(path: Path) -> Config:
         review_similar=similar,
         review_uncertainty=uncertainty,
         render_timestamps=timestamps,
+        playback_filter=playback_filter,
     )
 
 
@@ -346,6 +364,7 @@ def format_config(config: Config) -> str:
                 "uncertainty": dataclasses.asdict(config.review_uncertainty),
             },
             "render": {"timestamps": config.render_timestamps},
+            "playback": {"filter": config.playback_filter or False},
             "debug": config.debug,
         },
         sort_keys=False,
