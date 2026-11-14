@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from transcript.config import (
-    DEFAULT_PLAYBACK_FILTER,
+    SUGGESTED_PLAYBACK_FILTER,
     Config,
     ConfigError,
     SimilarThresholds,
@@ -91,7 +91,7 @@ class LoadConfigTest(unittest.TestCase):
                 word_low=0.6, gap_ms=900, avg_logprob=-0.8, similar_level="uncertain"
             ),
             render_timestamps="passage",
-            playback_filter=None,
+            playback_filter="afftdn=nr=20",
         )
 
         self.assertEqual(self.load(format_config(config)), config)
@@ -451,22 +451,17 @@ class LoadConfigTest(unittest.TestCase):
             MINIMAL + "render:\n  format: docx\n", "unknown key: render.format"
         )
 
-    def test_playback_filter_defaults_to_denoising(self) -> None:
-        for text in (MINIMAL, MINIMAL + "playback:\n  filter: null\n"):
+    def test_playback_plays_the_raw_signal_by_default(self) -> None:
+        for text in ("", "playback:\n  filter: null\n", "playback:\n  filter: false\n"):
             with self.subTest(text=text):
-                self.assertEqual(
-                    self.load(text).playback_filter, DEFAULT_PLAYBACK_FILTER
-                )
-
-    def test_playback_filter_false_plays_the_raw_signal(self) -> None:
-        config = self.load(MINIMAL + "playback:\n  filter: false\n")
-
-        self.assertIsNone(config.playback_filter)
+                self.assertIsNone(self.load(MINIMAL + text).playback_filter)
 
     def test_playback_filter_takes_a_chain(self) -> None:
-        config = self.load(MINIMAL + "playback:\n  filter: afftdn=nr=20\n")
+        text = f"playback:\n  filter: {SUGGESTED_PLAYBACK_FILTER}\n"
 
-        self.assertEqual(config.playback_filter, "afftdn=nr=20")
+        self.assertEqual(
+            self.load(MINIMAL + text).playback_filter, SUGGESTED_PLAYBACK_FILTER
+        )
 
     def test_playback_filter_is_validated(self) -> None:
         for value in ('""', "true", "3"):

@@ -11,7 +11,7 @@ from test_audio_tools import write_stub
 
 from transcript import speaker_player
 from transcript.audio import sha256_file
-from transcript.config import DEFAULT_PLAYBACK_FILTER
+from transcript.config import SUGGESTED_PLAYBACK_FILTER
 from transcript.speaker_player import (
     MAX_SAMPLE_MS,
     command,
@@ -126,7 +126,7 @@ class UsableFilterTest(unittest.TestCase):
         self,
     ) -> None:
         self.assertEqual(
-            usable_filter(DEFAULT_PLAYBACK_FILTER), DEFAULT_PLAYBACK_FILTER
+            usable_filter(SUGGESTED_PLAYBACK_FILTER), SUGGESTED_PLAYBACK_FILTER
         )
         self.assertIsNone(usable_filter("nosuchfilter"))
         self.assertIsNone(usable_filter("afftdn=nosuchoption=1"))
@@ -142,7 +142,7 @@ class FilteredPlaybackTest(unittest.TestCase):
 
             # dummy audio driver: ffplay decodes and filters, nothing is heard
             with mock.patch.dict(os.environ, {"SDL_AUDIODRIVER": "dummy"}):
-                played = play(find_player(), wav, 0, 300, DEFAULT_PLAYBACK_FILTER)
+                played = play(find_player(), wav, 0, 300, SUGGESTED_PLAYBACK_FILTER)
 
             self.assertEqual(played, "played")
             self.assertEqual(sha256_file(wav), before)

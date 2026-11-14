@@ -47,8 +47,12 @@
 - Verify: `scripts/check`; Hörprobe durch die Person an der Pilot-Session.
 - AC: AK 3.
 
+## Ergebnis der Hörprobe (Chunk 3)
+- Das Rohsignal klang an 16 Clips der Pilot-Session am besten, `highpass=f=80,afftdn=nf=-25` war ebenfalls gut, `highpass=f=100,afftdn=nf=-20:nr=20` viel zu dumpf. Der Pausenpegel liegt bei rund −55 dBFS, AK 3 („Störgeräusche deutlich leiser“) ist damit gegenstandslos.
+- Abweichung vom Ticket: Der Standard ist `false` statt „an“. Die mittlere Kette heißt `SUGGESTED_PLAYBACK_FILTER` und steht in README und Beispielkonfiguration.
+
 ## Folge-Tickets
-- Entrauschen vor der Erkennung: TOOL-92 (Spike, bereits angelegt); er kann die in Chunk 3 gewählte Kette als `afftdn`-Variante übernehmen.
+- Entrauschen vor der Erkennung: TOOL-92 (Spike, bereits angelegt). Neuer Hinweis: In 2 von 16 Pilot-Clips machte `highpass=f=80,afftdn=nf=-25` Wörter verständlich, die roh kaum zu verstehen waren; die starke Kette (`nf=-20:nr=20`) klang zu dumpf. Als Kommentar an TOOL-92.
 
 ## Chunk-Tabelle
 | Chunk | Scope | Clear context after? |

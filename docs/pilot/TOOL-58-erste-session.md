@@ -47,6 +47,8 @@ Stand 2026-11-12. Dieser Bericht enthält nur Kennzahlen, Codes und nachgestellt
 
 Interaktiv mit `transcript speakers <s> --assign` (TOOL-86): **4 min** für 7 Labels in 2 Segmenten, gemessen vom Befehl selbst (`effort_minutes`). Ergebnis: 6 Labels einer Person zugeordnet, 1 `multiple`, 0 offen, 0 `unknown`. Der Vorlauf mit 8 Labels hatte 8 min gebraucht.
 
+**Nachtrag TOOL-91 (Entrauschen der Hörproben):** Die Proben in `--assign` sind schon im Rohsignal fast störungsfrei. Der Pausenpegel liegt in beiden Segmenten bei rund −55 dBFS, die Sprache bei −32 bis −34 dBFS. Verglichen wurden 16 Clips à 8 s an den auffälligsten Pausenstellen (8 laute Pausen, 8 mit Klopfen oder Klappern), jeweils roh, mit `highpass=f=80,afftdn=nf=-25` und mit `highpass=f=100,afftdn=nf=-20:nr=20`. Das Rohsignal klang jeweils am besten, die mittlere Kette war ebenfalls gut, die starke viel zu dumpf. In 2 der 16 Clips machte die mittlere Kette Wörter verständlich, die roh kaum zu verstehen waren. Folge: `playback.filter` ist standardmäßig aus (`false`), die mittlere Kette steht in README und `config/example.yaml` als Vorschlag für verrauschte Aufnahmen.
+
 ## Review
 
 Review in `review.csv`, sortiert nach `order`, Timebox **60 min**, gestoppt von der Projektverantwortlichen. Angehört wurde mit einem Hilfsskript, das eine Passage über ihre Kandidaten-ID abspielt (siehe Workarounds).
