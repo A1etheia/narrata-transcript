@@ -7,6 +7,7 @@ downloaded here; `load` fails with a hint when it is not cached.
 Messages never repeat a runtime message, which may quote hotwords.
 """
 
+import ctypes
 import dataclasses
 import gc
 from collections.abc import Callable, Mapping, Sequence
@@ -52,7 +53,21 @@ FIXED_SETTINGS = {
 _MODEL_FILES = ("model.bin", "tokenizer.json")
 _DEFAULT_COMPUTE_TYPES = {"cuda": "float16", "cpu": "int8"}
 _INSTALL_HINT = "install it with pip install -e '.[whisper]'"
-_LIBRARY_HINT = "CUDA libraries not found, set LD_LIBRARY_PATH as in the README"
+LIBRARY_HINT = "set LD_LIBRARY_PATH as in the README, section Spracherkennung"
+# What CTranslate2 4.8 loads lazily on the GPU, at the first segment; its wheel
+# names no cuDNN library. dlopen follows LD_LIBRARY_PATH like CTranslate2 does.
+CUDA_LIBRARIES = ("libcublas.so.12",)
+_load_library: Callable[[str], object] = ctypes.CDLL  # tests replace it
+
+
+def missing_cuda_library() -> str | None:
+    """The first of CUDA_LIBRARIES that cannot be loaded, without any model."""
+    for name in CUDA_LIBRARIES:
+        try:
+            _load_library(name)
+        except OSError:
+            return name
+    return None
 
 
 class WhisperBackend:
@@ -94,6 +109,11 @@ class WhisperBackend:
     def load(self) -> None:
         faster_whisper, model_path, identity = self._prepare()
         device = identity.settings["device"]
+        if device == "cuda" and (library := missing_cuda_library()) is not None:
+            # without this check the run fails only at the first segment
+            raise BackendUnavailableError(
+                f"{BACKEND_ID}: {library} cannot be loaded, {LIBRARY_HINT}"
+            )
         try:
             model = faster_whisper.WhisperModel(
                 str(model_path),
@@ -189,7 +209,9 @@ class WhisperBackend:
         if "library" in message and (
             "not found" in message or "cannot be loaded" in message
         ):
-            return BackendUnavailableError(f"{cause}, {_LIBRARY_HINT}")
+            return BackendUnavailableError(
+                f"{cause}, CUDA libraries not found, {LIBRARY_HINT}"
+            )
         if type(error).__module__.split(".")[0] == "av":
             return AudioInputError(f"{cause}, audio cannot be decoded")
         return runtime_error(error, cause)

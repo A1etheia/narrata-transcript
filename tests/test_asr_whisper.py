@@ -1,3 +1,4 @@
+import contextlib
 import dataclasses
 import json
 import tempfile
@@ -20,9 +21,11 @@ from transcript.asr import (
     transcribe,
 )
 from transcript.asr.whisper import (
+    CUDA_LIBRARIES,
     HOTWORD_TOKENS,
     WhisperBackend,
     fit_hotwords,
+    missing_cuda_library,
     takes_hotwords,
 )
 from transcript.config import Config
@@ -104,6 +107,8 @@ class FakeRuntime:
         self.download_error: Exception | None = None
         self.load_error: Exception | None = None
         self.transcribe_error: Exception | None = None
+        self.missing_libraries: set[str] = set()
+        self.libraries_loaded: list[str] = []
         self.downloads: list[tuple[str, bool]] = []
         self.models: list[Any] = []
 
@@ -141,11 +146,26 @@ class FakeRuntime:
             raise self.transcribe_error
         yield from SEGMENTS
 
-    def installed(self) -> Any:
-        return mock.patch.dict(
-            "sys.modules",
-            {"faster_whisper": self.faster_whisper, "ctranslate2": self.ctranslate2},
-        )
+    def _load_library(self, name: str) -> object:
+        """Like ctypes.CDLL without LD_LIBRARY_PATH for the missing names."""
+        self.libraries_loaded.append(name)
+        if name in self.missing_libraries:
+            raise OSError(f"{name}: cannot open shared object file")
+        return object()
+
+    @contextlib.contextmanager
+    def installed(self) -> Iterator[None]:
+        with (
+            mock.patch.dict(
+                "sys.modules",
+                {
+                    "faster_whisper": self.faster_whisper,
+                    "ctranslate2": self.ctranslate2,
+                },
+            ),
+            mock.patch("transcript.asr.whisper._load_library", self._load_library),
+        ):
+            yield
 
 
 class WhisperTestCase(unittest.TestCase):
@@ -154,9 +174,9 @@ class WhisperTestCase(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
         self.runtime = FakeRuntime(self.root / "cache")
-        patcher = self.runtime.installed()
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        stack = contextlib.ExitStack()
+        self.addCleanup(stack.close)
+        stack.enter_context(self.runtime.installed())
         self.audio = self.root / "segment-02.wav"
         self.audio.touch()
 
@@ -273,6 +293,39 @@ class LoadTest(WhisperTestCase):
             ):
                 case()
             self.assertIn(expected, str(caught.exception))
+
+    def test_cuda_library_that_does_not_load_stops_load_before_the_model(self) -> None:
+        self.runtime.missing_libraries = {"libcublas.so.12"}
+
+        with self.assertRaises(BackendUnavailableError) as caught:
+            WhisperBackend().load()
+
+        self.assertEqual(
+            str(caught.exception),
+            "faster-whisper: libcublas.so.12 cannot be loaded, set LD_LIBRARY_PATH "
+            "as in the README, section Spracherkennung",
+        )
+        self.assertEqual(self.runtime.models, [])
+
+    def test_cuda_libraries_are_not_loaded_on_the_cpu(self) -> None:
+        self.runtime.missing_libraries = {"libcublas.so.12"}
+
+        WhisperBackend(device="cpu").load()
+
+        self.assertEqual(self.runtime.libraries_loaded, [])
+        self.assertEqual(len(self.runtime.models), 1)
+
+    def test_identity_does_not_load_cuda_libraries(self) -> None:
+        WhisperBackend().identity()
+
+        self.assertEqual(self.runtime.libraries_loaded, [])
+
+    def test_missing_cuda_library_names_the_first_that_does_not_load(self) -> None:
+        self.assertIsNone(missing_cuda_library())
+
+        self.runtime.missing_libraries = set(CUDA_LIBRARIES)
+
+        self.assertEqual(missing_cuda_library(), CUDA_LIBRARIES[0])
 
     def test_out_of_memory_while_loading_is_a_resource_error(self) -> None:
         self.runtime.load_error = RuntimeError("CUDA failed with error out of memory")

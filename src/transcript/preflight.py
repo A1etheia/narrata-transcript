@@ -16,7 +16,7 @@ from typing import Literal, Protocol
 from transcript import audio, audio_tools, knowledge, manifest, narrata, speaker_player
 from transcript.asr.backend import Backend, BackendError, BackendIdentity, BackendInfo
 from transcript.asr.backend import identity as backend_identity
-from transcript.asr.whisper import WhisperBackend
+from transcript.asr.whisper import LIBRARY_HINT, WhisperBackend, missing_cuda_library
 from transcript.config import Config, ConfigError, load_config
 from transcript.diarization.pyannote import PyannoteDiarizer
 from transcript.domain import DomainContext
@@ -50,6 +50,8 @@ class Probes:
 
     search_path: str | None = None  # replaces PATH for ffmpeg and ffprobe
     asr: Callable[[Config], Backend] = WhisperBackend.from_config
+    # the CUDA library the ASR cannot load, or None; asked only for cuda
+    cuda_library: Callable[[], str | None] = missing_cuda_library
     diarizer: Callable[[Config], _Diarizer] = PyannoteDiarizer.from_config
     # where the Narrata token is looked up
     environ: Mapping[str, str] = field(default_factory=lambda: os.environ)
@@ -168,7 +170,11 @@ def _check_config(findings: list[Finding], path: Path) -> Config | None:
 
 
 def _check_asr(findings: list[Finding], config: Config, probes: Probes) -> _Asr | None:
-    """The model from the local cache and the device, without loading the model."""
+    """The model from the local cache and the device, without loading the model.
+
+    On cuda also the libraries the runtime loads only at the first segment;
+    `auto` does not fall back to the CPU when they are missing.
+    """
     try:
         backend = probes.asr(config)
         found = backend_identity(backend)
@@ -177,9 +183,18 @@ def _check_asr(findings: list[Finding], config: Config, probes: Probes) -> _Asr 
         return None
     info = found.info
     device = found.settings.get("device")
-    findings.append(
-        Finding("ok", "asr", f"{info.backend_id} {info.model_label} on {device}")
-    )
+    line = f"{info.backend_id} {info.model_label} on {device}"
+    library = probes.cuda_library() if device == "cuda" else None
+    if library is not None:
+        findings.append(
+            Finding(
+                "error",
+                "asr",
+                f"{line}, but {library} cannot be loaded; {LIBRARY_HINT}",
+            )
+        )
+    else:
+        findings.append(Finding("ok", "asr", line))
     if config.asr_device == "auto" and device == "cpu":
         findings.append(
             Finding(

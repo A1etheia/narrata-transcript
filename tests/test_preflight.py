@@ -62,6 +62,8 @@ class PreflightTestCase(unittest.TestCase):
         self.config = self.root / "config.yaml"
         self.write_config()
         self.asr = fake_asr()
+        self.cuda_library: str | None = None  # the library that does not load
+        self.cuda_library_asked = False
         self.diarizer = FakeDiarizer()
         self.search_path: str | None = str(self.bin)
         self.environ: dict[str, str] = {}
@@ -77,12 +79,17 @@ class PreflightTestCase(unittest.TestCase):
         return preflight.Probes(
             search_path=self.search_path,
             asr=self.asr,
+            cuda_library=self.missing_cuda_library,
             diarizer=lambda config: self.diarizer,
             environ=self.environ,
             dotenv=self.root / ".env",
             disk_free=lambda path: self.free_bytes,
             player=lambda: self.player,
         )
+
+    def missing_cuda_library(self) -> str | None:
+        self.cuda_library_asked = True
+        return self.cuda_library
 
     def run_preflight(self, key=None, **options: object) -> list[preflight.Finding]:
         options.setdefault("player", True)  # as `doctor` runs it
@@ -164,6 +171,36 @@ class EnvironmentTest(PreflightTestCase):
 
         self.assertEqual(self.levels(findings, "asr"), ["ok", "warning"])
         self.assertEqual(preflight.errors(findings), 0)
+
+    def test_cuda_library_that_does_not_load_is_an_error(self) -> None:
+        self.cuda_library = "libcublas.so.12"
+
+        findings = self.run_preflight()
+
+        (asr,) = self.by_check(findings, "asr")
+        self.assertEqual(asr.level, "error")
+        self.assertEqual(
+            asr.message,
+            "fake tiny (abc123) on cuda, but libcublas.so.12 cannot be loaded; "
+            "set LD_LIBRARY_PATH as in the README, section Spracherkennung",
+        )
+        self.assertTrue(preflight.blocked(findings))
+        self.assertEqual(self.levels(findings, "diarization"), ["ok"])
+
+    def test_cuda_libraries_that_load_keep_the_line_ok(self) -> None:
+        findings = self.run_preflight()
+
+        self.assertTrue(self.cuda_library_asked)
+        self.assertEqual(self.levels(findings, "asr"), ["ok"])
+
+    def test_cuda_libraries_are_not_checked_on_the_cpu(self) -> None:
+        self.asr = fake_asr(device="cpu")
+        self.cuda_library = "libcublas.so.12"
+
+        findings = self.run_preflight()
+
+        self.assertFalse(self.cuda_library_asked)
+        self.assertEqual(self.levels(findings, "asr"), ["ok", "warning"])
 
     def test_cpu_chosen_in_the_config_is_no_warning(self) -> None:
         self.write_config("asr:\n  device: cpu\n")
