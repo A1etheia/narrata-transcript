@@ -72,8 +72,9 @@ Gemessen wird, ob ein lokaler Rauschfilter vor ASR und Diarisierung an der Pilot
 - AC: Spike-Dokument mit Messtabelle und begründeter Empfehlung; Go → Ticket angelegt, No-Go → Grund im Dokument.
 
 ## Folge-Tickets
-- TOOL-60: Die Empfehlung fließt als Entscheidung „Entrauschen ja/nein“ ein, der Eintrag steht schon im Roadmap-Hinweis.
-- Umsetzung bei Go: [kein Ticket: entsteht erst mit dem Messergebnis in Chunk 2 und bekommt dort seinen Key]
+- TOOL-60: Entscheidung „Entrauschen nein“ (No-Go, `docs/spikes/TOOL-92-entrauschen.md`); die Pilot-WER ist ein Einzellauf, an B liegt das Mittel aus drei Läufen bei 42,3 % statt 32,9 %, die V0.1-Bewertung sollte die Spanne nennen.
+- TOOL-93: Whisper streut auf demselben WAV um bis zu 13 Punkte WER (Temperatur-Fallback), 1–2 Punkte Rauschen gelten nur für einen Lauf; jede Variante braucht mehrere Läufe oder einen festen Seed, `temperature=0` scheidet aus (Schleifen, höhere WER); `highpass=f=80` als zusätzliche Variante mitmessen.
+- Umsetzung bei Go: [kein Ticket: entfällt mit No-Go]
 - Hörstichprobe zur Diarisierung bei Go: [kein Ticket: Teil des Umsetzungstickets]
 
 ## Chunk-Tabelle
