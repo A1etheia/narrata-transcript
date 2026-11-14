@@ -22,7 +22,13 @@ Gemessen wird, welche lokalen Einstellungen und Modelle die WER an den beiden Pi
 - **Fester Seed statt bloßer Wiederholung.** Der Wrapper setzt `ctranslate2.set_random_seed(n)` und schreibt `seed` in die Settings. Ein Lauf ist damit reproduzierbar und die Wiederaufnahme sauber. Die Streuung bleibt trotzdem: Jede Variante läuft mit den Seeds 1–3, verglichen werden Mittel und Spanne. Chunk 1 prüft, dass derselbe Seed zweimal dieselbe Zählung gibt. Schlägt das fehl (GPU nicht deterministisch), bleibt es bei 3 Läufen wie in TOOL-92, und der Bericht nennt das.
 - **Ganzes Segment 1, Diarisierung nur für Finalisten.** Der Hotword-Effekt zeigt sich erst auf langen Aufnahmen (TOOL-81), Ausschnitte würden ihn verstecken. Gerechnet wird mit `--no-diarize`. WDER und Label-Abgleich kommen erst in Stufe 4 dazu.
 - **Gestuft, jeweils ein Faktor auf dem bisher besten Stand:**
-  1. **Hotwords** (Turbo): `base` (wie die Pipeline, mit Hotwords), `nohw`, `nohw-hp`. Der Gewinner wird die Basis für Stufe 2.
+  1. **Hotwords** (Turbo):
+     - `base`: wie die Pipeline, mit allen Hotwords (Pilot: 48)
+     - `pchw`: nur die `pc`-Einträge als Hotwords. Die Schattenwurzel setzt dafür in ihrer Config jedes Budget in `knowledge.keyword_budget` auf 0 und baut den Snapshot mit `transcript snapshot --refresh` neu (`src/transcript/knowledge.py:99`). Die Variante zeigt, ob eine kurze Liste ohne Schaden hilft oder ob Hotwords ganz wegfallen sollten. Die Ursache bleibt bei TOOL-81.
+     - `nohw`: keine Hotwords
+     - `nohw-hp`: keine Hotwords, mit Hochpass
+
+     Der Gewinner wird die Basis für Stufe 2.
   2. **VAD und Dekodierung** (Turbo):
      - `novad`
      - `vad-t35` (`threshold 0.35`), `vad-pad800` (`speech_pad_ms 800`), `vad-sil500` (`min_silence_duration_ms 500`)
@@ -57,7 +63,7 @@ Gemessen wird, welche lokalen Einstellungen und Modelle die WER an den beiden Pi
 
 ## Resume-Check
 - Abbruch in einem Lauf: *handled*. Jede Wurzel nutzt die Wiederaufnahme der Pipeline (TOOL-17). Ein fertiges Transkript mit gleichem Modell, gleicher Revision, gleichen Settings samt `seed` und gleichem Snapshot wird wiederverwendet. `run` überspringt damit fertige Wurzeln und lässt sich über Nacht einfach neu starten.
-- Gleiches Modell und gleicher Snapshot: *handled*. `score` bricht ab, wenn innerhalb einer Variante Revision oder Snapshot abweichen, und gibt die Revision je Modell aus. Alle Wurzeln einer Sitzung nutzen denselben kopierten Snapshot.
+- Gleiches Modell und gleicher Snapshot: *handled*. `score` bricht ab, wenn innerhalb einer Variante Revision oder Snapshot abweichen, und gibt die Revision je Modell aus. Alle Wurzeln einer Sitzung nutzen denselben kopierten Snapshot. Die einzige Ausnahme ist `pchw` mit seinem neu gebauten Snapshot: Er hat dasselbe Glossar und nur ein anderes Budget, und der Bericht nennt beide Kennungen.
 - Reproduzierbarkeit: *handled* über den Seed (siehe Entscheidungen). Die Seed-Prüfung in Chunk 1 hält fest, ob das auf der GPU trägt.
 
 ## Dependency-Check
@@ -73,12 +79,12 @@ Gemessen wird, welche lokalen Einstellungen und Modelle die WER an den beiden Pi
 - Dateien: `scripts/spike/asr.py`, `scripts/spike/README.md`
 - Änderung:
   - Variantentabelle (Modell, Hotwords, Overrides, Kette)
-  - `prepare <s> <variante>… --seeds N`: Wurzeln über `denoise.prepare`-Bausteine, Config mit `asr.model`
+  - `prepare <s> <variante>… --seeds N`: Wurzeln über `denoise.prepare`-Bausteine, Config mit `asr.model`; bei `pchw` Budget 0 je Typ und Snapshot-Neubau in der Wurzel
   - `run`: Wrapper mit Seed, Hotword-Schalter und Overrides, `--no-diarize` außer mit `--diarize`, Peak-RAM und Peak-VRAM nach `<wurzel>/run.json`
   - `score`: Tabellen aus `denoise` plus Modell und Revision, RAM, VRAM und Laufzeit pro Stunde, Clips konfigurierbar für Referenz C
   - `windows <s>`: Vorschläge für ruhige 3-min-Fenster aus Wortdichte und Labelzahl, nur Zeiten und Zähler
   - README-Abschnitt „ASR-Spike (TOOL-93)“
-- Verify: `scripts/check`. `base` mit Seed 1 zweimal in getrennten Wurzeln rechnen, `score` zeigt identische Zählung. `nohw.seed1` hat `keywords_used: []`.
+- Verify: `scripts/check`. `base` mit Seed 1 zweimal in getrennten Wurzeln rechnen, `score` zeigt identische Zählung. `nohw.seed1` hat `keywords_used: []`, `pchw.seed1` nur so viele Begriffe, wie die `pc`-Einträge Namen und Aliase haben.
 - AC: Messskripte unter `scripts/spike/`, keine Ausgabe mit Text oder Namen.
 
 ### Chunk 2 — Stufen 1 und 2 (Hotwords, VAD, Dekodierung)
