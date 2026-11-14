@@ -1,5 +1,7 @@
 import contextlib
+import ctypes
 import dataclasses
+import importlib.machinery
 import json
 import tempfile
 import types
@@ -25,7 +27,7 @@ from transcript.asr.whisper import (
     HOTWORD_TOKENS,
     WhisperBackend,
     fit_hotwords,
-    missing_cuda_library,
+    preload_cuda_libraries,
     takes_hotwords,
 )
 from transcript.config import Config
@@ -107,8 +109,13 @@ class FakeRuntime:
         self.download_error: Exception | None = None
         self.load_error: Exception | None = None
         self.transcribe_error: Exception | None = None
-        self.missing_libraries: set[str] = set()
-        self.libraries_loaded: list[str] = []
+        # the nvidia.cublas package folder; None: the package is not installed
+        self.cublas_package: Path | None = cache / "nvidia" / "cublas"
+        (self.cublas_package / "lib").mkdir(parents=True)
+        (self.cublas_package / "lib" / "libcublas.so.12").touch()
+        self.missing_libraries: set[str] = set()  # names that load by no path
+        self.unloadable: set[str] = set()  # exact arguments that fail
+        self.libraries_loaded: list[tuple[str, int]] = []
         self.downloads: list[tuple[str, bool]] = []
         self.models: list[Any] = []
 
@@ -146,12 +153,20 @@ class FakeRuntime:
             raise self.transcribe_error
         yield from SEGMENTS
 
-    def _load_library(self, name: str) -> object:
-        """Like ctypes.CDLL without LD_LIBRARY_PATH for the missing names."""
-        self.libraries_loaded.append(name)
-        if name in self.missing_libraries:
-            raise OSError(f"{name}: cannot open shared object file")
+    def _load_library(self, library: str, mode: int = 0) -> object:
+        """Like ctypes.CDLL; a path or a name, missing names fail either way."""
+        self.libraries_loaded.append((library, mode))
+        if library in self.unloadable or Path(library).name in self.missing_libraries:
+            raise OSError(f"{library}: cannot open shared object file")
         return object()
+
+    def _find_spec(self, name: str) -> importlib.machinery.ModuleSpec | None:
+        assert name == "nvidia.cublas"
+        if self.cublas_package is None:
+            return None
+        spec = importlib.machinery.ModuleSpec(name, None, is_package=True)
+        spec.submodule_search_locations = [str(self.cublas_package)]
+        return spec
 
     @contextlib.contextmanager
     def installed(self) -> Iterator[None]:
@@ -164,6 +179,7 @@ class FakeRuntime:
                 },
             ),
             mock.patch("transcript.asr.whisper._load_library", self._load_library),
+            mock.patch("transcript.asr.whisper._find_spec", self._find_spec),
         ):
             yield
 
@@ -283,7 +299,7 @@ class LoadTest(WhisperTestCase):
             (not_cached, "large-v3-turbo not in the local cache"),
             (no_tokenizer, "lacks model.bin or tokenizer.json"),
             (no_gpu, "no CUDA device"),
-            (no_cuda_library, "LD_LIBRARY_PATH"),
+            (no_cuda_library, "CUDA libraries not found, install the GPU"),
         ):
             self.runtime = FakeRuntime(self.root / case.__name__)
             with (
@@ -302,8 +318,8 @@ class LoadTest(WhisperTestCase):
 
         self.assertEqual(
             str(caught.exception),
-            "faster-whisper: libcublas.so.12 cannot be loaded, set LD_LIBRARY_PATH "
-            "as in the README, section Spracherkennung",
+            "faster-whisper: libcublas.so.12 cannot be loaded, install the GPU "
+            "libraries with pip install -e '.[whisper]'",
         )
         self.assertEqual(self.runtime.models, [])
 
@@ -320,12 +336,57 @@ class LoadTest(WhisperTestCase):
 
         self.assertEqual(self.runtime.libraries_loaded, [])
 
-    def test_missing_cuda_library_names_the_first_that_does_not_load(self) -> None:
-        self.assertIsNone(missing_cuda_library())
+    def test_load_preloads_cublas_before_the_model(self) -> None:
+        WhisperBackend().load()
 
+        wheel = self.runtime.cublas_package / "lib" / "libcublas.so.12"
+        self.assertEqual(
+            self.runtime.libraries_loaded, [(str(wheel), ctypes.RTLD_GLOBAL)]
+        )
+        self.assertEqual(len(self.runtime.models), 1)
+
+    def test_preload_takes_the_library_from_its_pip_package(self) -> None:
+        self.assertIsNone(preload_cuda_libraries())
+
+        wheel = self.runtime.cublas_package / "lib" / "libcublas.so.12"
+        self.assertEqual(
+            self.runtime.libraries_loaded, [(str(wheel), ctypes.RTLD_GLOBAL)]
+        )
+
+    def assert_system_library_loaded(self) -> None:
+        self.assertIsNone(preload_cuda_libraries())
+        self.assertEqual(
+            self.runtime.libraries_loaded[-1], ("libcublas.so.12", ctypes.RTLD_GLOBAL)
+        )
+
+    def test_preload_without_the_package_uses_the_system_library(self) -> None:
+        self.runtime.cublas_package = None
+
+        self.assert_system_library_loaded()
+
+    def test_preload_without_the_nvidia_parent_uses_the_system_library(self) -> None:
+        def no_parent(name: str) -> None:
+            raise ModuleNotFoundError("No module named 'nvidia'")
+
+        with mock.patch("transcript.asr.whisper._find_spec", no_parent):
+            self.assert_system_library_loaded()
+
+    def test_preload_without_the_package_file_uses_the_system_library(self) -> None:
+        (self.runtime.cublas_package / "lib" / "libcublas.so.12").unlink()
+
+        self.assert_system_library_loaded()
+
+    def test_preload_falls_back_when_the_package_file_does_not_load(self) -> None:
+        wheel = self.runtime.cublas_package / "lib" / "libcublas.so.12"
+        self.runtime.unloadable = {str(wheel)}
+
+        self.assert_system_library_loaded()
+        self.assertEqual(len(self.runtime.libraries_loaded), 2)
+
+    def test_preload_names_the_first_library_that_does_not_load(self) -> None:
         self.runtime.missing_libraries = set(CUDA_LIBRARIES)
 
-        self.assertEqual(missing_cuda_library(), CUDA_LIBRARIES[0])
+        self.assertEqual(preload_cuda_libraries(), next(iter(CUDA_LIBRARIES)))
 
     def test_out_of_memory_while_loading_is_a_resource_error(self) -> None:
         self.runtime.load_error = RuntimeError("CUDA failed with error out of memory")

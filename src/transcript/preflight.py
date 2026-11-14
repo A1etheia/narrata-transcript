@@ -16,7 +16,7 @@ from typing import Literal, Protocol
 from transcript import audio, audio_tools, knowledge, manifest, narrata, speaker_player
 from transcript.asr.backend import Backend, BackendError, BackendIdentity, BackendInfo
 from transcript.asr.backend import identity as backend_identity
-from transcript.asr.whisper import LIBRARY_HINT, WhisperBackend, missing_cuda_library
+from transcript.asr.whisper import LIBRARY_HINT, WhisperBackend, preload_cuda_libraries
 from transcript.config import Config, ConfigError, load_config
 from transcript.diarization.pyannote import PyannoteDiarizer
 from transcript.domain import DomainContext
@@ -50,8 +50,9 @@ class Probes:
 
     search_path: str | None = None  # replaces PATH for ffmpeg and ffprobe
     asr: Callable[[Config], Backend] = WhisperBackend.from_config
-    # the CUDA library the ASR cannot load, or None; asked only for cuda
-    cuda_library: Callable[[], str | None] = missing_cuda_library
+    # loads the ASR's CUDA libraries into the process; the first that does not
+    # load, or None; asked only for cuda
+    cuda_library: Callable[[], str | None] = preload_cuda_libraries
     diarizer: Callable[[Config], _Diarizer] = PyannoteDiarizer.from_config
     # where the Narrata token is looked up
     environ: Mapping[str, str] = field(default_factory=lambda: os.environ)
