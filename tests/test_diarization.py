@@ -272,13 +272,25 @@ class StoredRunTest(unittest.TestCase):
             Turn(1200, 2000, "SPEAKER_01"),
             turns=(Turn(0, 1100, "SPEAKER_00"), Turn(900, 2000, "SPEAKER_01")),
             num_speakers=2,
+            elapsed_ms=18250,
         )
         write_run(self.paths, 3, stored)
 
         self.assertEqual(load_run(self.paths, 3), stored)
+        self.assertEqual(load_run(self.paths, 3).elapsed_ms, 18250)
         data = json.loads(self.paths.diarization_raw(3).read_text(encoding="utf-8"))
         self.assertEqual(next(iter(data)), "format_version")
         self.assertEqual(data["format_version"], DIARIZATION_FORMAT_VERSION)
+
+    def test_a_file_without_elapsed_time_loads_with_none(self) -> None:
+        data = to_json(run(Turn(0, 1000, "SPEAKER_00")))
+        del data["elapsed_ms"]
+        self.write(data)
+
+        loaded = load_run(self.paths, 1)
+
+        self.assertIsNotNone(loaded)
+        self.assertIsNone(loaded.elapsed_ms)
 
     def test_missing_or_outdated_file_counts_as_absent(self) -> None:
         self.assertIsNone(load_run(self.paths, 1))
@@ -434,7 +446,7 @@ class DiarizeSessionTest(unittest.TestCase):
             [("segment-01.wav", sha256_file(self.paths.segment_wav(1)), 2)],
         )
         self.assertEqual((diarizer.load_calls, diarizer.close_calls), (1, 1))
-        self.assertIsNotNone(load_run(self.paths, 1))
+        self.assertEqual(load_run(self.paths, 1).elapsed_ms, first.elapsed_ms)
 
     def test_asr_result_and_raw_file_stay_as_they_were(self) -> None:
         raw = self.paths.reference_raw(1)
@@ -453,7 +465,7 @@ class DiarizeSessionTest(unittest.TestCase):
         self.assertEqual(stripped, reference_json(self.transcribed))
 
     def test_second_run_reuses_the_stored_diarization_without_loading(self) -> None:
-        self.diarize(FakeDiarizer())
+        first = self.diarize(FakeDiarizer())[0]
         update_reference(self.paths, self.transcribed)  # e.g. after a new ASR run
         again = FakeDiarizer()
 
@@ -461,6 +473,8 @@ class DiarizeSessionTest(unittest.TestCase):
 
         self.assertEqual(summaries[0].outcome, "reused")
         self.assertIsNone(summaries[0].elapsed_ms)
+        # the stored file keeps the time of the call that made it
+        self.assertEqual(load_run(self.paths, 1).elapsed_ms, first.elapsed_ms)
         self.assertEqual(
             (again.load_calls, again.close_calls, again.diarized), (0, 0, [])
         )
