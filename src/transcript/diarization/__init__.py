@@ -86,6 +86,9 @@ class DiarizationRun:
     exclusive_turns: tuple[Turn, ...] = ()
     settings: Mapping[str, Any] = field(default_factory=dict)
     num_speakers: int | None = None  # the hint given, not the number found
+    # of the diarizer call that made it; None: unknown. Not part of equality:
+    # two runs with the same turns are the same answer.
+    elapsed_ms: int | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         if self.num_speakers is not None and self.num_speakers < 1:
@@ -253,7 +256,8 @@ def _diarize_segment(
                 attempts=done.attempts,
             )
         assert done.result is not None
-        run, elapsed_ms, attempts = done.result, done.elapsed_ms, done.attempts
+        elapsed_ms, attempts = done.elapsed_ms, done.attempts
+        run = replace(done.result, elapsed_ms=elapsed_ms)
         write_run(paths, index, run)
     labelled = assign_speakers(reference, run)
     if labelled != reference:  # a reused run usually changes nothing
@@ -354,7 +358,8 @@ def write_run(paths: SessionPaths, index: int, run: DiarizationRun) -> None:
 def load_run(paths: SessionPaths, index: int) -> DiarizationRun | None:
     """The stored diarization of segment `index`; `None` if absent or outdated.
 
-    A file in another format version counts as absent, so it is recomputed.
+    A file in another format version counts as absent, so it is recomputed. One
+    written before `elapsed_ms` existed loads with `elapsed_ms` None.
     """
     path = paths.diarization_raw(index)
     if not path.exists():
@@ -375,6 +380,7 @@ def load_run(paths: SessionPaths, index: int) -> DiarizationRun | None:
             num_speakers=_optional(data, "num_speakers", int, path),
             turns=_turns(data, "turns", path),
             exclusive_turns=_turns(data, "exclusive_turns", path),
+            elapsed_ms=_optional(data, "elapsed_ms", int, path),
         )
     except ValueError as error:
         raise DiarizationError(f"{path}: {error}") from None
@@ -389,6 +395,7 @@ def to_json(run: DiarizationRun) -> dict[str, Any]:
         "audio_sha256": run.audio_sha256,
         "turns": [asdict(turn) for turn in run.turns],
         "exclusive_turns": [asdict(turn) for turn in run.exclusive_turns],
+        "elapsed_ms": run.elapsed_ms,
     }
 
 

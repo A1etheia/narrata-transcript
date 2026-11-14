@@ -14,6 +14,10 @@ holds no transcript text, no names and no user ids.
 What leaves the transcript incomplete is a `gap`; data that is missing without
 making the transcript less complete is a `note`.
 
+`runtime` gives the compute time of the ASR and diarization calls that made the
+stored files (TOOL-59), not of the latest run: a reused file keeps its time.
+Which steps a run reused is in `pipeline.log`.
+
 `write_report` stores `report.json` and `report.md` under `output/`, next to the
 exports they describe. Neither holds a time stamp, so equal inputs give equal
 files.
@@ -31,6 +35,7 @@ from transcript import __version__, jsonfile, markers, working
 from transcript.candidates import SessionCandidates, collect
 from transcript.config import LEVELS, Level
 from transcript.decisions import SETTLED, STATUSES, ReviewStatus
+from transcript.diarization import load_run
 from transcript.knowledge import load_snapshot
 from transcript.manifest import Manifest
 from transcript.markers import MARKER_KINDS, MARKER_LABELS
@@ -46,7 +51,7 @@ from transcript.timecode import format_clock
 from transcript.uncertainty import SegmentAssessment, load_assessment
 from transcript.working import FindingKind, Origin, WorkingTranscript
 
-REPORT_FORMAT_VERSION = 1
+REPORT_FORMAT_VERSION = 2  # 2: `runtime` (TOOL-59)
 
 SegmentState = Literal["transcribed", "failed", "missing"]
 GapCode = Literal[
@@ -63,6 +68,7 @@ NoteCode = Literal[
     "untimed_passages",  # passages without times, missing from the durations
     "segment_without_hints",  # rated without knowledge hints
     "snapshot_differs",  # transcribed with other knowledge than the working version
+    "runtime_not_recorded",  # an ASR or diarization file holds no compute time
 ]
 _CANDIDATE_LEVELS: tuple[Level, ...] = tuple(x for x in LEVELS if x != "confident")
 _SETTLED: tuple[ReviewStatus, ...] = tuple(s for s in STATUSES if s in SETTLED)
@@ -126,6 +132,22 @@ class Speakers:
 
 
 @dataclass(frozen=True)
+class SegmentRuntime:
+    """Compute time of one transcribed segment; None: not recorded or not run."""
+
+    segment: int
+    asr_ms: int | None
+    diarization_ms: int | None  # None also without diarization
+
+
+@dataclass(frozen=True)
+class Runtime:
+    segments: tuple[SegmentRuntime, ...]  # transcribed segments, by index
+    asr_ms: int  # sum of the recorded times
+    diarization_ms: int
+
+
+@dataclass(frozen=True)
 class Used:
     """A configuration and the segments that ran with it."""
 
@@ -163,6 +185,7 @@ class SessionReport:
     markers: dict[str, int]  # every marker kind, also with 0
     speakers: Speakers
     findings: dict[str, int]  # findings of the working version per kind
+    runtime: Runtime
     pipeline: Pipeline
     gaps: tuple[Gap, ...]
     notes: tuple[Note, ...]
@@ -174,17 +197,20 @@ def build(
     references: Mapping[int, ReferenceTranscript],
     found: SessionCandidates,
     assessments: Mapping[int, SegmentAssessment],
+    diarization_ms: Mapping[int, int | None],
     assignment: SpeakerAssignment | None,
     context_contract_version: str,
 ) -> SessionReport:
     """The report of `stored`, the working version made from these inputs.
 
     `references` holds every segment that has a reference file, failed or not;
-    `assessments` the rating of every rated segment.
+    `assessments` the rating of every rated segment; `diarization_ms` the time
+    stored with the raw diarization of a segment, if it has one.
     """
     blocks = stored.blocks
     recording = _recording(manifest, references)
     speakers = _speakers(stored, references, assignment)
+    runtime = _runtime(references, diarization_ms)
     return SessionReport(
         recording=recording,
         passages=Passages(
@@ -202,6 +228,7 @@ def build(
         ),
         speakers=speakers,
         findings=dict(sorted(Counter(f.kind for f in stored.findings).items())),
+        runtime=runtime,
         pipeline=Pipeline(
             tool_version=__version__,
             asr=_used((i, _asr_values(r)) for i, r in references.items()),
@@ -218,7 +245,12 @@ def build(
         ),
         gaps=_gaps(stored, recording, speakers),
         notes=_notes(
-            stored, references, assessments, speakers.diarized_segments, assignment
+            stored,
+            references,
+            assessments,
+            speakers.diarized_segments,
+            assignment,
+            runtime,
         ),
     )
 
@@ -289,6 +321,26 @@ def _speakers(
     )
 
 
+def _runtime(
+    references: Mapping[int, ReferenceTranscript],
+    diarization_ms: Mapping[int, int | None],
+) -> Runtime:
+    segments = tuple(
+        SegmentRuntime(
+            index,
+            reference.processing.elapsed_ms,
+            diarization_ms.get(index) if reference.diarization is not None else None,
+        )
+        for index, reference in sorted(references.items())
+        if reference.status == "transcribed"
+    )
+    return Runtime(
+        segments=segments,
+        asr_ms=sum(s.asr_ms or 0 for s in segments),
+        diarization_ms=sum(s.diarization_ms or 0 for s in segments),
+    )
+
+
 def _asr_values(reference: ReferenceTranscript) -> dict[str, Any]:
     """What identifies the ASR run; no keywords, they are names of the campaign."""
     asr = reference.asr
@@ -352,6 +404,7 @@ def _notes(
     assessments: Mapping[int, SegmentAssessment],
     diarized_segments: tuple[int, ...],
     assignment: SpeakerAssignment | None,
+    runtime: Runtime,
 ) -> tuple[Note, ...]:
     transcribed = [r for r in references.values() if r.status == "transcribed"]
     snapshot_id = stored.inputs.knowledge_snapshot_id
@@ -378,6 +431,15 @@ def _notes(
                 r.segment.index
                 for r in transcribed
                 if r.asr.knowledge_snapshot_id != snapshot_id
+            ),
+        ),
+        _per_segment(
+            "runtime_not_recorded",
+            (
+                s.segment
+                for s in runtime.segments
+                if s.asr_ms is None
+                or (s.segment in diarized_segments and s.diarization_ms is None)
             ),
         ),
     )
@@ -419,9 +481,20 @@ def compose(paths: SessionPaths, manifest: Manifest) -> SessionReport:
         references,
         found,
         {rated.segment: load_assessment(paths, rated.segment) for rated in found.rated},
+        {
+            index: _diarization_ms(paths, index)
+            for index, reference in references.items()
+            if reference.diarization is not None
+        },
         load_assignment(paths),
         load_snapshot(paths).source.contract_version,
     )
+
+
+def _diarization_ms(paths: SessionPaths, index: int) -> int | None:
+    """The time stored with the raw diarization; None without a current file."""
+    run = load_run(paths, index)
+    return None if run is None else run.elapsed_ms
 
 
 def report_json(report: SessionReport) -> dict[str, Any]:
@@ -494,6 +567,7 @@ _NOTE_TEXTS: dict[NoteCode, str] = {
     "untimed_passages": "Passagen ohne Zeit, in keiner Dauer enthalten",
     "segment_without_hints": "ohne Wissenshinweise bewertet",
     "snapshot_differs": "mit anderem Wissens-Snapshot transkribiert",
+    "runtime_not_recorded": "Rechenzeit nicht erfasst",
 }
 
 
@@ -518,6 +592,7 @@ def render_markdown(session: str, report: SessionReport) -> str:
         *_passage_lines(report.passages, report.markers),
         *_review_lines(report.review),
         *_speaker_lines(report.speakers),
+        *_runtime_lines(report.runtime),
         *_pipeline_lines(report.pipeline),
         "## Lücken",
         "",
@@ -617,6 +692,35 @@ def _speaker_lines(speakers: Speakers) -> list[str]:
         f"- verschiedene Personen: {speakers.persons}",
         f"- Aufwand der Zuordnung: {effort}",
         *(table if rows else []),
+        "",
+    ]
+
+
+_RUNTIME = (
+    "Rechenzeit der Modellaufrufe, mit denen die gespeicherten Dateien "
+    "entstanden sind, ohne das Laden der Modelle; eine wiederverwendete "
+    "Datei behält ihre Zeit."
+)
+
+
+def _runtime_lines(runtime: Runtime) -> list[str]:
+    def clock(ms: int | None) -> str:
+        return "—" if ms is None else format_clock(ms)
+
+    rows = [
+        f"| {s.segment} | {clock(s.asr_ms)} | {clock(s.diarization_ms)} |"
+        for s in runtime.segments
+    ]
+    asr, diarization = map(format_clock, (runtime.asr_ms, runtime.diarization_ms))
+    return [
+        "## Laufzeit",
+        "",
+        _RUNTIME,
+        "",
+        "| Segment | ASR | Diarisierung |",
+        "| --- | --- | --- |",
+        *rows,
+        f"| gesamt | {asr} | {diarization} |",
         "",
     ]
 
