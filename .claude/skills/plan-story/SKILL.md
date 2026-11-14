@@ -41,7 +41,7 @@ Take this from the ticket and the roadmap. If they don't show how the ticket ser
 
 Then run `/check-ticket-deps TOOL-<n>`. Resolve any needs-attention finding with the user before chunking.
 
-Move the ticket to In Progress with `getTransitionsForJiraIssue` and `transitionJiraIssue`.
+Move the ticket to In Progress with `executeRead({ name: "listJiraIssueTransitions", cloudId, inputs: { issueIdOrKey } })` and `transitionJiraIssue`.
 
 ### 3. Recon
 

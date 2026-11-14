@@ -90,16 +90,16 @@ Run any chunk the plan schedules for after the merge.
 Read `## Folge-Tickets` in `docs/plans/TOOL-<n>-*.md`. For each item:
 
 - `[kein Ticket: <reason>]`: count it, nothing else.
-- Carries a key: fetch that ticket with `fields: ["summary", "status", "issuelinks", "comment"]`.
+- Carries a key: fetch that ticket with `getJiraIssue` and `view: "evidence"` (status, `issuelinks`); read its comments with `listJiraIssueComments`.
   - Missing or Done: stop and ask the user.
-  - Open: link it as Relates with `createIssueLink`, and comment `Übergabe aus TOOL-<n>: <item, verbatim>` with `addCommentToJiraIssue`. Skip either half if it already exists.
+  - Open: link it as Relates with `executeWrite({ name: "createJiraIssueLink", cloudId, inputs: { linkType: "Relates", inwardIssue: "TOOL-<n>", outwardIssue: <key> } })`, and comment `Übergabe aus TOOL-<n>: <item, verbatim>` with `addOrEditJiraIssueComment`. Skip either half if it already exists.
 - Neither: stop and ask the user.
 
 Use comments, not description edits. A description edit containing SQL-like text can be blocked by Cloudflare.
 
 ### 8. Done
 
-Only after the merge: fetch `getTransitionsForJiraIssue`, take the one with `to.name == "Done"`, and call `transitionJiraIssue`. Mirror any changed roadmap dates from step 2.
+Only after the merge: fetch `executeRead({ name: "listJiraIssueTransitions", cloudId, inputs: { issueIdOrKey } })`, take the one with `to.name == "Done"`, and call `transitionJiraIssue`. Mirror any changed roadmap dates from step 2.
 
 ### 9. Report
 

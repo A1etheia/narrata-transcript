@@ -13,13 +13,13 @@ Invoked with a key, e.g. `/check-ticket-deps TOOL-41`.
 
 ### 1. Fetch the ticket
 
-`mcp__claude_ai_Atlassian_Rovo__getJiraIssue` with `cloudId: alethe1a.atlassian.net`, the key, and `fields: ["summary", "status", "description", "issuelinks"]`.
+`mcp__claude_ai_Atlassian_MCP__getJiraIssue` with `cloudId: alethe1a.atlassian.net`, the key, and `view: "evidence"`. The default `compact` view omits `issuelinks`.
 
 Collect dependencies from both `issuelinks` and the description (`Blocked by`, `braucht`, ticket keys named as prerequisites). The two are not always identical, and many pipeline dependencies are written only in prose.
 
 ### 2. Walk the direct blocked-by links
 
-Fetch each dependency with `fields: ["summary", "status", "description"]`. Stop at depth 1. Dependencies may live in `TOOL` or `IOA`.
+Fetch each dependency the same way. Stop at depth 1. Dependencies may live in `TOOL` or `IOA`.
 
 Note the status and any divergence marker in the description, case-insensitive: `scope-rewrite`, `scope-change`, `rescoped`, `scope out`, `Divergenzen vs.`, `deprecated`, `verworfen`, `zusammengeführt`.
 
