@@ -2,7 +2,7 @@
 
 Lokale Pipeline, die Aufnahmen von Rollenspielsitzungen in strukturierte Transkripte für [Narrata](https://github.com/A1etheia/ios-archiv) überführen soll.
 
-**Aktueller Stand: Audio-Vorbereitung.** Das Paket lässt sich installieren, `transcript config` zeigt die Konfiguration, `transcript doctor` prüft ffmpeg und ffprobe, und `transcript extract` prüft die Aufnahmen einer Session und extrahiert ihre Audiospur, eine Datei pro Aufnahme, `transcript context` holt den Transkriptionskontext aus Narrata, und `transcript manifest` schreibt das Session-Manifest mit absoluter Zeitachse. Session-Schlüssel und Verzeichnislayout sind festgelegt. Die Schnittstelle für ASR-Backends steht, mit einem Fake-Backend für Tests, ebenso das interne Referenztranskript-Format, in dem Ergebnisse gespeichert werden. Das V0.1-Backend (Whisper large-v3-turbo über faster-whisper) transkribiert ein Segment vollständig lokal; ein Befehl, der Segmente einer Session transkribiert, und der Export existieren noch nicht.
+**Aktueller Stand: V0.1, im Pilot erprobt.** `transcript process` verarbeitet eine Sitzung von der Aufnahme bis zum JSON-Export für Narrata, mit Review und Sprecherzuordnung als manuellen Schritten dazwischen. Die erste reale Sitzung lief vollständig durch und wurde in Narrata importiert ([Pilotbericht](docs/pilot/TOOL-58-erste-session.md)). Wie eine Sitzung Schritt für Schritt abläuft, steht in [`docs/ablauf.md`](docs/ablauf.md). Dieses README ist die Referenz zu den einzelnen Befehlen.
 
 ## Zielarchitektur
 
@@ -529,7 +529,7 @@ Nach jedem erfolgreichen [Review-Import](#review-import) sammelt `transcript rev
 - **Ohne Korrekturen** entsteht die Datei mit leerer Liste `suggestions: []`.
 - **Ohne Snapshot** entsteht keine Datei, eine vorhandene wird entfernt, und die Konsole verweist auf `transcript snapshot`. Der Import endet trotzdem normal. Ist der Snapshot ungültig, bleiben die importierten Entscheidungen gespeichert, der Befehl meldet den Fehler und endet mit Exit-Code 2.
 
-Die Datei enthält erkannten Text und Archivnamen und bleibt unter `work/`. Die Konsole zeigt nur Zahlen, etwa `asr variant suggestions: 2 new, 1 known, 3 without glossary term`. Ein Import der Datei in Narrata folgt mit IOA-1285.
+Die Datei enthält erkannten Text und Archivnamen und bleibt unter `work/`. Die Konsole zeigt nur Zahlen, etwa `asr variant suggestions: 2 new, 1 known, 3 without glossary term`. In Narrata übernimmt `scripts/artisan transcript:import-asr-variants <datei>` die Vorschläge einzeln nach Rückfrage (IOA-1285).
 
 ## Arbeitsfassung
 
@@ -746,7 +746,7 @@ python -m transcript --help
 ```
 config/          Beispielkonfiguration, lokale Konfiguration (nicht im Repo)
 docs/            Roadmap, Ticket-Pläne, Spike-Berichte
-scripts/         Prüfskripte
+scripts/         check (Prüfen), transcript (Start ohne aktivierte venv)
 src/transcript/  Python-Paket
 tests/           Tests
 tests/fixtures/  kleine synthetische oder anonymisierte Beispieldaten
@@ -771,9 +771,12 @@ work/beispielgruppe/042/
   audio/                       segment-NN.wav (Arbeitsformat, eine pro Aufnahme), audio.json (Audio-Metadaten)
   asr/                         segment-NN.json (Referenztranskript), segment-NN.raw.json (Backend-Rohantwort)
   diarization/                 segment-NN.json (Sprecher-Turns von pyannote)
-  review/                      segment-NN.hints.json (Review-Hinweise aus dem Wissen), segment-NN.uncertainty.json (Unsicherheitsbewertung), candidates.json (Review-Kandidaten der Session), decisions.json (Review-Entscheidungen), review.csv (Review-CSV)
+  review/                      segment-NN.hints.json (Review-Hinweise aus dem Wissen), segment-NN.uncertainty.json (Unsicherheitsbewertung), candidates.json (Review-Kandidaten der Session), decisions.json (Review-Entscheidungen), review.csv (Review-CSV), asr-variant-suggestions.json (Hörfehler-Vorschläge)
+  review/calibration/          similar-sheet.csv (nur mit transcript calibrate --similar-sheet)
   speakers/                    assignment.json (Sprecherzuordnung, von Hand oder mit --assign), samples.md (Hörliste pro Label)
   working/                     transcript.json (Arbeitsfassung: Entscheidungen und Sprecher angewendet)
+  pipeline.log                 Protokoll aller Befehle mit Session
+  process.lock                 nur während eines transcript process oder nach dessen Abbruch
   debug.log                    nur im Debug-Modus
 output/beispielgruppe/042/     report.json, report.md (Abschlussbericht), transcript.json (JSON-Export), transcript.txt (TXT-Ausgabe), transcript.docx (DOCX-Ausgabe)
 ```
@@ -790,7 +793,7 @@ Einwilligung, Aufbewahrung und Sichtbarkeit regelt [`docs/datenschutz.md`](docs/
 
 **Echte Sessions** liegen nur lokal: Die Originalaufnahme kommt von Hand nach `input/<gruppe>/<ordinal>/`, alles Weitere erzeugt die Pipeline (siehe [Sessions](#sessions)).
 
-**Secrets** liegen in `.env`, später auch das Narrata-Token. Noch benötigt das Projekt keine Secrets.
+**Secrets** liegen in `.env` (Vorlage `.env.example`), heute nur `NARRATA_TOKEN`. Die Datei ist ausgeschlossen und wird nie committet. Der Hugging-Face-Token für den Modell-Download liegt im HF-Cache, nicht im Projekt.
 
 **Test-Fixtures** liegen in `tests/fixtures/`. Sie sind klein und synthetisch oder vollständig anonymisiert und enthalten kein Audio; die Regeln stehen in [`tests/fixtures/README.md`](tests/fixtures/README.md).
 
