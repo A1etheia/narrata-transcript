@@ -41,7 +41,7 @@ transcript doctor                    # Umgebung: Werkzeuge, Konfiguration, Model
 transcript doctor beispielgruppe/042 # zusätzlich die Session
 ```
 
-Vor einem langen Lauf prüft `transcript doctor`, ob alles bereitsteht. Ohne Session prüft der Befehl `ffmpeg` und `ffprobe` (Version und Pfad), ob `ffplay` für Hörproben da ist (fehlt es, ist das nur eine Warnung; der Preflight von `process` prüft es nicht), die Konfiguration, das ASR-Modell im lokalen Cache samt Gerät und das Diarisierungsmodell. Die Modelle werden dabei nicht geladen. Mit Session kommen hinzu:
+Vor einem langen Lauf prüft `transcript doctor`, ob alles bereitsteht. Ohne Session prüft der Befehl `ffmpeg` und `ffprobe` (Version und Pfad), ob `ffplay` für Hörproben da ist (fehlt es, ist das nur eine Warnung; der Preflight von `process` prüft es nicht), die Konfiguration, das ASR-Modell im lokalen Cache samt Gerät und das Diarisierungsmodell. Läuft die Spracherkennung auf der GPU, prüft er außerdem, ob sich cuBLAS laden lässt; fehlt `LD_LIBRARY_PATH` (siehe [Spracherkennung](#spracherkennung)), ist das ein Fehler, auch bei `asr.device: auto`, weil die Pipeline dann nicht auf die CPU ausweicht. Die Modelle werden dabei nicht geladen. Mit Session kommen hinzu:
 
 - die Aufnahmen in `input/`, jede per ffprobe geprüft
 - ob `work/` und `output/` beschreibbar sind
@@ -231,7 +231,7 @@ Erprobt sind faster-whisper 1.2.1, ctranslate2 4.8, cuBLAS 12.9 und cuDNN 8.9.
 
 **Lizenzen.** faster-whisper und CTranslate2 stehen unter MIT. Das Modell `mobiuslabsgmbh/faster-whisper-large-v3-turbo` (auf Hugging Face inzwischen unter `dropbox-dash/faster-whisper-large-v3-turbo`) ist laut Modellkarte eine FP16-Konvertierung von `openai/whisper-large-v3-turbo` und steht wie dieses unter MIT. cuBLAS und cuDNN unterliegen den NVIDIA-Lizenzen für Laufzeitbibliotheken; sie werden nur lokal installiert, nicht weitergegeben.
 
-**Fehler.** Fehlt die Runtime, das Modell im Cache, eine GPU bei `asr.device: cuda` oder eine CUDA-Bibliothek, meldet das Backend `BackendUnavailableError` mit dem nächsten Schritt; Speichermangel kommt als `ResourceError`. Die Meldungen nennen Modell, Gerät und Audiodatei, nie Transkripttext oder Begriffe.
+**Fehler.** Fehlt die Runtime, das Modell im Cache, eine GPU bei `asr.device: cuda` oder eine CUDA-Bibliothek, meldet das Backend `BackendUnavailableError` mit dem nächsten Schritt; Speichermangel kommt als `ResourceError`. Eine fehlende CUDA-Bibliothek fällt schon beim Laden des Modells auf, nicht erst am ersten Segment, und `transcript doctor` meldet sie vor dem Lauf. Die Meldungen nennen Modell, Gerät und Audiodatei, nie Transkripttext oder Begriffe.
 
 **Lauf.** `transcript transcribe` transkribiert alle Segmente einer Session aus dem Manifest. Whisper lädt dafür einmal, danach diarisiert der Befehl die Session (siehe [Diarisierung](#diarisierung)). Vorher müssen `transcript extract` und `transcript manifest` gelaufen sein.
 

@@ -42,7 +42,7 @@
 - AC: AK 1 und 2 aus dem Ticket am echten Rechner.
 
 ## Folge-Tickets
-- cuDNN-Pfad in README „Spracherkennung“ (`README.md:225`): CTranslate2 4.8.5 lädt kein cuDNN, `nvidia/cudnn/lib` in `LD_LIBRARY_PATH` und das Paket `nvidia-cudnn-cu12` sind dann wohl überflüssig. [kein Ticket: in TOOL-61 (E2E-Doku) prüfen, die den `LD_LIBRARY_PATH`-Hinweis ohnehin überarbeitet]
+- cuDNN-Pfad in README „Spracherkennung“ (`README.md:225`): CTranslate2 4.8.5 lädt kein cuDNN; der Whisper-Smoke-Test lief auf `cuda` mit `LD_LIBRARY_PATH` nur auf `nvidia/cublas/lib` (Chunk 2). `nvidia/cudnn/lib` im Pfad und das Paket `nvidia-cudnn-cu12` sind damit wohl überflüssig. [kein Ticket: in TOOL-61 (E2E-Doku) prüfen, die den `LD_LIBRARY_PATH`-Hinweis ohnehin überarbeitet]
 
 ## Chunk-Tabelle
 | Chunk | Scope | Clear context after? |
