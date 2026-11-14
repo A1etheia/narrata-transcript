@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from transcript.config import (
+    DEFAULT_PLAYBACK_FILTER,
     Config,
     ConfigError,
     SimilarThresholds,
@@ -90,6 +91,7 @@ class LoadConfigTest(unittest.TestCase):
                 word_low=0.6, gap_ms=900, avg_logprob=-0.8, similar_level="uncertain"
             ),
             render_timestamps="passage",
+            playback_filter=None,
         )
 
         self.assertEqual(self.load(format_config(config)), config)
@@ -447,6 +449,36 @@ class LoadConfigTest(unittest.TestCase):
     def test_unknown_render_keys_name_their_path(self) -> None:
         self.assert_rejected(
             MINIMAL + "render:\n  format: docx\n", "unknown key: render.format"
+        )
+
+    def test_playback_filter_defaults_to_denoising(self) -> None:
+        for text in (MINIMAL, MINIMAL + "playback:\n  filter: null\n"):
+            with self.subTest(text=text):
+                self.assertEqual(
+                    self.load(text).playback_filter, DEFAULT_PLAYBACK_FILTER
+                )
+
+    def test_playback_filter_false_plays_the_raw_signal(self) -> None:
+        config = self.load(MINIMAL + "playback:\n  filter: false\n")
+
+        self.assertIsNone(config.playback_filter)
+
+    def test_playback_filter_takes_a_chain(self) -> None:
+        config = self.load(MINIMAL + "playback:\n  filter: afftdn=nr=20\n")
+
+        self.assertEqual(config.playback_filter, "afftdn=nr=20")
+
+    def test_playback_filter_is_validated(self) -> None:
+        for value in ('""', "true", "3"):
+            with self.subTest(value=value):
+                self.assert_rejected(
+                    MINIMAL + f"playback:\n  filter: {value}\n",
+                    "invalid value for playback.filter",
+                )
+
+    def test_unknown_playback_keys_name_their_path(self) -> None:
+        self.assert_rejected(
+            MINIMAL + "playback:\n  volume: 2\n", "unknown key: playback.volume"
         )
 
     def test_session_paths_use_the_configured_root(self) -> None:

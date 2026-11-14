@@ -720,6 +720,7 @@ Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht 
 | `review.similar.max_length_deviation` | nein | `0.3` | höchste Längenabweichung als Anteil der Begriffslänge, `0` bis `0.9` |
 | `review.uncertainty.*` | nein | siehe `config/example.yaml` | Schwellen der [Unsicherheitsbewertung](#unsicherheitsbewertung): `word_low` (0,5), `word_very_low` (0,2), `low_share_review` (0,2), `low_share_uncertain` (0,5), `no_speech_prob` (0,6), `avg_logprob` (−1,0), `compression_ratio` (2,4), `gap_ms` (2500), `min_words_per_second` (1,0), `crosstalk_ms` (1000), `similar_level` (`needs_review`), `similar_sound_level` (`confident`); `word_very_low` darf `word_low` nicht übersteigen, `low_share_review` nicht `low_share_uncertain` |
 | `render.timestamps` | nein | `turn` | Zeitstempel im gerenderten Transkript (TXT): `turn` an jedem Sprecherwechsel, `passage` an jeder Passage |
+| `playback.filter` | nein | `highpass=f=80,afftdn=nf=-25` | ffmpeg-Filterkette, mit der `speakers --assign` die [Hörproben](#sprecherzuordnung) abspielt; `false` spielt das Rohsignal. Wirkt nur auf die Wiedergabe |
 | `debug` | nein | `false` | schreibt Transkripttext nach `work/<gruppe>/<ordinal>/debug.log`, nie auf die Konsole |
 
 Einen eigenen Ausgabepfad gibt es nicht: `output/` liegt immer unter `paths.root`, damit echte Daten im Layout unter [Sessions](#sessions) bleiben. Secrets gehören nicht in diese Datei, sondern in `.env` (Vorlage `.env.example`, heute nur `NARRATA_TOKEN`).
