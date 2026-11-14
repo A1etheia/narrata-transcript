@@ -78,12 +78,17 @@ N/A, weil der Pilot kein internes Format ändert. Bräuchte ein Fix eines, gilt 
 - AC: Blockierende Fehler, Workarounds und Auffälligkeiten sind dokumentiert; alle ACs des Tickets sind abgehakt.
 
 ## Folge-Tickets
-- `TOOL-59`: Laufzeit, Peak-RAM/VRAM, Zuordnungs- und Review-Aufwand sowie Kandidaten pro Stunde aus dem Pilotbericht und `output/<s>/report.json`.
-- `TOOL-60`: Kernhypothese an Review-Menge und Fehlerstichprobe prüfen; `calibrate` am vollen Pilotlauf (aus TOOL-35).
-- `TOOL-61`: Workarounds und das Beiseitelegen alter Handdateien vor einem `--redo transcribe` in die E2E-Doku.
-- `TOOL-70`: Zeitmarken der IT/OT-Wechsel liegen lokal unter `work/<s>/`.
+- `TOOL-59`: Laufzeit (knapp 7 min für 5:26 h), Zuordnungsaufwand (4 min), Review-Tempo (35 Entscheidungen pro Stunde) und Kandidaten pro Stunde (160) aus dem Pilotbericht und `output/<s>/report.json`. Peak-RAM/VRAM des erfolgreichen Laufs fehlen, weil das temporäre Verzeichnis geleert wurde; bei Bedarf in TOOL-93 neu messen.
+- `TOOL-60`: Die Kernhypothese hält in der Bewertung (keine Fehlalarme), scheitert aber an der WER von 24–33 %; ein vollständiges Review läge bei rund 25 h pro Abend. Review-Umfang (ohne Review, nur Glossar-Begriffe, vollständig) und Review-Kanal neu entscheiden. Befund der Projektverantwortlichen: Lange Passagen sind beim Hören hilfreicher als kurze.
+- `TOOL-61`: In die E2E-Doku gehören das Beiseitelegen alter Handdateien vor einem `--redo transcribe`, `LD_LIBRARY_PATH` bzw. ein Startskript ohne aktivierte venv und das Abspielen einer Kandidaten-ID im Review.
+- `TOOL-70`: Die Pilotsitzung steht als Material bereit. IT/OT-Zeitmarken wurden im Pilot nicht notiert und müssen im Spike selbst entstehen.
+- `TOOL-91`: Hörproben bei der Sprecherzuordnung entrauscht abspielen (beim Mithören viele Störgeräusche).
+- `TOOL-92`: Spike zum Entrauschen vor der Erkennung.
+- `TOOL-93`: Spike zur Erkennungsqualität an den beiden Pilot-Handreferenzen, mit Gegenprobe an einer dritten Referenz aus einer anderen Sitzung.
+- `TOOL-94`: Der Preflight meldete die ASR als `ok`, obwohl faster-whisper die CUDA-Bibliotheken nicht laden konnte.
 - [kein Ticket: anonymisierte Pilot-Fixture für ios-archiv nur, wenn Narrata sie verlangt; die Contract-Fixtures aus IOA-1214/IOA-1287 decken die Form ab]
-- Weitere Funde aus dem Lauf bekommen beim Abschluss einen Key oder `[kein Ticket: …]`.
+- [kein Ticket: Review-Dialog mit Abspielen nach dem Vorbild von `speakers --assign`; ob und in welcher Form, hängt an der Review-Entscheidung in TOOL-60]
+- [kein Ticket: IPv6 in WSL, Gruppe `docker` und die lokale Narrata-Umgebung sind Einrichtung des Testrechners und im Pilotbericht beschrieben]
 
 ## Chunk-Tabelle
 | Chunk | Scope | Clear context after? |

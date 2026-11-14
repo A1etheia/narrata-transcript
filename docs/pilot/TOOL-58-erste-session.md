@@ -2,6 +2,14 @@
 
 Stand 2026-11-12. Dieser Bericht enthält nur Kennzahlen, Codes und nachgestellte Beispiele. Session-Key, Gruppe, Namen und Transkripttext stehen nicht darin (TOOL-66). Plan: [`docs/plans/TOOL-58-pilot-session.md`](../plans/TOOL-58-pilot-session.md).
 
+## Ergebnis in Kürze
+
+- **Die Pipeline trägt durchgängig.** Eine reale Sitzung von 5:26 h mit zwei Aufnahmen lief von der Aufnahme bis zum Narrata-Import. Narrata nahm den Export (Contract 1.1) ohne Korrektur an, ein zweiter Import änderte nichts.
+- **Maschine und Zuordnung sind alltagstauglich:** knapp 7 min Rechenzeit, 4 min Sprecherzuordnung.
+- **Das Review trägt nicht.** Die WER liegt bei 24–33 %, fast jede Passage enthält einen Fehler, und 87 % der Passagen werden Kandidaten. Eine Stunde Review entschied 35 von 870 Kandidaten. Ein vollständiges Review läge bei rund 25 h pro Abend.
+- **Die Bewertung selbst trifft:** kein Fehlalarm, 4 übersehene Fehler an zwei Handreferenzen, alle Auslassungen. Strengere Regeln würden echte Fehler verstecken.
+- **Konsequenz:** Der Hebel ist die Erkennung (TOOL-93, TOOL-92), nicht die Bewertung. Bis dahin genügen Sprecherzuordnung und Export; unsichere Stellen bleiben im Transkript markiert. Review-Umfang und Review-Kanal entscheidet TOOL-60.
+
 ## Pilotsitzung
 
 | Merkmal | Wert |
