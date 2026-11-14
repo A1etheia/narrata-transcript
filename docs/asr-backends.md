@@ -116,7 +116,7 @@ In der Pipeline übernimmt das `transcript.transcription.transcribe_session(path
 | faster-whisper nicht installiert | `BackendUnavailableError`, Hinweis auf das Extra `whisper` |
 | Modell nicht im Cache, Verzeichnis unvollständig | `BackendUnavailableError`, Hinweis auf den Download |
 | `device: cuda` ohne GPU | `BackendUnavailableError` |
-| cuBLAS/cuDNN nicht ladbar | `BackendUnavailableError`, Hinweis auf `LD_LIBRARY_PATH` |
+| cuBLAS nicht ladbar | `BackendUnavailableError`, Hinweis auf `LD_LIBRARY_PATH` |
 | `out of memory` der Runtime, `MemoryError` | `ResourceError` |
 | Audio nicht dekodierbar (PyAV) | `AudioInputError` |
 | alles andere | `BackendRuntimeError` |

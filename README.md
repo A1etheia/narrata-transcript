@@ -2,7 +2,7 @@
 
 Lokale Pipeline, die Aufnahmen von Rollenspielsitzungen in strukturierte Transkripte für [Narrata](https://github.com/A1etheia/ios-archiv) überführen soll.
 
-**Aktueller Stand: Audio-Vorbereitung.** Das Paket lässt sich installieren, `transcript config` zeigt die Konfiguration, `transcript doctor` prüft ffmpeg und ffprobe, und `transcript extract` prüft die Aufnahmen einer Session und extrahiert ihre Audiospur, eine Datei pro Aufnahme, `transcript context` holt den Transkriptionskontext aus Narrata, und `transcript manifest` schreibt das Session-Manifest mit absoluter Zeitachse. Session-Schlüssel und Verzeichnislayout sind festgelegt. Die Schnittstelle für ASR-Backends steht, mit einem Fake-Backend für Tests, ebenso das interne Referenztranskript-Format, in dem Ergebnisse gespeichert werden. Das V0.1-Backend (Whisper large-v3-turbo über faster-whisper) transkribiert ein Segment vollständig lokal; ein Befehl, der Segmente einer Session transkribiert, und der Export existieren noch nicht.
+**Aktueller Stand: V0.1, im Pilot erprobt.** `transcript process` verarbeitet eine Sitzung von der Aufnahme bis zum JSON-Export für Narrata, mit Review und Sprecherzuordnung als manuellen Schritten dazwischen. Die erste reale Sitzung lief vollständig durch und wurde in Narrata importiert ([Pilotbericht](docs/pilot/TOOL-58-erste-session.md)). Wie eine Sitzung Schritt für Schritt abläuft, steht in [`docs/ablauf.md`](docs/ablauf.md). Dieses README ist die Referenz zu den einzelnen Befehlen.
 
 ## Zielarchitektur
 
@@ -33,6 +33,8 @@ transcript doctor
 ```
 
 `transcript doctor` prüft die Umgebung, siehe [Preflight](#preflight).
+
+**Ohne aktivierte venv** startet `scripts/transcript` die CLI. Das Skript nimmt cuBLAS aus der venv in den `LD_LIBRARY_PATH` (siehe [Spracherkennung](#spracherkennung)), wechselt in den Projektordner und ruft dort `.venv/bin/transcript` mit denselben Argumenten auf. Verlinkt, etwa mit `ln -s "$PWD/scripts/transcript" ~/.local/bin/transcript`, läuft es aus jedem Verzeichnis. Relative Pfadangaben wie `--config` oder `--from-file` gelten dann relativ zum Projektordner.
 
 ## Preflight
 
@@ -218,18 +220,20 @@ pip install -e '.[dev,whisper]'
 python -c "from faster_whisper import download_model; download_model('large-v3-turbo')"
 ```
 
-Für die GPU bringt das Extra cuBLAS und cuDNN als pip-Pakete mit. faster-whisper findet sie nur über `LD_LIBRARY_PATH`, etwa in `.venv/bin/activate` oder vor jedem Lauf:
+Für die GPU bringt das Extra cuBLAS als pip-Paket mit; cuDNN braucht CTranslate2 4.8 nicht. faster-whisper findet cuBLAS nur über `LD_LIBRARY_PATH`, etwa in `.venv/bin/activate` oder vor jedem Lauf:
 
 ```bash
 SP=$(python -c "import site; print(site.getsitepackages()[0])")
-export LD_LIBRARY_PATH=$SP/nvidia/cublas/lib:$SP/nvidia/cudnn/lib
+export LD_LIBRARY_PATH=$SP/nvidia/cublas/lib
 ```
 
-Erprobt sind faster-whisper 1.2.1, ctranslate2 4.8, cuBLAS 12.9 und cuDNN 8.9.
+`scripts/transcript` (siehe [Setup](#setup)) setzt den Pfad selbst.
+
+Erprobt sind faster-whisper 1.2.1, ctranslate2 4.8 und cuBLAS 12.9.
 
 **Hardware.** Getestet auf einer NVIDIA-GPU mit 12 GB VRAM (RTX 3080 Ti, unter WSL). Ohne GPU läuft dasselbe auf der CPU (`int8`), aber um ein Vielfaches langsamer. Eine Aufnahme von 5 h braucht bis 10,5 GB RAM. Die [Diarisierung](#diarisierung) braucht auf 5 h bis 13,8 GB und darf nicht gleichzeitig laufen; das Whisper-Modell wird vorher freigegeben. Unter WSL reicht das Standardlimit von 15 GB dafür kaum, in `%UserProfile%\.wslconfig` etwa `memory=26GB` wie auf dem Testrechner setzen.
 
-**Lizenzen.** faster-whisper und CTranslate2 stehen unter MIT. Das Modell `mobiuslabsgmbh/faster-whisper-large-v3-turbo` (auf Hugging Face inzwischen unter `dropbox-dash/faster-whisper-large-v3-turbo`) ist laut Modellkarte eine FP16-Konvertierung von `openai/whisper-large-v3-turbo` und steht wie dieses unter MIT. cuBLAS und cuDNN unterliegen den NVIDIA-Lizenzen für Laufzeitbibliotheken; sie werden nur lokal installiert, nicht weitergegeben.
+**Lizenzen.** faster-whisper und CTranslate2 stehen unter MIT. Das Modell `mobiuslabsgmbh/faster-whisper-large-v3-turbo` (auf Hugging Face inzwischen unter `dropbox-dash/faster-whisper-large-v3-turbo`) ist laut Modellkarte eine FP16-Konvertierung von `openai/whisper-large-v3-turbo` und steht wie dieses unter MIT. cuBLAS unterliegt der NVIDIA-Lizenz für Laufzeitbibliotheken; es wird nur lokal installiert, nicht weitergegeben.
 
 **Fehler.** Fehlt die Runtime, das Modell im Cache, eine GPU bei `asr.device: cuda` oder eine CUDA-Bibliothek, meldet das Backend `BackendUnavailableError` mit dem nächsten Schritt; Speichermangel kommt als `ResourceError`. Eine fehlende CUDA-Bibliothek fällt schon beim Laden des Modells auf, nicht erst am ersten Segment, und `transcript doctor` meldet sie vor dem Lauf. Die Meldungen nennen Modell, Gerät und Audiodatei, nie Transkripttext oder Begriffe.
 
@@ -272,7 +276,7 @@ TRANSCRIPT_WHISPER_SMOKE=1 TRANSCRIPT_WHISPER_DEVICE=cpu python -m unittest disc
 
 Wer wann spricht, bestimmt pyannote `speaker-diarization-community-1` (`transcript.diarization.pyannote.PyannoteDiarizer`, Wahl und Messwerte in [TOOL-20](docs/spikes/TOOL-20-diarisierung.md)). Die Diarisierung läuft nach der Transkription, automatisch am Ende von `transcript transcribe` oder als eigener Befehl, vollständig lokal und nur aus dem lokalen Modell-Cache.
 
-**Installation.** Ebenfalls ein optionales Extra; es bringt torch mit und macht die venv um einige GB größer. Es verträgt sich mit dem Whisper-Extra in derselben venv: torch nutzt CUDA 13 und cuDNN 9, faster-whisper CUDA 12 und cuDNN 8, in getrennten Paketen.
+**Installation.** Ebenfalls ein optionales Extra; es bringt torch mit und macht die venv um einige GB größer. Es verträgt sich mit dem Whisper-Extra in derselben venv: torch nutzt CUDA 13 und cuDNN 9, faster-whisper cuBLAS aus CUDA 12, in getrennten Paketen.
 
 ```bash
 pip install -e '.[dev,whisper,diarization]'
@@ -525,7 +529,7 @@ Nach jedem erfolgreichen [Review-Import](#review-import) sammelt `transcript rev
 - **Ohne Korrekturen** entsteht die Datei mit leerer Liste `suggestions: []`.
 - **Ohne Snapshot** entsteht keine Datei, eine vorhandene wird entfernt, und die Konsole verweist auf `transcript snapshot`. Der Import endet trotzdem normal. Ist der Snapshot ungültig, bleiben die importierten Entscheidungen gespeichert, der Befehl meldet den Fehler und endet mit Exit-Code 2.
 
-Die Datei enthält erkannten Text und Archivnamen und bleibt unter `work/`. Die Konsole zeigt nur Zahlen, etwa `asr variant suggestions: 2 new, 1 known, 3 without glossary term`. Ein Import der Datei in Narrata folgt mit IOA-1285.
+Die Datei enthält erkannten Text und Archivnamen und bleibt unter `work/`. Die Konsole zeigt nur Zahlen, etwa `asr variant suggestions: 2 new, 1 known, 3 without glossary term`. In Narrata übernimmt `scripts/artisan transcript:import-asr-variants <datei>` die Vorschläge einzeln nach Rückfrage (IOA-1285).
 
 ## Arbeitsfassung
 
@@ -742,7 +746,7 @@ python -m transcript --help
 ```
 config/          Beispielkonfiguration, lokale Konfiguration (nicht im Repo)
 docs/            Roadmap, Ticket-Pläne, Spike-Berichte
-scripts/         Prüfskripte
+scripts/         check (Prüfen), transcript (Start ohne aktivierte venv)
 src/transcript/  Python-Paket
 tests/           Tests
 tests/fixtures/  kleine synthetische oder anonymisierte Beispieldaten
@@ -767,9 +771,12 @@ work/beispielgruppe/042/
   audio/                       segment-NN.wav (Arbeitsformat, eine pro Aufnahme), audio.json (Audio-Metadaten)
   asr/                         segment-NN.json (Referenztranskript), segment-NN.raw.json (Backend-Rohantwort)
   diarization/                 segment-NN.json (Sprecher-Turns von pyannote)
-  review/                      segment-NN.hints.json (Review-Hinweise aus dem Wissen), segment-NN.uncertainty.json (Unsicherheitsbewertung), candidates.json (Review-Kandidaten der Session), decisions.json (Review-Entscheidungen), review.csv (Review-CSV)
+  review/                      segment-NN.hints.json (Review-Hinweise aus dem Wissen), segment-NN.uncertainty.json (Unsicherheitsbewertung), candidates.json (Review-Kandidaten der Session), decisions.json (Review-Entscheidungen), review.csv (Review-CSV), asr-variant-suggestions.json (Hörfehler-Vorschläge)
+  review/calibration/          similar-sheet.csv (nur mit transcript calibrate --similar-sheet)
   speakers/                    assignment.json (Sprecherzuordnung, von Hand oder mit --assign), samples.md (Hörliste pro Label)
   working/                     transcript.json (Arbeitsfassung: Entscheidungen und Sprecher angewendet)
+  pipeline.log                 Protokoll aller Befehle mit Session
+  process.lock                 nur während eines transcript process oder nach dessen Abbruch
   debug.log                    nur im Debug-Modus
 output/beispielgruppe/042/     report.json, report.md (Abschlussbericht), transcript.json (JSON-Export), transcript.txt (TXT-Ausgabe), transcript.docx (DOCX-Ausgabe)
 ```
@@ -786,7 +793,7 @@ Einwilligung, Aufbewahrung und Sichtbarkeit regelt [`docs/datenschutz.md`](docs/
 
 **Echte Sessions** liegen nur lokal: Die Originalaufnahme kommt von Hand nach `input/<gruppe>/<ordinal>/`, alles Weitere erzeugt die Pipeline (siehe [Sessions](#sessions)).
 
-**Secrets** liegen in `.env`, später auch das Narrata-Token. Noch benötigt das Projekt keine Secrets.
+**Secrets** liegen in `.env` (Vorlage `.env.example`), heute nur `NARRATA_TOKEN`. Die Datei ist ausgeschlossen und wird nie committet. Der Hugging-Face-Token für den Modell-Download liegt im HF-Cache, nicht im Projekt.
 
 **Test-Fixtures** liegen in `tests/fixtures/`. Sie sind klein und synthetisch oder vollständig anonymisiert und enthalten kein Audio; die Regeln stehen in [`tests/fixtures/README.md`](tests/fixtures/README.md).
 
