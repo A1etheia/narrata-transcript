@@ -95,4 +95,28 @@ V="base pchw nohw nohw-hp"
 | `+logprob-lax` | `log_prob_threshold: -1.5` |
 | `+cond-prev` | `condition_on_previous_text: true` |
 | `+large-v3` | Modell large-v3 statt large-v3-turbo |
+| `+de-turbo` | `primeline/whisper-large-v3-turbo-german`, selbst nach CTranslate2 konvertiert (Einrichtung unten); mit `turbo` im Namen bekommt es Hotwords, außer auf `nohw` |
+| `+crisper` | `nyralabs/faster_CrisperWhisper` (CrisperWhisper 1.0, Deutsch und Englisch, wortgetreu) |
 | `+twin` | ändert nur die Wurzel; prüft, ob ein Seed einen Lauf reproduziert |
+
+## Modelle einrichten
+
+large-v3 kommt wie in der Haupt-README in den HF-Cache. Die beiden anderen Modelle:
+
+```bash
+# CrisperWhisper 1.0, schon im CTranslate2-Format (CC-BY-NC-4.0 vom Basismodell)
+.venv/bin/python -c "from huggingface_hub import snapshot_download as d; d('nyralabs/faster_CrisperWhisper')"
+
+# Deutsches Turbo-Modell (Apache-2.0): Konvertierung in einer Wegwerf-venv, nicht in .venv
+C=~/.cache/narrata-spike/asr; O=$C/whisper-large-v3-turbo-german-ct2-9e7012dad924
+python3 -m venv $C/convert-venv
+$C/convert-venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch
+$C/convert-venv/bin/pip install ctranslate2==4.8.5 transformers
+$C/convert-venv/bin/ct2-transformers-converter --model primeline/whisper-large-v3-turbo-german \
+  --revision 9e7012dad924 --output_dir $O --copy_files preprocessor_config.json --quantization float16
+# das Repo hat kein tokenizer.json, die Pipeline braucht eins
+$C/convert-venv/bin/python -c "import sys; from transformers import AutoTokenizer as T; T.from_pretrained('primeline/whisper-large-v3-turbo-german', revision='9e7012dad924').save_pretrained(sys.argv[1])" $O/tok
+mv $O/tok/tokenizer.json $O/ && rm -r $O/tok
+```
+
+`snapshot_download` ohne feste Revision, damit `refs/main` im Cache steht: Pipeline und faster-whisper suchen das Modell über `main`. Das konvertierte Verzeichnis trägt die Quell-Revision im Namen, `score` zeigt dafür keine Hub-Revision (`n/a`). CrisperWhisper 2.0 (`nyralabs/CrisperWhisper2.0_*`) läuft nur mit eigener Laufzeit `crisperwhisper` und steht unter einer Forschungslizenz ohne Betriebseinsatz; es ist nicht Teil des Spikes.

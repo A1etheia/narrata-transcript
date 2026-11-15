@@ -50,6 +50,8 @@ from transcript.timecode import format_clock
 from transcript.uncertainty import segment_assessment
 
 TURBO = "large-v3-turbo"
+MODEL_CACHE = Path.home() / ".cache" / "narrata-spike" / "asr"
+GERMAN_REV = "9e7012dad924"  # primeline/whisper-large-v3-turbo-german, converted
 WINDOW_MS = 180_000  # length of a proposed hand-reference window
 WINDOW_STEP_MS = 60_000
 WINDOW_PROPOSALS = 3
@@ -87,7 +89,14 @@ MODIFIERS: dict[str, Mapping[str, object]] = {
     # changes nothing but the root: checks that a seed reproduces a run
     "twin": {},
 }
-MODELS = frozenset({"large-v3"})
+# modifier -> `asr.model`: a faster-whisper name, a Hub id or a local CT2 directory
+MODELS = {
+    "large-v3": "large-v3",
+    # primeline/whisper-large-v3-turbo-german, converted (README); "turbo" in the
+    # name gives it hotwords unless the base is nohw
+    "de-turbo": str(MODEL_CACHE / f"whisper-large-v3-turbo-german-ct2-{GERMAN_REV}"),
+    "crisper": "nyralabs/faster_CrisperWhisper",  # CrisperWhisper 1.0, CT2
+}
 # the backend passes these itself, so they go into the config, not FIXED_SETTINGS
 CONFIG_KEYS = frozenset({"beam_size"})
 
@@ -107,7 +116,7 @@ def variant(name: str) -> Variant:
         if mod in MODELS:
             if model != base.model:
                 raise SpikeError(f"{name}: more than one model")
-            model = mod
+            model = MODELS[mod]
         elif mod in MODIFIERS:
             for key, value in MODIFIERS[mod].items():
                 if key in CONFIG_KEYS:
@@ -492,7 +501,7 @@ def check_provenance(scores: Sequence[Score]) -> None:
         groups.setdefault((s.model, s.model_version, s.snapshot), {})[s.name] = None
     for (model, revision, snapshot), names in groups.items():
         print(
-            f"| {model} | {(revision or 'n/a')[:12]} | {(snapshot or 'n/a')[:12]} | "
+            f"| {Path(model).name} | {(revision or 'n/a')[:12]} | {(snapshot or 'n/a')[:12]} | "
             f"{', '.join(names)} |"
         )
     print()

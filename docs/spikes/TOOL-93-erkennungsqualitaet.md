@@ -200,3 +200,76 @@ Ersetzungen / Auslassungen / Einfügungen je Lauf:
 - **Die größte Wirkung hat der Seed, nicht die Einstellung.** In fast jeder Variante verliert ein Seed an B einen Block von 70–100 Wörtern (z. B. 189 statt 85–101 Auslassungen bei `+vad-t35`). Diese Sprünge sind größer als jeder Unterschied zwischen den Varianten. Ohne Hotwords streuen die Seeds kaum (Stufe 1). Das ist ein Hinweis darauf, dass die Hotwords den Decoder an B instabil machen; die Ursache gehört zu TOOL-81.
 
 **Ergebnis Stufe 2: `base` bleibt unverändert.** Stufe 3 vergleicht die Modelle mit den Pipeline-Einstellungen.
+
+## Stufe 3: Modelle
+
+Laut Plan laufen die Modelle ohne Hotwords und mit den Einstellungen der Pipeline, Vergleichsmaß ist `nohw` (large-v3-turbo ohne Hotwords). Dazu kommt `base+de-turbo`: Das deutsche Turbo-Modell trägt `turbo` im Namen und bekäme in der Pipeline Hotwords, es wäre also der echte Ersatz für `base`.
+
+| Modifikator | Modell | Revision | Lizenz | Format |
+| --- | --- | --- | --- | --- |
+| `+large-v3` | Whisper large-v3 | `edaa852ec7e1` | MIT | CTranslate2, lag im Cache |
+| `+de-turbo` | `primeline/whisper-large-v3-turbo-german` | `9e7012dad924` | Apache-2.0 | Transformers, selbst nach CTranslate2 konvertiert (float16, 1,6 GB), `tokenizer.json` ergänzt |
+| `+crisper` | `nyralabs/faster_CrisperWhisper` (CrisperWhisper 1.0, Deutsch und Englisch) | `6a042898d09e` | CC-BY-NC-4.0 (vom Basismodell `nyralabs/CrisperWhisper`) | CTranslate2 (2,9 GB) |
+| — | CrisperWhisper 2.0 (`nyralabs/CrisperWhisper2.0_*`) | — | nyra health Non-Commercial Research License | ausgeschlossen, siehe unten |
+
+**Lizenzen für die private Gruppe.** MIT und Apache-2.0 sind unproblematisch. CC-BY-NC-4.0 erlaubt die nicht-kommerzielle Nutzung mit Namensnennung; eine private Spielrunde ohne Einnahmen fällt darunter. CrisperWhisper 2.0 ist enger: Die Lizenz schließt „any production or operational deployment“ auch ohne Gewinnabsicht aus. Ein Spike wäre erlaubt, ein Einsatz in V0.2 nicht. Außerdem braucht 2.0 die eigene Laufzeit `crisperwhisper` und damit ein eigenes Backend. Es bleibt deshalb draußen.
+
+### Wortlaut
+
+| Variante | Hotwords | WER A | Auslassungen A | WER B | Auslassungen B | Wörter Segment | Wiederholung |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `base` | 48 | **24,0 %** (24,0–24,0) | 50 / 50 / 55 | 36,1 % (32,9–41,1) | 92 / 84 / 90 | 33009 (32923–33067) | 0,7 % (0,5–0,8) |
+| `nohw` | 0 | 28,3 % | 72 / 72 / 72 | **35,0 %** | 93 / 93 / 93 | 32617 | 0,3 % |
+| `nohw+large-v3` | 0 | 30,9 % | 93 / 93 / 93 | 37,4 % | 110 / 110 / 110 | 32604 (32603–32605) | 0,4 % |
+| `nohw+de-turbo` | 0 | 27,8 % | 77 / 77 / 77 | 38,0 % | 107 / 107 / 107 | 32653 (32645–32661) | 0,2 % |
+| `nohw+crisper` | 0 | 69,9 % (68,2–71,7) | 262 / 208 / 322 | 60,8 % (55,6–63,4) | 236 / 236 / 173 | 16985 (16810–17288) | 7,1 % (4,2–9,0) |
+| `base+de-turbo` | 48 | 27,1 % (25,8–27,8) | 70 / 75 / 60 | 47,0 % (46,8–47,2) | 147 / 148 / 151 | 32302 (32111–32558) | 0,2 % |
+
+Ersetzungen / Auslassungen / Einfügungen je Lauf (ohne Hotwords sind die Seeds an A und B identisch, deshalb eine Zeile):
+
+| Lauf | WER A (E/A/Ei) | WER B (E/A/Ei) |
+| --- | --- | --- |
+| nohw#1–3 | 28,3 % (68/72/16) | 35,0 % (69/93/9) |
+| nohw+large-v3#1–3 | 30,9 % (66/93/11) | 37,4 % (64/110/9) |
+| nohw+de-turbo#1–3 | 27,8 % (61/77/15) | 38,0 % (73/107/6) |
+| nohw+crisper#1 | 69,7 % (113/262/9) | 63,4 % (61/236/13) |
+| nohw+crisper#2 | 68,2 % (67/208/101) | 63,4 % (61/236/13) |
+| nohw+crisper#3 | 71,7 % (53/322/20) | 55,6 % (85/173/14) |
+| base+de-turbo#1 | 25,8 % (60/70/12) | 47,0 % (73/147/10) |
+| base+de-turbo#2 | 27,8 % (65/75/13) | 46,8 % (73/148/8) |
+| base+de-turbo#3 | 27,8 % (69/60/24) | 47,2 % (71/151/9) |
+
+### Bewertung
+
+| Variante | confident / needs_review / uncertain je Seed | markierte Zeit | übersehen A | übersehen B |
+| --- | --- | --- | --- | --- |
+| `base` | 132/598/138, 114/599/151, 142/637/149 | 96,7–97,3 % | 0 / 0 / 0 | 4 / 7 / 0 |
+| `nohw` | 2600/933/170 (alle drei) | 38,7 % | 114 | 89 |
+| `nohw+large-v3` | 2391/963/134, 2391/963/134, 2392/962/134 | 42,1 % | 97 | 133 |
+| `nohw+de-turbo` | 1724/761/113, 1723/765/113, 1718/762/117 | 42,4–42,5 % | 89 | 66 |
+| `nohw+crisper` | 510/388/550, 524/374/573, 441/362/542 | 94,5–95,4 % | 5 / 9 / 0 | 0 / 0 / 0 |
+| `base+de-turbo` | 409/609/95, 436/599/75, 440/605/90 | 80,2–80,9 % | 45 / 31 / 31 | 9 / 39 / 38 |
+
+### Laufzeit und Speicher
+
+| Variante | ASR (min/h) | Peak-RAM | Peak-VRAM (davor) |
+| --- | --- | --- | --- |
+| `base` | 1,25–1,30 | 13,8–13,9 GiB | 3,6–4,0 GiB (1,1–1,8) |
+| `nohw` | 1,09–1,12 | 13,8–13,9 GiB | 3,5–4,1 GiB (1,1–1,6) |
+| `nohw+large-v3` | 2,76–2,77 | 13,8–13,9 GiB | 6,1 GiB (0,9–1,0) |
+| `nohw+de-turbo` | 1,05–1,07 | 13,8–13,9 GiB | 3,4 GiB (1,0) |
+| `nohw+crisper` | 6,21–6,59 | 13,8–13,9 GiB | 6,1 GiB (0,9–1,0) |
+| `base+de-turbo` | 1,19–1,23 | 13,9 GiB | 3,4 GiB (1,0) |
+
+Alle Modelle bleiben weit unter 12 GB VRAM und laufen mit `float16` auf der GPU. Der RAM-Peak kommt vom Pipeline-Prozess, nicht vom Modell.
+
+### Zwischenbewertung
+
+- **Kein Modell schlägt `base`.** Keines liegt an A und B mindestens 3 Punkte darunter, auch nicht unter `nohw`.
+- **large-v3 ist schlechter und langsamer.** An A und B 2–3 Punkte über `nohw`, mehr Auslassungen, doppelte Rechenzeit. Das deckt sich mit TOOL-62.
+- **Das deutsche Turbo-Modell hilft nur an A.** Ohne Hotwords 0,5 Punkte unter `nohw` an A, aber 3 Punkte darüber an B. Mit Hotwords (`base+de-turbo`) ist es an A 3 Punkte und an B 11 Punkte schlechter als `base`: Es verliert an B rund 60 Wörter mehr. Die Hotwords verträgt das Feinmodell schlechter als das Original.
+- **CrisperWhisper 1.0 halbiert das Transkript.** Rund 17 000 statt 33 000 Wörter, an A und B 200–320 Auslassungen, 7 % Wiederholung, fünfmal so langsam. Vermutlich verliert das Modell, das mit eigener Zeitstempel-Logik trainiert wurde, im Standard-Ablauf von faster-whisper ganze Fenster. Die Ursache ist nicht weiter untersucht, denn auch ein Erfolg bräuchte eine eigene Dekodierung und damit ein eigenes Backend.
+- **Ohne Hotwords bleibt das Zerlegungsproblem.** Alle Modelle ohne Hotwords zerlegen das Segment in 2600–3700 Passagen statt rund 870, die Bewertung markiert nur noch rund 40 % der Zeit und übersieht an A und B 66–133 Fehler. Das ist ein Effekt der Pipeline ohne Hotwords, nicht des Modells (Stufe 1).
+- **Die Seeds sind ohne Hotwords stabil**, bei allen drei Whisper-Modellen. Nur CrisperWhisper streut, und `base+de-turbo` streut mit Hotwords wie `base`.
+
+**Ergebnis Stufe 3: Kein Modell für Stufe 4.** Mit Stufe 2 ohne Einstellung und Stufe 3 ohne Modell gibt es keinen Finalisten gegen `base`.
