@@ -273,3 +273,19 @@ Alle Modelle bleiben weit unter 12 GB VRAM und laufen mit `float16` auf der GPU.
 - **Die Seeds sind ohne Hotwords stabil**, bei allen drei Whisper-Modellen. Nur CrisperWhisper streut, und `base+de-turbo` streut mit Hotwords wie `base`.
 
 **Ergebnis Stufe 3: Kein Modell für Stufe 4.** Mit Stufe 2 ohne Einstellung und Stufe 3 ohne Modell gibt es keinen Finalisten gegen `base`.
+
+## Stufe 4: Finalisten und Fenster für Referenz C
+
+**Keine Finalisten.** Die Kombination braucht Einstellungen, die einzeln mindestens 3 Punkte gebracht haben, und ein besseres Modell; beides gibt es nicht. Ein Diarisierungsvergleich mit WDER entfällt, weil kein Kandidat gegen `base` antritt. Nach der Go-Regel steht damit **No-Go**: Die Pipeline behält large-v3-turbo mit Hotwords und den bisherigen Einstellungen. Die Gegenprobe an Referenz C prüft nur noch, ob die Messwerte von `base` aus der Pilotsitzung auf eine zweite Sitzung übertragbar sind.
+
+**Zweite Sitzung.** Segment 1 lief mit `base`, Seed 1 und Diarisierung: 29006 Wörter, 4 Labels, 93 % der Wörter mit Label, 148 / 565 / 231 Passagen `confident` / `needs_review` / `uncertain`. Die Diarisierung brauchte 212 s.
+
+`windows` schlägt drei sich nicht überlappende 3-min-Fenster in Segment 1 vor:
+
+| Fenster | Wörter/min | Sprecher (≥ 10 Wörter) | ohne Label | markiert |
+| --- | --- | --- | --- | --- |
+| 1:15:00–1:18:00 | 116 | 4 | 4,6 % | 65,6 % |
+| 4:09:00–4:12:00 | 112 | 3 | 5,4 % | 67,2 % |
+| 2:24:00–2:27:00 | 109 | 2 | 8,9 % | 66,6 % |
+
+Empfohlen ist das erste Fenster: die höchste Wortdichte, alle vier Sprecher und die wenigsten Wörter ohne Label. Die Projektverantwortliche schreibt Referenz C von Hand und legt sie unter `work/<zweite Sitzung>/review/calibration/` ab.
