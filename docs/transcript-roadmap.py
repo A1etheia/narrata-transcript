@@ -16,10 +16,11 @@ import json
 import math
 import pathlib
 
-START = dt.date(2026, 11, 2)  # a Monday
+START = dt.date(2026, 11, 16)  # a Monday: the week the open work is planned from
+FROM = dt.date(2026, 11, 17)  # first day counted; working days before it are skipped
 WORKDAYS = [0, 1, 3]  # Mon, Tue, Thu -> 3 dev-days per week
 PAUSES = [(dt.date(2026, 12, 21), dt.date(2027, 1, 3))]  # inclusive ranges, no work
-GENERATED = "2026-11-14"
+GENERATED = "2026-11-17"
 
 # (phase title, milestone sentence, [(key, title, dev-days, note)])
 P = [
@@ -94,51 +95,43 @@ P = [
         ("TOOL-61", "E2E-Workflow dokumentieren", 0.5, "erledigt: `docs/ablauf.md` (Ablauf von Setup bis Narrata-Import, manuelle Schritte, Resume, Snapshot, Artefakte, Pilot-Fehler); Startskript `scripts/transcript` setzt `LD_LIBRARY_PATH` für cuBLAS und läuft ohne aktivierte venv; `nvidia-cudnn-cu12` aus dem Whisper-Extra entfernt (Smoke-Tests auf `cuda` nur mit cuBLAS grün); Abspielen im Review über `ffplay` und `segment_start` dokumentiert; Folge: TOOL-95 (CLI ohne Startskript)"),
         ("TOOL-92", "Spike: Entrauschen vor der Erkennung messen", 1.0, "erledigt: `docs/spikes/TOOL-92-entrauschen.md`; No-Go, `afftdn`, RNNoise und DeepFilterNet verschlechtern die WER an A um 2–9 Punkte und lassen mehr Wörter ohne Label; nur `highpass=f=80` schadet nirgends, überlappt aber mit der Streuung; Whisper streut auf demselben WAV um bis zu 13 Punkte (Temperatur-Fallback), deshalb 3 Läufe pro Kandidat"),
         ("TOOL-93", "Spike: Erkennungsqualität an den Pilot-Handreferenzen verbessern", 1.5, "aus TOOL-58: WER 24–33 % an zwei Handreferenzen, 38–57 % davon Auslassungen, 87 % der Passagen Kandidaten ohne Fehlalarm; VAD, Dekodierung, andere lokale Modelle, Aufnahme am Tisch; Genauigkeit vor Laufzeit, mehr WSL-RAM möglich; abgegrenzt gegen TOOL-92 (Entrauschen) und TOOL-82 (Parakeet-Zweitlauf); aus TOOL-92: Whisper streut auf demselben WAV um bis zu 13 Punkte WER (Temperatur-Fallback), jede Variante braucht mehrere Läufe oder einen festen Seed, `temperature=0` scheidet aus (Schleifen, höhere WER), `highpass=f=80` als Variante mitmessen"),
+        ("TOOL-96", "Passagen am Sprecherwechsel teilen", 1.5, "heute eine Passage je Whisper-Segment mit Mehrheitslabel; Sprecherfehler 17,6 % (A) / 14,0 % (B) gegen 2,8 % / 0,0 % bei Plaud auf derselben Aufnahme; messen an A und B auf Passagen- und Wortebene; bleibt der Abstand zu Plaud über 5 Punkte, Folge-Ticket Diarisierung; Passage-Keys ändern sich, Re-Import in Narrata klären; blockt IOA-1302 und IOA-1318"),
         ("TOOL-95", "CLI ohne Startskript: cuBLAS vorladen, `paths.root` verankern", 0.5, "erledigt: `whisper.preload_cuda_libraries` lädt `libcublas.so.12` aus `nvidia-cublas-cu12` per absolutem Pfad mit `RTLD_GLOBAL` vor (Fallback: System-Bibliothek), `doctor` und Whisper-Smoke-Test auf `cuda` grün ohne `LD_LIBRARY_PATH`; relativer `paths.root`, Default-Config und `.env` gelten ab dem Projektordner, Argumente wie `--config` weiter ab dem aktuellen Verzeichnis; `scripts/transcript` entfernt, Aufruf direkt über `.venv/bin/transcript`"),
-        ("TOOL-60", "V0.1 bewerten, Entscheidungen, V0.2-Backlog", 1.0, "Go/No-Go für Phase 6; aus TOOL-93: Modell und Einstellungen für V0.2; aus TOOL-58: ein vollständiges Review dauert rund 25 h pro Abend, Review-Kanal und Review-Umfang neu entscheiden (ohne Review, nur Glossar-Begriffe, vollständig); lange Passagen sind beim Hören hilfreicher als kurze; ein Review-Dialog mit Abspielen hängt an dieser Entscheidung; aus TOOL-92: kein Entrauschen vor der Erkennung (No-Go); die Pilot-WER ist ein Einzellauf, an B liegt das Mittel aus drei Läufen bei 42,3 % statt 32,9 %, die Bewertung sollte die Spanne nennen; aus TOOL-35: am vollen Pilotlauf mit `transcript calibrate` prüfen, ob die Eingrenzung aus dem Bericht hält; aus TOOL-83: Archiv-Schreibtreffer am vollen Pilotlauf nach Methode und Stufe nachmessen (`--similar-judged`), bisher nur ein beurteilter Hinweis; aus TOOL-68: prüfen, ob die Unsicherheit pro Person gewichtet werden muss (Mundart 47,5 % gegen 14,0 % falsche Wörter, aus TOOL-36)"),
+        ("TOOL-60", "V0.1 bewerten, Entscheidungen, V0.2-Backlog", 1.0, "Go/No-Go für die IT/OT-Arbeit in Narrata (IOA-1302); aus TOOL-93: Modell und Einstellungen für V0.2; aus TOOL-58: ein vollständiges Review dauert rund 25 h pro Abend, Review-Kanal und Review-Umfang neu entscheiden (ohne Review, nur Glossar-Begriffe, vollständig); lange Passagen sind beim Hören hilfreicher als kurze; ein Review-Dialog mit Abspielen hängt an dieser Entscheidung; aus TOOL-92: kein Entrauschen vor der Erkennung (No-Go); die Pilot-WER ist ein Einzellauf, an B liegt das Mittel aus drei Läufen bei 42,3 % statt 32,9 %, die Bewertung sollte die Spanne nennen; aus TOOL-35: am vollen Pilotlauf mit `transcript calibrate` prüfen, ob die Eingrenzung aus dem Bericht hält; aus TOOL-83: Archiv-Schreibtreffer am vollen Pilotlauf nach Methode und Stufe nachmessen (`--similar-judged`), bisher nur ein beurteilter Hinweis; aus TOOL-68: prüfen, ob die Unsicherheit pro Person gewichtet werden muss (Mundart 47,5 % gegen 14,0 % falsche Wörter, aus TOOL-36)"),
     ]),
     ("Phase 5 — Narrata-Oberflächen",
      "M5 — Transkript per Chat/MCP befragbar, in Narrata durchsuchbar, lesbar, verlinkt.", [
         ("IOA-1220", "Volltextsuche", 1.5, "erledigt, vor Phase 4 vorgezogen; Voraussetzung für IOA-1223"),
-        ("IOA-1223", "Chat + MCP", 1.5, "Kernziel: der KI-Assistent antwortet der Spielleitung aus dem Transkript"),
+        ("IOA-1223", "Chat + MCP", 1.5, "erledigt, vor Phase 4 vorgezogen; Kernziel: der KI-Assistent antwortet der Spielleitung aus dem Transkript"),
         ("IOA-1219", "Lese-UI am Session-Detail", 3.0, "erledigt, vor Phase 4 vorgezogen"),
         ("IOA-1221", "Passage-Links", 2.0, "erledigt, vor Phase 4 vorgezogen"),
     ]),
-    ("Phase 6 — IT/OT-Klassifikation",
-     "M6 — IT/OT-Schicht im Export, Statistik im Bericht. Reflexionspunkt: TOOL-70 entscheidet ein oder zwei Durchläufe — oder Remote-Option.", [
-        ("TOOL-70", "Spike: lokales LLM an Goldstandard, Nutzen 2. Durchlauf", 2.0, "Labeln kostet die halbe Zeit; aus TOOL-58: die Pilotsitzung steht als Material bereit, IT/OT-Zeitmarken wurden im Pilot nicht notiert"),
-        ("TOOL-71", "IT/OT-Datenmodell, Contract-Bump", 1.0, ""),
-        ("TOOL-72", "Erstdurchlauf", 1.5, ""),
-        ("TOOL-73", "Zweitdurchlauf + Metrik", 1.5, "entfällt, wenn TOOL-70 keinen Mehrwert misst"),
-        ("TOOL-74", "IT/OT-Review-Kandidaten", 0.5, ""),
-        ("TOOL-75", "Sessionstatistik", 1.0, ""),
+    ("Phase 6 — Extraktion und Analytik in Narrata",
+     "M6 — Erste Welt-Archiv-Einträge mit Transkript-Provenienz; IT/OT-Statistik und Abendvergleich sichtbar.", [
+        ("IOA-1222", "Transkript als Extraktionsquelle, polymorphe Provenienz", 3.0, "erledigt, vor Phase 4 vorgezogen; größte Migration des Epics"),
+        ("IOA-1224", "IT/OT-Flächen + Statistik", 2.0, "erledigt, vor Phase 4 vorgezogen (Anzeige; die Einstufung selbst kommt aus Epic IOA-1297)"),
     ]),
-    ("Phase 7 — Extraktion und Analytik in Narrata",
-     "M7 — Erste Welt-Archiv-Einträge mit Transkript-Provenienz; IT/OT-Statistik und Abendvergleich sichtbar.", [
-        ("IOA-1222", "Transkript als Extraktionsquelle, polymorphe Provenienz", 3.0, "größte Migration des Epics"),
-        ("IOA-1224", "IT/OT-Flächen + Statistik", 2.0, ""),
-    ]),
-    ("Phase 8 — Öffnung für andere Nutzer",
-     "M8 — Entscheidung, ob und wie andere Narrata-Nutzer ihre Aufnahmen transkribieren können. Reflexionspunkt, kein Umsetzungsblock.", [
+    ("Phase 7 — Öffnung für andere Nutzer",
+     "M7 — Entscheidung, ob und wie andere Narrata-Nutzer ihre Aufnahmen transkribieren können. Reflexionspunkt, kein Umsetzungsblock.", [
         ("TOOL-85", "Entscheidung: Transkription für andere Narrata-Nutzer öffnen?", 0.5, "Wege: Nutzer rechnen lokal, eigener Worker getrennt vom Prod-VPS, externer ASR-Dienst, nichts tun; Datenschutz der Mitspielenden und Betriebsgrenzen klären; Erkenntnisse aus TOOL-59 und TOOL-60 einbeziehen; bei „ja“ Folge-Tickets"),
     ]),
-    ("Phase 9 — Sprecher-Wiedererkennung",
-     "M9 — Konzept für Stimmprofile mit Einwilligung pro Spielrunde, Go/No-Go. Reflexionspunkt, kein Umsetzungsblock.", [
+    ("Phase 8 — Sprecher-Wiedererkennung",
+     "M8 — Konzept für Stimmprofile mit Einwilligung pro Spielrunde, Go/No-Go. Reflexionspunkt, kein Umsetzungsblock.", [
         ("TOOL-87", "Konzept: Sprecher über Sessions hinweg wiedererkennen", 1.0, "nur Konzept, Umsetzung als Folge-Tickets (TOOL und IOA); Stimmprofil = biometrisches Datum (Art. 9 DSGVO), Opt-in pro Mitgliedschaft im Narrata-Profil; Profile nur lokal, nur aus bestätigten Zuordnungen, Vorschläge nie ohne Bestätigung; Go/No-Go nach `effort_minutes` aus TOOL-59 mit TOOL-86; Kandidaten auf Anwesende eingrenzen (TOOL-79); aus TOOL-86: automatische Vorschläge über Stimmprofile"),
     ]),
 ]
 
-CONDITIONAL = {"TOOL-73"}
+CONDITIONAL: set[str] = set()
 
 
 def workday_calendar(limit: int) -> list[dt.date]:
-    """The first `limit` working dates: WORKDAYS of each week, skipping PAUSES."""
+    """The first `limit` working dates from FROM on: WORKDAYS of each week, skipping PAUSES."""
     out: list[dt.date] = []
     week = 0
     while len(out) < limit:
         for slot in WORKDAYS:
             d = START + dt.timedelta(days=7 * week + slot)
-            if any(a <= d <= b for a, b in PAUSES):
+            if d < FROM or any(a <= d <= b for a, b in PAUSES):
                 continue
             out.append(d)
         week += 1
@@ -149,23 +142,37 @@ def de(d: dt.date) -> str:
     return d.strftime("%d.%m.%Y")
 
 
+def is_done(note: str) -> bool:
+    """A ticket is done when its note starts with "erledigt"; done tickets take no days."""
+    return note.startswith("erledigt")
+
+
 def main() -> None:
-    total = sum(days for _, _, items in P for _, _, days, _ in items)
+    total = sum(days for _, _, items in P for _, _, days, note in items if not is_done(note))
+    done_days = sum(days for _, _, items in P for _, _, days, note in items if is_done(note))
     cal = workday_calendar(math.ceil(total) + 1)
     cum = 0.0
     rows, phases = [], []
     for ptitle, milestone, items in P:
         pstart = cum
         for key, title, days, note in items:
+            if is_done(note):
+                rows.append(dict(key=key, title=title, days=days, note=note, phase=ptitle,
+                                 start=None, end=None))
+                continue
             s, e = cum, cum + days
             rows.append(dict(key=key, title=title, days=days, note=note, phase=ptitle,
                              start=cal[math.floor(s)], end=cal[math.ceil(e) - 1]))
             cum = e
-        phases.append(dict(title=ptitle, milestone=milestone, days=cum - pstart,
-                           start=cal[math.floor(pstart)], end=cal[math.ceil(cum) - 1]))
+        open_ = cum > pstart
+        phases.append(dict(title=ptitle, milestone=milestone,
+                           days=sum(d for _, _, d, _ in items),
+                           start=cal[math.floor(pstart)] if open_ else None,
+                           end=cal[math.ceil(cum) - 1] if open_ else None))
 
     cond_days = sum(r["days"] for r in rows if r["key"] in CONDITIONAL)
-    weeks = math.ceil(total / len(WORKDAYS)) + sum((b - a).days // 7 + 1 for a, b in PAUSES)
+    last = max(p["end"] for p in phases if p["end"] is not None)
+    weeks = (last - FROM).days // 7 + 1
     pauses = ", ".join(f"{de(a)}–{de(b)}" for a, b in PAUSES)
 
     o = []
@@ -173,24 +180,25 @@ def main() -> None:
     o.append(f"Stand {GENERATED}, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwände stehen dort). Verbindliche Reihenfolge und Meilensteine für das gesamte Transkript-Vorhaben: die lokale Pipeline (Jira-Projekt **TOOL**, eigenes Python-Repo) und ihr Narrata-Gegenstück (Epic **IOA-1213**). Jira-Gesamtsicht: `project in (TOOL, IOA) AND labels = transcript`.\n")
     o.append("## Annahmen\n")
     o.append("- **Eine Person, ein Zeitbudget.** TOOL- und IOA-Tickets konkurrieren um dieselben Tage; der Plan ist deshalb eine *lineare* Folge. Echte Parallelität gibt es nur dort, wo ASR-Läufe oder Modell-Downloads im Hintergrund laufen — dann wird am Narrata-Ticket derselben Phase gearbeitet.")
-    o.append(f"- **Kapazität: {len(WORKDAYS)} Entwicklungstage pro Woche**, Start {de(START)}, Pause {pauses}. Das ist der Umrechnungsfaktor für die Kalenderspalte, nicht Teil des Plans — ändert sich die Kapazität, verschieben sich nur die Daten, nicht die Reihenfolge.")
+    o.append(f"- **Kapazität: {len(WORKDAYS)} Entwicklungstage pro Woche**, Start {de(FROM)}, Pause {pauses}. Das ist der Umrechnungsfaktor für die Kalenderspalte, nicht Teil des Plans — ändert sich die Kapazität, verschieben sich nur die Daten, nicht die Reihenfolge.")
     o.append("- **Aufwände sind Entwicklungstage in 0,5er-Schritten**, grob geschätzt aus den Ticket-Beschreibungen. Sie dienen der Reihenfolge und den Meilenstein-Abständen; keine Zusage.")
-    o.append(f"- **Gesamtumfang: {total:g} Entwicklungstage** ≈ {weeks} Wochen inkl. Pause → letzter Meilenstein {de(phases[-1]['end'])}. Davon {cond_days:g} Tage bedingt ({', '.join(sorted(CONDITIONAL))}).")
-    o.append("- **Neu terminiert am 02.11.2026:** Vom Plan des 03.10. war noch kein Ticket begonnen (alle TOOL- und IOA-Tickets To Do, kein Python-Repo, keine Transkript-Commits). Die 3 Tage pro Woche sind damit unbelegt; Reihenfolge belastbar, Daten nur bei dieser Kapazität.")
-    o.append("- Nicht eingeplant: TOOL-14 (Remote-Backend, geparkt), die Epics selbst, verworfene Tickets (TOOL-21–32, 34; TOOL-3, 7; TOOL-11, 33 nach TOOL-62; TOOL-78 nach TOOL-59), in andere aufgenommene Tickets (TOOL-77 in TOOL-57).\n")
+    o.append(f"- **Offener Umfang: {total:g} Entwicklungstage** ≈ {weeks} Wochen → letzter Meilenstein {de(last)}; erledigt {done_days:g} Tage." + (f" Davon {cond_days:g} Tage bedingt ({', '.join(sorted(CONDITIONAL))})." if CONDITIONAL else ""))
+    o.append("- **Neu terminiert am 17.11.2026, Qualität zuerst:** Erledigte Tickets belegen keine Tage mehr und tragen kein Datum; die offenen Tickets beginnen am ersten Arbeitstag ab heute, angeführt von der Erkennungsqualität (TOOL-93, TOOL-96) vor dem Pilot-Review (TOOL-60). Die Narrata-Nacharbeit aus Epic IOA-1297 (Korrektur, IT/OT, Lesefassung) steht nicht in dieser Folge und konkurriert um dieselben Tage.")
+    o.append("- Nicht eingeplant: TOOL-14 (Remote-Backend, geparkt), die Epics selbst, verworfene Tickets (TOOL-21–32, 34; TOOL-3, 7; TOOL-11, 33 nach TOOL-62; TOOL-78 nach TOOL-59; Epic TOOL-65 mit TOOL-70–75, IT/OT nach Narrata verlegt in Epic IOA-1297), in andere aufgenommene Tickets (TOOL-77 in TOOL-57).\n")
     o.append("## Leitlinien der Reihenfolge\n")
     o.append("1. **Entscheidungen vor Code.** Datenschutz (TOOL-66/IOA-1216) und Contract (IOA-1214) stehen, bevor irgendetwas Daten schreibt — sonst werden Fixtures, Logs und IDs später umgebaut.")
     o.append("2. **Der ASR-Spike (TOOL-62) läuft vor der Audio-Vorbereitung.** Er entscheidet, ob Epic TOOL-8 drei oder fünf Stories hat. Ergebnis: drei, TOOL-11 und TOOL-33 entfallen.")
     o.append("3. **Narrata-Arbeit füllt die Wartezeiten der Pipeline.** Export-Endpoint und Alias-Kategorie entstehen, während Modelle rechnen; Storage/Import entsteht gegen die Fixture, bevor der echte Export existiert.")
-    o.append("4. **Der Pilot (Phase 4) ist ein Tor, kein Schritt.** TOOL-60 entscheidet explizit über Review-Kanal, Remote-Backend und die Freigabe von Phase 6. Phasen 5–7 werden nach dem Pilot-Review neu terminiert.")
-    o.append("5. **Lesen vor Analysieren.** Die Narrata-Oberflächen (Phase 5) kommen vor IT/OT (Phase 6) — ein importiertes Transkript muss erst nutzbar sein, bevor es klassifiziert wird; das Lesen deckt zudem Contract-Lücken auf, die TOOL-71 sonst zementiert.")
+    o.append("4. **Der Pilot (Phase 4) ist ein Tor, kein Schritt.** TOOL-60 entscheidet explizit über Review-Kanal, Remote-Backend und die Freigabe der IT/OT-Arbeit in Narrata. Die Phasen 7–8 werden nach dem Pilot-Review neu terminiert.")
+    o.append("5. **Lesen vor Analysieren.** Die Narrata-Oberflächen (Phase 5) kommen vor IT/OT (Narrata-Epic IOA-1297) — ein importiertes Transkript muss erst nutzbar sein, bevor es klassifiziert wird; das Lesen deckt zudem Contract-Lücken auf, bevor eine IT/OT-Schicht sie zementiert.")
     o.append("6. **Das Kernziel kommt zuerst.** Innerhalb von Phase 5 stehen Suche und Chat/MCP (IOA-1220, IOA-1223) vor Lese-UI und Links: Sie hängen nur an IOA-1218 und machen das Transkript für den KI-Assistenten nutzbar.\n")
     o.append("## Meilensteine\n")
     o.append("| # | Meilenstein | Phase | Zeitraum | Tage |")
     o.append("|---|---|---|---|---|")
     for i, p in enumerate(phases):
         short = p["milestone"].split("—", 1)[1].split(".")[0].strip()
-        o.append(f"| M{i} | {short} | {p['title'].split('—')[0].strip()} | {de(p['start'])} – {de(p['end'])} | {p['days']:g} |")
+        span = f"{de(p['start'])} – {de(p['end'])}" if p["start"] else "erledigt"
+        o.append(f"| M{i} | {short} | {p['title'].split('—')[0].strip()} | {span} | {p['days']:g} |")
     o.append("")
     o.append("## Reflexionspunkte\n")
     o.append("| Nach | Frage | Ticket, das entscheidet | Was sich ändert |")
@@ -199,13 +207,13 @@ def main() -> None:
     o.append("| M1 | Liefert Diarisierung stabile Labels? | TOOL-20 | Beantwortet: ja, pyannote hält 4 Labels für 4 Personen über 5 h, 8 % Fehlzuordnung in der Stichprobe; TOOL-68 bleibt bei 1 Tag |")
     o.append("| M1 | Liefert das ASR-Backend die Sprecher-Labels selbst? | TOOL-20 | Beantwortet: nein, separate Diarisierung mit pyannote; Integration als TOOL-76 (1,5 Tage) in Phase 2, M2 verschiebt sich entsprechend |")
     o.append("| M3 | Trägt der Contract den Import ohne Rückfragen? | IOA-1218 gegen TOOL-69 | Contract-Minor-Bump vor Phase 4, nicht danach; erster Bump erledigt: 1.1 mit `source.recordings[]` (IOA-1287), Pipeline-Seite TOOL-89 |")
-    o.append("| M4 | Trägt die Kernhypothese (Konfidenz grenzt Review ein)? Aufwand pro Abend alltagstauglich? | TOOL-60 | Go/No-Go Phase 6; Review-Kanal CSV vs. Narrata-UI (→ ggf. neues IOA-Ticket); TOOL-14 |")
-    o.append("| Phase 6, Tag 2 | Reicht ein lokales LLM für IT/OT? Bringt der zweite Durchlauf messbar etwas? | TOOL-70 | TOOL-73 bleibt oder entfällt; ggf. Remote-Option |")
-    o.append("| M7 | Welche Fragen aus der Zielliste sind jetzt beantwortbar, welche nicht? | Retro, kein Ticket | V0.2-Backlog beider Projekte |")
-    o.append("| M8 | Öffnen wir die Transkription für andere Nutzer, und auf welchem Weg? | TOOL-85 | Entscheidung; bei „ja“ Folge-Tickets |")
-    o.append("| M9 | Lohnt sich die Wiedererkennung der Sprecher, und trägt die Einwilligung pro Spielrunde? | TOOL-87 | Go/No-Go; bei „ja“ Umsetzungstickets in TOOL und IOA |\n")
+    o.append("| M4 | Trägt die Kernhypothese (Konfidenz grenzt Review ein)? Aufwand pro Abend alltagstauglich? | TOOL-60 | Go/No-Go IT/OT in Narrata (IOA-1302); Review-Kanal CSV vs. Narrata-UI (→ ggf. neues IOA-Ticket); TOOL-14 |")
+    o.append("| M4 | Reicht das Teilen am Sprecherwechsel, oder braucht die Diarisierung selbst ein Ticket? | TOOL-96 | über 5 Punkte Abstand zu Plaud: Folge-Ticket Diarisierung (Sprecherzahl aus TOOL-79, pyannote-Einstellungen) |")
+    o.append("| M6 | Welche Fragen aus der Zielliste sind jetzt beantwortbar, welche nicht? | Retro, kein Ticket | V0.2-Backlog beider Projekte |")
+    o.append("| M7 | Öffnen wir die Transkription für andere Nutzer, und auf welchem Weg? | TOOL-85 | Entscheidung; bei „ja“ Folge-Tickets |")
+    o.append("| M8 | Lohnt sich die Wiedererkennung der Sprecher, und trägt die Einwilligung pro Spielrunde? | TOOL-87 | Go/No-Go; bei „ja“ Umsetzungstickets in TOOL und IOA |\n")
     o.append("## Arbeitsfolge\n")
-    o.append("Start/Ende sind in Jira als Start date / Due date gespiegelt.\n")
+    o.append("Start/Ende der offenen Tickets sind in Jira als Start date / Due date gespiegelt; erledigte Tickets behalten in Jira ihre damaligen Daten.\n")
     for p in phases:
         o.append(f"### {p['title']}\n")
         o.append(f"**{p['milestone']}**\n")
@@ -213,16 +221,19 @@ def main() -> None:
         o.append("|---|---|---|---|---|---|")
         for r in rows:
             if r["phase"] == p["title"]:
-                o.append(f"| {r['key']} | {r['title']} | {r['days']:g} | {de(r['start'])} | {de(r['end'])} | {r['note']} |")
+                start, end = (de(r["start"]), de(r["end"])) if r["start"] else ("—", "—")
+                o.append(f"| {r['key']} | {r['title']} | {r['days']:g} | {start} | {end} | {r['note']} |")
         o.append("")
     o.append("## Pflege\n")
     o.append("- `transcript-roadmap.py` ist die Quelle (Reihenfolge, Aufwände, Kapazität, Pausen); diese Datei und die Jira-Daten sind generiert. Ändern → Skript laufen lassen → Jira per `editJiraIssue` (`customfield_10015`, `duedate`) aus der JSON-Ausgabe nachziehen.")
-    o.append("- Nach jedem Meilenstein `START`/Aufwände an die Realität anpassen und neu rechnen; nach M4 die Phasen 5–7 bewusst neu terminieren (Pilot-Erkenntnisse).")
-    o.append("- Verworfene oder neu geschnittene Tickets im Skript entfernen bzw. ergänzen und den Grund im Jira-Ticket festhalten.")
+    o.append("- Nach jedem Meilenstein `START`/`FROM`/Aufwände an die Realität anpassen und neu rechnen; nach M4 die Phasen 7–8 bewusst neu terminieren (Pilot-Erkenntnisse).")
+    o.append("- Verworfene oder neu geschnittene Tickets im Skript entfernen bzw. ergänzen und den Grund im Jira-Ticket festhalten. Ein fertiges Ticket bekommt einen Hinweis, der mit „erledigt“ beginnt; dann belegt es keine Tage mehr.")
 
     here = pathlib.Path(__file__).resolve().parent
     (here / "transcript-roadmap.md").write_text("\n".join(o) + "\n", encoding="utf-8")
     for r in rows:
+        if r["start"] is None:
+            continue
         print(json.dumps({"key": r["key"], "start": r["start"].isoformat(), "end": r["end"].isoformat()}))
 
 
