@@ -24,6 +24,7 @@ names and no speaker labels of people.
 
 import argparse
 import dataclasses
+import itertools
 import json
 import os
 import shutil
@@ -44,7 +45,7 @@ from transcript import calibration, diarization, knowledge
 from transcript.config import DEFAULT_CONFIG, DEFAULT_KEYWORD_BUDGET, load_config
 from transcript.hints import stored_hints
 from transcript.jsonfile import DataFileError
-from transcript.reference import load_reference
+from transcript.reference import ReferenceTranscript, load_reference
 from transcript.session import SessionKey, SessionPaths
 from transcript.timecode import format_clock
 from transcript.uncertainty import segment_assessment
@@ -97,6 +98,12 @@ MODELS = {
     "de-turbo": str(MODEL_CACHE / f"whisper-large-v3-turbo-german-ct2-{GERMAN_REV}"),
     "crisper": "nyralabs/faster_CrisperWhisper",  # CrisperWhisper 1.0, CT2
 }
+# filler, hesitation and dialect words: their omissions are counted apart and a
+# second WER leaves them out on both sides (a rough list, named in the report)
+FILLERS = frozenset(
+    {"äh", "ähm", "öh", "hm", "mhm", "ja", "also", "halt", "dann", "des", "ne"}
+    | {"gell", "mal", "eben", "naja"}
+)
 # the backend passes these itself, so they go into the config, not FIXED_SETTINGS
 CONFIG_KEYS = frozenset({"beam_size"})
 
@@ -358,6 +365,14 @@ def _cli_with_variant(options: str, argv: Sequence[str]) -> int:
 
 
 @dataclass(frozen=True)
+class FillerCount:
+    in_reference: int  # filler tokens in the hand reference
+    deleted: int  # omissions that are fillers
+    plain: Counter[str]  # alignment counts with fillers removed on both sides
+    plain_rate: float  # WER with fillers removed on both sides
+
+
+@dataclass(frozen=True)
 class Score:
     root: str  # `<variant>#<seed>`
     name: str
@@ -368,6 +383,7 @@ class Score:
     wer: dict[str, Counter[str]]  # per clip: substitutions, deletions, ...
     words: dict[str, int]  # per clip: reference words
     missed: dict[str, int]  # per clip: errors inside confident passages
+    fillers: dict[str, FillerCount]  # per clip
     wder: dict[str, tuple[float | None, int]]  # per clip with several speakers
     tokens: int
     repetition: float
@@ -380,6 +396,31 @@ class Score:
     asr_ms: int | None
     diarization_ms: int | None
     measured: Mapping[str, Mapping[str, float | None]]  # run.json
+
+
+def count_fillers(
+    reference: ReferenceTranscript,
+    hand: calibration.HandReference,
+    clip: denoise.HandClip,
+) -> FillerCount:
+    """Split the omissions of `clip` into fillers and the rest, as `measure` aligns."""
+    texts, _, _ = calibration._clip_tokens(reference, clip.start_ms, clip.end_ms)
+    deleted = calibration.align(hand, texts).deletions
+    keep = [token not in FILLERS for token in hand.tokens]
+    kept_before = list(itertools.accumulate(keep, initial=0))
+    stripped = calibration.HandReference(
+        tuple(itertools.compress(hand.tokens, keep)),
+        tuple(itertools.compress(hand.speakers, keep)),
+        frozenset(kept_before[gap] for gap in hand.gaps),
+    )
+    plain = calibration.align(stripped, [t for t in texts if t not in FILLERS]).counts
+    errors = sum(plain[k] for k in ("substitutions", "deletions", "insertions"))
+    return FillerCount(
+        in_reference=len(keep) - sum(keep),
+        deleted=sum(hand.tokens[position] in FILLERS for position, _ in deleted),
+        plain=plain,
+        plain_rate=errors / (len(stripped.tokens) or 1),
+    )
 
 
 def parse_clip(text: str) -> denoise.HandClip:
@@ -433,6 +474,7 @@ def score(
     wer: dict[str, Counter[str]] = {}
     words: dict[str, int] = {}
     missed: dict[str, int] = {}
+    fillers: dict[str, FillerCount] = {}
     wder: dict[str, tuple[float | None, int]] = {}
     for clip in clips:
         hand = calibration.read_hand_reference(
@@ -443,6 +485,7 @@ def score(
         )
         wer[clip.name], words[clip.name] = report.counts, report.words
         missed[clip.name] = report.by_level["confident"].errors
+        fillers[clip.name] = count_fillers(reference, hand, clip)
         if reference.diarization is not None and len(set(hand.speakers) - {"S?"}) > 1:
             wder[clip.name] = denoise._wder(reference, hand, clip)
 
@@ -473,6 +516,7 @@ def score(
         wer=wer,
         words=words,
         missed=missed,
+        fillers=fillers,
         wder=wder,
         tokens=len(tokens),
         repetition=denoise._repetition(tokens),
@@ -560,6 +604,29 @@ def print_tables(
             cells.append(
                 f"{_pct(_rate(s, clip))} ({c['substitutions']}/"
                 f"{c['deletions']}/{c['insertions']})"
+            )
+        print(f"| {s.root} | " + " | ".join(cells) + " |")
+    print()
+
+    print(
+        "| Lauf | "
+        + " | ".join(
+            f"Füllwörter in {c.name} | Auslassungen {c.name} (Füllwörter / übrige) | "
+            f"WER {c.name} ohne Füllwörter (E/A/Ei)"
+            for c in clips
+        )
+        + " |"
+    )
+    print("| --- |" + " --- | --- | --- |" * len(clips))
+    for s in scores:
+        cells = []
+        for clip in clips:
+            f, deletions = s.fillers[clip.name], s.wer[clip.name]["deletions"]
+            p = f.plain
+            cells.append(
+                f"{f.in_reference} von {s.words[clip.name]} | {f.deleted} / "
+                f"{deletions - f.deleted} | {_pct(f.plain_rate)} "
+                f"({p['substitutions']}/{p['deletions']}/{p['insertions']})"
             )
         print(f"| {s.root} | " + " | ".join(cells) + " |")
     print()

@@ -1,10 +1,15 @@
 # TOOL-93 — Erkennungsqualität an den Pilot-Handreferenzen
 
-Stand 2026-11-14. Spike-Bericht zu [TOOL-93](../plans/TOOL-93-asr-quality.md), Werkzeug: [`scripts/spike/asr.py`](../../scripts/spike/asr.py). Alle Läufe liefen lokal. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel.
+Stand 2026-11-17. Spike-Bericht zu [TOOL-93](../plans/TOOL-93-asr-quality.md), Werkzeug: [`scripts/spike/asr.py`](../../scripts/spike/asr.py). Alle Läufe liefen lokal. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel.
 
 ## Kurzfassung
 
-*Folgt nach Stufe 4.*
+**No-Go: Die Pipeline bleibt bei large-v3-turbo mit Hotwords und den bisherigen Einstellungen.** An der Pilotsitzung liegt `base` bei 24,0 % WER an A und 36,1 % (32,9–41,1) an B. Keine VAD- oder Dekodier-Einstellung und keines der drei anderen lokalen Modelle (large-v3, ein deutsch nachtrainiertes Turbo-Modell, CrisperWhisper 1.0) liegt an A und B mindestens 3 Punkte darunter. Die meisten Varianten sind schlechter.
+
+- **Der Seed wirkt stärker als jede Einstellung.** Mit Hotwords streut `base` an B um 8 Punkte zwischen den Seeds. Ohne Hotwords sind die Seeds gleich, dafür ist A schlechter, und die Bewertung übersieht viele Fehler (TOOL-81).
+- **Die Auslassungen sind keine Füllwörter.** Nur 6–9 der 50–92 Auslassungen von `base` sind Füll- oder Mundartwörter. Es fehlen also Inhaltswörter, vor allem bei den Sprechern, die wenig und kurz reden.
+- **Die Grenze setzt vermutlich die Aufnahme.** Auch Plaud erkennt dasselbe Audio nicht wörtlicher (Ticketkommentar). Zusammen mit den Fehlern je Sprecher spricht das für ein besseres Mikrofon-Setup am Tisch statt für ein anderes Modell, siehe [Empfehlung zur Aufnahme](#empfehlung-zur-aufnahme-am-tisch).
+- Eine Gegenprobe an einer dritten Referenz entfällt, weil es keinen Gewinner gibt. Die vorgeschlagenen Fenster stehen in Stufe 4.
 
 ## Material und Methode
 
@@ -289,3 +294,58 @@ Alle Modelle bleiben weit unter 12 GB VRAM und laufen mit `float16` auf der GPU.
 | 2:24:00–2:27:00 | 109 | 2 | 8,9 % | 66,6 % |
 
 Empfohlen ist das erste Fenster: die höchste Wortdichte, alle vier Sprecher und die wenigsten Wörter ohne Label. Die Projektverantwortliche schreibt Referenz C von Hand und legt sie unter `work/<zweite Sitzung>/review/calibration/` ab.
+
+## Auslassungen
+
+`score` teilt die Auslassungen an A und B in Füllwörter und übrige Wörter und rechnet die WER noch einmal ohne Füllwörter auf beiden Seiten. Die Füllwortliste steht fest in `asr.py`: „äh“, „ähm“, „öh“, „hm“, „mhm“, „ja“, „also“, „halt“, „dann“, „des“, „ne“, „gell“, „mal“, „eben“, „naja“. Sie ist grob, weil „dann“, „mal“ und „eben“ auch Inhaltswörter sein können. Für eine obere Abschätzung reicht das.
+
+| Lauf | Füllwörter in A | Auslassungen A (Füllwörter / übrige) | WER A ohne Füllwörter (E/A/Ei) | Füllwörter in B | Auslassungen B (Füllwörter / übrige) | WER B ohne Füllwörter (E/A/Ei) |
+| --- | --- | --- | --- | --- | --- | --- |
+| base#1 | 48 von 551 | 7 / 43 | 23,3 % (60/43/14) | 33 von 489 | 9 / 83 | 32,7 % (54/81/14) |
+| base#2 | 48 von 551 | 6 / 44 | 23,5 % (59/44/15) | 33 von 489 | 7 / 77 | 34,6 % (65/76/17) |
+| base#3 | 48 von 551 | 7 / 48 | 23,5 % (56/49/13) | 33 von 489 | 9 / 81 | 41,9 % (77/80/34) |
+
+- **Whisper schreibt die Füllwörter fast alle mit.** Von 48 Füllwörtern an A fehlen 6–7, von 33 an B 7–9. Ohne Füllwörter sinkt die WER an A nur um 0,5–0,7 Punkte, an B ändert sie sich innerhalb der Seed-Spanne.
+- **85–90 % der Auslassungen sind Inhaltswörter.** Das ist der Teil, der für das Archiv zählt.
+- **Die Clipgrenzen erklären die Auslassungen nicht.** Mit 10 s Rand an jeder Seite des Clips ändern sich die Auslassungen an A um 0–9 und an B um 4, je nach Seed.
+
+**Vergleich mit Plaud** (Ticketkommentar, 2026-11-17): Die Projektverantwortliche hat die Pilotaufnahme außerhalb der Pipeline mit Plaud transkribiert und mit eigenem Skript gemessen. Das Skript entfernt die Füllwörter und richtet die Clipgrenzen frei aus. Es ist ein Einzellauf. Pipeline A / Plaud A / Pipeline B / Plaud B: 19,2 % / 27,0 % / 25,1 % / 37,8 % WER, Auslassungen 25 / 66 / 40 / 84. Plauds zusätzliche Auslassungen sind vor allem Füll- und Mundartwörter und Umformulierungen. Plaud schreibt außerdem Figurennamen falsch oder lässt sie weg. Die Werte sind nur untereinander vergleichbar, nicht mit den Tabellen hier: Auch ohne Füllwörter misst `calibration.measure` an A 23,3–23,5 %. Woran die übrigen 4 Punkte liegen (Transkript, Normalisierung, Ausrichtung), ist nicht untersucht. Plaud ist ein Cloud-Dienst, die Pipeline schickt kein Audio dorthin, die Werte sind deshalb nur zitiert.
+
+## Gegenprobe
+
+Entfällt. Laut Ticket wird Referenz C abgetippt, sobald ein Gewinner feststeht, und es gibt keinen. Die Fenster aus Stufe 4 bleiben für ein späteres Ticket, etwa um eine geänderte Aufnahme an einer neuen Sitzung zu messen.
+
+## Entscheidung
+
+**No-Go** nach der Go-Regel des Plans. Für V0.2 bleibt `base`: large-v3-turbo, Hotwords nach Snapshot, VAD mit den Defaults von faster-whisper, `beam_size 5`, `condition_on_previous_text: false`. Ein Umsetzungsticket entsteht nicht.
+
+- **Was sich nicht lohnt:** größeres Modell (large-v3), deutsches Feintuning, wortgetreues Modell, längerer Beam, VAD-Varianten, weichere Schwellen. Keine dieser Varianten bringt mehr, als der Seed streut. Die meisten kosten Laufzeit oder erfinden Text.
+- **Was offen bleibt, gehört nicht hierher:** Die Seed-Streuung mit Hotwords und das Zerlegen in kurze Passagen ohne Hotwords liegen bei TOOL-81. Ein Zweitlauf als Signal für Auslassungen liegt bei TOOL-82.
+- **Werte für die V0.1-Bewertung (TOOL-60):** WER an der Pilotsitzung als Spanne über drei Seeds, A 24,0 %, B 32,9–41,1 %. Ein einzelner Lauf kann an B um bis zu 8 Punkte vom Mittel abweichen.
+
+Laut Ticket ist „bei dieser Aufnahmequalität ist lokal nicht viel mehr drin“ ein gültiges Ergebnis. Dieser Spike stützt es: Weder lokale Modelle noch Einstellungen noch ein kommerzieller Dienst senken die Auslassungen deutlich.
+
+## Empfehlung zur Aufnahme am Tisch
+
+Nur Empfehlung, nicht gemessen. Grundlage sind die Fehler je Sprecher an A (B hat keine Sprecher) und der Plaud-Vergleich.
+
+| Sprecher an A (nach Wortzahl) | Wörter | Ersetzungen und Auslassungen je Wort, je Seed |
+| --- | --- | --- |
+| meiste Wörter | 422 | 17 % / 17 % / 17 % |
+| zweite | 109 | 30 % / 31 % / 34 % |
+| dritte | 20 | 50 % / 50 % / 50 % |
+
+Wer lange und zusammenhängend spricht, wird gut erkannt. Bei den Sprechern mit wenigen Wörtern ist jedes dritte bis jedes zweite Wort falsch oder fehlt. Die Vermutung: Kurze Einwürfe fallen oft mit anderer Sprache zusammen und kommen am Mikrofon in der Tischmitte leiser an. Das ist nicht gemessen, passt aber zu der Beobachtung, dass weder mehr Rechenaufwand noch Plaud hilft. Ein besseres Signal könnte helfen. In absteigender Wirkung, nach Erfahrung mit Whisper und Diarisierung, ohne Messung:
+
+1. **Ein Ansteckmikrofon oder Headset je Person, jede Spur getrennt aufgenommen** (Mehrkanal-Interface oder je Person ein Rekorder, zeitgleich gestartet). Das hilft gegen Übersprechen, weil jede Spur für sich erkannt wird, und die Sprecherzuordnung ergibt sich aus der Spur. Die Pipeline nimmt heute eine Spur pro Segment. Mehrere Spuren bräuchten ein eigenes Ticket.
+2. **Zwei bis drei Grenzflächenmikrofone über den Tisch verteilt** statt eines in der Mitte, gemischt auf eine Spur. Jede Person sitzt dann näher an einem Mikrofon. Das ist ohne Pipeline-Änderung nutzbar.
+3. **Mit dem vorhandenen Mikrofon:** näher an die Plätze mit den leiseren und kürzeren Beiträgen, nicht auf den Tisch selbst (Klopfen, Würfel), Abstand zu Lüftern und Lautsprechern. Musik und Geräuschkulisse leiser während des Spiels.
+
+Ob eine Änderung wirkt, zeigt eine neue Sitzung mit einer Handreferenz, gemessen wie hier mit `base`. Dafür sind die Fenster aus Stufe 4 und das Werkzeug da.
+
+## Offen
+
+- Ursache der Seed-Streuung mit Hotwords und des Zerlegens ohne Hotwords: TOOL-81
+- Sprecherzuordnung (Plaud-Befund): TOOL-96
+- Mehrspur-Aufnahme in der Pipeline: [kein Ticket: erst sinnvoll, wenn die Gruppe ein Mehrspur-Setup ausprobieren will]
+- CrisperWhisper 1.0 im faster-whisper-Ablauf: Ursache des halbierten Transkripts nicht untersucht, siehe Stufe 3
