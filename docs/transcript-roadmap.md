@@ -16,8 +16,8 @@ Stand 2026-11-17, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 1. **Entscheidungen vor Code.** Datenschutz (TOOL-66/IOA-1216) und Contract (IOA-1214) stehen, bevor irgendetwas Daten schreibt — sonst werden Fixtures, Logs und IDs später umgebaut.
 2. **Der ASR-Spike (TOOL-62) läuft vor der Audio-Vorbereitung.** Er entscheidet, ob Epic TOOL-8 drei oder fünf Stories hat. Ergebnis: drei, TOOL-11 und TOOL-33 entfallen.
 3. **Narrata-Arbeit füllt die Wartezeiten der Pipeline.** Export-Endpoint und Alias-Kategorie entstehen, während Modelle rechnen; Storage/Import entsteht gegen die Fixture, bevor der echte Export existiert.
-4. **Der Pilot (Phase 4) ist ein Tor, kein Schritt.** TOOL-60 entscheidet explizit über Review-Kanal, Remote-Backend und die Freigabe von Phase 6. Phasen 5–7 werden nach dem Pilot-Review neu terminiert.
-5. **Lesen vor Analysieren.** Die Narrata-Oberflächen (Phase 5) kommen vor IT/OT (Phase 6 und Narrata-Epic IOA-1297) — ein importiertes Transkript muss erst nutzbar sein, bevor es klassifiziert wird; das Lesen deckt zudem Contract-Lücken auf, bevor eine IT/OT-Schicht sie zementiert.
+4. **Der Pilot (Phase 4) ist ein Tor, kein Schritt.** TOOL-60 entscheidet explizit über Review-Kanal, Remote-Backend und die Freigabe der IT/OT-Arbeit in Narrata. Phasen 5–6 werden nach dem Pilot-Review neu terminiert.
+5. **Lesen vor Analysieren.** Die Narrata-Oberflächen (Phase 5) kommen vor IT/OT (Narrata-Epic IOA-1297) — ein importiertes Transkript muss erst nutzbar sein, bevor es klassifiziert wird; das Lesen deckt zudem Contract-Lücken auf, bevor eine IT/OT-Schicht sie zementiert.
 6. **Das Kernziel kommt zuerst.** Innerhalb von Phase 5 stehen Suche und Chat/MCP (IOA-1220, IOA-1223) vor Lese-UI und Links: Sie hängen nur an IOA-1218 und machen das Transkript für den KI-Assistenten nutzbar.
 
 ## Meilensteine
@@ -28,12 +28,11 @@ Stand 2026-11-17, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 | M1 | Backend gewählt, Diarisierung entschieden, TOOL-11/33 entschieden, Export-Endpoint live | Phase 1 | 12.11.2026 – 01.12.2026 | 8.5 |
 | M2 | Eine Session läuft vom MP4 bis zur Referenztranskription mit Sprecher-Labels und Wissens-Snapshot | Phase 2 | 01.12.2026 – 25.01.2027 | 17 |
 | M3 | JSON-Export (Contract v1) einer Session importiert lokal in Narrata und rendert dort als Rohliste | Phase 3 | 25.01.2027 – 22.02.2027 | 12.5 |
-| M4 | Pilot-Review (TOOL-60): Kernhypothese geprüft; Entscheidungen Review-Kanal, Remote-Backend, Freigabe IT/OT | Phase 4 | 23.02.2027 – 23.03.2027 | 12.5 |
-| M5 | Transkript per Chat/MCP befragbar, in Narrata durchsuchbar, lesbar, verlinkt | Phase 5 | 23.03.2027 – 12.04.2027 | 8 |
-| M6 | Passagen enden am Sprecherwechsel; die IT/OT-Einstufung selbst läuft in Narrata (Epic IOA-1297, ab IOA-1302) | Phase 6 | 12.04.2027 – 13.04.2027 | 1.5 |
-| M7 | Erste Welt-Archiv-Einträge mit Transkript-Provenienz; IT/OT-Statistik und Abendvergleich sichtbar | Phase 7 | 15.04.2027 – 26.04.2027 | 5 |
-| M8 | Entscheidung, ob und wie andere Narrata-Nutzer ihre Aufnahmen transkribieren können | Phase 8 | 27.04.2027 – 27.04.2027 | 0.5 |
-| M9 | Konzept für Stimmprofile mit Einwilligung pro Spielrunde, Go/No-Go | Phase 9 | 27.04.2027 – 29.04.2027 | 1 |
+| M4 | Pilot-Review (TOOL-60): Kernhypothese geprüft; Entscheidungen Review-Kanal, Remote-Backend, Freigabe IT/OT | Phase 4 | 23.02.2027 – 25.03.2027 | 14 |
+| M5 | Transkript per Chat/MCP befragbar, in Narrata durchsuchbar, lesbar, verlinkt | Phase 5 | 29.03.2027 – 13.04.2027 | 8 |
+| M6 | Erste Welt-Archiv-Einträge mit Transkript-Provenienz; IT/OT-Statistik und Abendvergleich sichtbar | Phase 6 | 15.04.2027 – 26.04.2027 | 5 |
+| M7 | Entscheidung, ob und wie andere Narrata-Nutzer ihre Aufnahmen transkribieren können | Phase 7 | 27.04.2027 – 27.04.2027 | 0.5 |
+| M8 | Konzept für Stimmprofile mit Einwilligung pro Spielrunde, Go/No-Go | Phase 8 | 27.04.2027 – 29.04.2027 | 1 |
 
 ## Reflexionspunkte
 
@@ -43,11 +42,11 @@ Stand 2026-11-17, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 | M1 | Liefert Diarisierung stabile Labels? | TOOL-20 | Beantwortet: ja, pyannote hält 4 Labels für 4 Personen über 5 h, 8 % Fehlzuordnung in der Stichprobe; TOOL-68 bleibt bei 1 Tag |
 | M1 | Liefert das ASR-Backend die Sprecher-Labels selbst? | TOOL-20 | Beantwortet: nein, separate Diarisierung mit pyannote; Integration als TOOL-76 (1,5 Tage) in Phase 2, M2 verschiebt sich entsprechend |
 | M3 | Trägt der Contract den Import ohne Rückfragen? | IOA-1218 gegen TOOL-69 | Contract-Minor-Bump vor Phase 4, nicht danach; erster Bump erledigt: 1.1 mit `source.recordings[]` (IOA-1287), Pipeline-Seite TOOL-89 |
-| M4 | Trägt die Kernhypothese (Konfidenz grenzt Review ein)? Aufwand pro Abend alltagstauglich? | TOOL-60 | Go/No-Go Phase 6; Review-Kanal CSV vs. Narrata-UI (→ ggf. neues IOA-Ticket); TOOL-14 |
-| M6 | Reicht das Teilen am Sprecherwechsel, oder braucht die Diarisierung selbst ein Ticket? | TOOL-96 | über 5 Punkte Abstand zu Plaud: Folge-Ticket Diarisierung (Sprecherzahl aus TOOL-79, pyannote-Einstellungen) |
-| M7 | Welche Fragen aus der Zielliste sind jetzt beantwortbar, welche nicht? | Retro, kein Ticket | V0.2-Backlog beider Projekte |
-| M8 | Öffnen wir die Transkription für andere Nutzer, und auf welchem Weg? | TOOL-85 | Entscheidung; bei „ja“ Folge-Tickets |
-| M9 | Lohnt sich die Wiedererkennung der Sprecher, und trägt die Einwilligung pro Spielrunde? | TOOL-87 | Go/No-Go; bei „ja“ Umsetzungstickets in TOOL und IOA |
+| M4 | Trägt die Kernhypothese (Konfidenz grenzt Review ein)? Aufwand pro Abend alltagstauglich? | TOOL-60 | Go/No-Go IT/OT in Narrata (IOA-1302); Review-Kanal CSV vs. Narrata-UI (→ ggf. neues IOA-Ticket); TOOL-14 |
+| M4 | Reicht das Teilen am Sprecherwechsel, oder braucht die Diarisierung selbst ein Ticket? | TOOL-96 | über 5 Punkte Abstand zu Plaud: Folge-Ticket Diarisierung (Sprecherzahl aus TOOL-79, pyannote-Einstellungen) |
+| M6 | Welche Fragen aus der Zielliste sind jetzt beantwortbar, welche nicht? | Retro, kein Ticket | V0.2-Backlog beider Projekte |
+| M7 | Öffnen wir die Transkription für andere Nutzer, und auf welchem Weg? | TOOL-85 | Entscheidung; bei „ja“ Folge-Tickets |
+| M8 | Lohnt sich die Wiedererkennung der Sprecher, und trägt die Einwilligung pro Spielrunde? | TOOL-87 | Go/No-Go; bei „ja“ Umsetzungstickets in TOOL und IOA |
 
 ## Arbeitsfolge
 
@@ -144,8 +143,9 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 | TOOL-61 | E2E-Workflow dokumentieren | 0.5 | 15.03.2027 | 15.03.2027 | erledigt: `docs/ablauf.md` (Ablauf von Setup bis Narrata-Import, manuelle Schritte, Resume, Snapshot, Artefakte, Pilot-Fehler); Startskript `scripts/transcript` setzt `LD_LIBRARY_PATH` für cuBLAS und läuft ohne aktivierte venv; `nvidia-cudnn-cu12` aus dem Whisper-Extra entfernt (Smoke-Tests auf `cuda` nur mit cuBLAS grün); Abspielen im Review über `ffplay` und `segment_start` dokumentiert; Folge: TOOL-95 (CLI ohne Startskript) |
 | TOOL-92 | Spike: Entrauschen vor der Erkennung messen | 1 | 15.03.2027 | 16.03.2027 | erledigt: `docs/spikes/TOOL-92-entrauschen.md`; No-Go, `afftdn`, RNNoise und DeepFilterNet verschlechtern die WER an A um 2–9 Punkte und lassen mehr Wörter ohne Label; nur `highpass=f=80` schadet nirgends, überlappt aber mit der Streuung; Whisper streut auf demselben WAV um bis zu 13 Punkte (Temperatur-Fallback), deshalb 3 Läufe pro Kandidat |
 | TOOL-93 | Spike: Erkennungsqualität an den Pilot-Handreferenzen verbessern | 1.5 | 16.03.2027 | 18.03.2027 | aus TOOL-58: WER 24–33 % an zwei Handreferenzen, 38–57 % davon Auslassungen, 87 % der Passagen Kandidaten ohne Fehlalarm; VAD, Dekodierung, andere lokale Modelle, Aufnahme am Tisch; Genauigkeit vor Laufzeit, mehr WSL-RAM möglich; abgegrenzt gegen TOOL-92 (Entrauschen) und TOOL-82 (Parakeet-Zweitlauf); aus TOOL-92: Whisper streut auf demselben WAV um bis zu 13 Punkte WER (Temperatur-Fallback), jede Variante braucht mehrere Läufe oder einen festen Seed, `temperature=0` scheidet aus (Schleifen, höhere WER), `highpass=f=80` als Variante mitmessen |
-| TOOL-95 | CLI ohne Startskript: cuBLAS vorladen, `paths.root` verankern | 0.5 | 22.03.2027 | 22.03.2027 | erledigt: `whisper.preload_cuda_libraries` lädt `libcublas.so.12` aus `nvidia-cublas-cu12` per absolutem Pfad mit `RTLD_GLOBAL` vor (Fallback: System-Bibliothek), `doctor` und Whisper-Smoke-Test auf `cuda` grün ohne `LD_LIBRARY_PATH`; relativer `paths.root`, Default-Config und `.env` gelten ab dem Projektordner, Argumente wie `--config` weiter ab dem aktuellen Verzeichnis; `scripts/transcript` entfernt, Aufruf direkt über `.venv/bin/transcript` |
-| TOOL-60 | V0.1 bewerten, Entscheidungen, V0.2-Backlog | 1 | 22.03.2027 | 23.03.2027 | Go/No-Go für Phase 6; aus TOOL-93: Modell und Einstellungen für V0.2; aus TOOL-58: ein vollständiges Review dauert rund 25 h pro Abend, Review-Kanal und Review-Umfang neu entscheiden (ohne Review, nur Glossar-Begriffe, vollständig); lange Passagen sind beim Hören hilfreicher als kurze; ein Review-Dialog mit Abspielen hängt an dieser Entscheidung; aus TOOL-92: kein Entrauschen vor der Erkennung (No-Go); die Pilot-WER ist ein Einzellauf, an B liegt das Mittel aus drei Läufen bei 42,3 % statt 32,9 %, die Bewertung sollte die Spanne nennen; aus TOOL-35: am vollen Pilotlauf mit `transcript calibrate` prüfen, ob die Eingrenzung aus dem Bericht hält; aus TOOL-83: Archiv-Schreibtreffer am vollen Pilotlauf nach Methode und Stufe nachmessen (`--similar-judged`), bisher nur ein beurteilter Hinweis; aus TOOL-68: prüfen, ob die Unsicherheit pro Person gewichtet werden muss (Mundart 47,5 % gegen 14,0 % falsche Wörter, aus TOOL-36) |
+| TOOL-96 | Passagen am Sprecherwechsel teilen | 1.5 | 22.03.2027 | 23.03.2027 | heute eine Passage je Whisper-Segment mit Mehrheitslabel; Sprecherfehler 17,6 % (A) / 14,0 % (B) gegen 2,8 % / 0,0 % bei Plaud auf derselben Aufnahme; messen an A und B auf Passagen- und Wortebene; bleibt der Abstand zu Plaud über 5 Punkte, Folge-Ticket Diarisierung; Passage-Keys ändern sich, Re-Import in Narrata klären; blockt IOA-1302 und IOA-1318 |
+| TOOL-95 | CLI ohne Startskript: cuBLAS vorladen, `paths.root` verankern | 0.5 | 23.03.2027 | 23.03.2027 | erledigt: `whisper.preload_cuda_libraries` lädt `libcublas.so.12` aus `nvidia-cublas-cu12` per absolutem Pfad mit `RTLD_GLOBAL` vor (Fallback: System-Bibliothek), `doctor` und Whisper-Smoke-Test auf `cuda` grün ohne `LD_LIBRARY_PATH`; relativer `paths.root`, Default-Config und `.env` gelten ab dem Projektordner, Argumente wie `--config` weiter ab dem aktuellen Verzeichnis; `scripts/transcript` entfernt, Aufruf direkt über `.venv/bin/transcript` |
+| TOOL-60 | V0.1 bewerten, Entscheidungen, V0.2-Backlog | 1 | 25.03.2027 | 25.03.2027 | Go/No-Go für die IT/OT-Arbeit in Narrata (IOA-1302); aus TOOL-93: Modell und Einstellungen für V0.2; aus TOOL-58: ein vollständiges Review dauert rund 25 h pro Abend, Review-Kanal und Review-Umfang neu entscheiden (ohne Review, nur Glossar-Begriffe, vollständig); lange Passagen sind beim Hören hilfreicher als kurze; ein Review-Dialog mit Abspielen hängt an dieser Entscheidung; aus TOOL-92: kein Entrauschen vor der Erkennung (No-Go); die Pilot-WER ist ein Einzellauf, an B liegt das Mittel aus drei Läufen bei 42,3 % statt 32,9 %, die Bewertung sollte die Spanne nennen; aus TOOL-35: am vollen Pilotlauf mit `transcript calibrate` prüfen, ob die Eingrenzung aus dem Bericht hält; aus TOOL-83: Archiv-Schreibtreffer am vollen Pilotlauf nach Methode und Stufe nachmessen (`--similar-judged`), bisher nur ein beurteilter Hinweis; aus TOOL-68: prüfen, ob die Unsicherheit pro Person gewichtet werden muss (Mundart 47,5 % gegen 14,0 % falsche Wörter, aus TOOL-36) |
 
 ### Phase 5 — Narrata-Oberflächen
 
@@ -153,39 +153,31 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| IOA-1220 | Volltextsuche | 1.5 | 23.03.2027 | 25.03.2027 | erledigt, vor Phase 4 vorgezogen; Voraussetzung für IOA-1223 |
-| IOA-1223 | Chat + MCP | 1.5 | 29.03.2027 | 30.03.2027 | Kernziel: der KI-Assistent antwortet der Spielleitung aus dem Transkript |
-| IOA-1219 | Lese-UI am Session-Detail | 3 | 30.03.2027 | 06.04.2027 | erledigt, vor Phase 4 vorgezogen |
-| IOA-1221 | Passage-Links | 2 | 06.04.2027 | 12.04.2027 | erledigt, vor Phase 4 vorgezogen |
+| IOA-1220 | Volltextsuche | 1.5 | 29.03.2027 | 30.03.2027 | erledigt, vor Phase 4 vorgezogen; Voraussetzung für IOA-1223 |
+| IOA-1223 | Chat + MCP | 1.5 | 30.03.2027 | 01.04.2027 | Kernziel: der KI-Assistent antwortet der Spielleitung aus dem Transkript |
+| IOA-1219 | Lese-UI am Session-Detail | 3 | 05.04.2027 | 08.04.2027 | erledigt, vor Phase 4 vorgezogen |
+| IOA-1221 | Passage-Links | 2 | 12.04.2027 | 13.04.2027 | erledigt, vor Phase 4 vorgezogen |
 
-### Phase 6 — Grundlage für IT/OT
+### Phase 6 — Extraktion und Analytik in Narrata
 
-**M6 — Passagen enden am Sprecherwechsel; die IT/OT-Einstufung selbst läuft in Narrata (Epic IOA-1297, ab IOA-1302).**
-
-| Ticket | Inhalt | Tage | Start | Ende | Hinweis |
-|---|---|---|---|---|---|
-| TOOL-96 | Passagen am Sprecherwechsel teilen | 1.5 | 12.04.2027 | 13.04.2027 | heute eine Passage je Whisper-Segment mit Mehrheitslabel; Sprecherfehler 17,6 % (A) / 14,0 % (B) gegen 2,8 % / 0,0 % bei Plaud auf derselben Aufnahme; messen an A und B auf Passagen- und Wortebene; bleibt der Abstand zu Plaud über 5 Punkte, Folge-Ticket Diarisierung; Passage-Keys ändern sich, Re-Import in Narrata klären; blockt IOA-1302 und IOA-1318 |
-
-### Phase 7 — Extraktion und Analytik in Narrata
-
-**M7 — Erste Welt-Archiv-Einträge mit Transkript-Provenienz; IT/OT-Statistik und Abendvergleich sichtbar.**
+**M6 — Erste Welt-Archiv-Einträge mit Transkript-Provenienz; IT/OT-Statistik und Abendvergleich sichtbar.**
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
 | IOA-1222 | Transkript als Extraktionsquelle, polymorphe Provenienz | 3 | 15.04.2027 | 20.04.2027 | größte Migration des Epics |
 | IOA-1224 | IT/OT-Flächen + Statistik | 2 | 22.04.2027 | 26.04.2027 |  |
 
-### Phase 8 — Öffnung für andere Nutzer
+### Phase 7 — Öffnung für andere Nutzer
 
-**M8 — Entscheidung, ob und wie andere Narrata-Nutzer ihre Aufnahmen transkribieren können. Reflexionspunkt, kein Umsetzungsblock.**
+**M7 — Entscheidung, ob und wie andere Narrata-Nutzer ihre Aufnahmen transkribieren können. Reflexionspunkt, kein Umsetzungsblock.**
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
 | TOOL-85 | Entscheidung: Transkription für andere Narrata-Nutzer öffnen? | 0.5 | 27.04.2027 | 27.04.2027 | Wege: Nutzer rechnen lokal, eigener Worker getrennt vom Prod-VPS, externer ASR-Dienst, nichts tun; Datenschutz der Mitspielenden und Betriebsgrenzen klären; Erkenntnisse aus TOOL-59 und TOOL-60 einbeziehen; bei „ja“ Folge-Tickets |
 
-### Phase 9 — Sprecher-Wiedererkennung
+### Phase 8 — Sprecher-Wiedererkennung
 
-**M9 — Konzept für Stimmprofile mit Einwilligung pro Spielrunde, Go/No-Go. Reflexionspunkt, kein Umsetzungsblock.**
+**M8 — Konzept für Stimmprofile mit Einwilligung pro Spielrunde, Go/No-Go. Reflexionspunkt, kein Umsetzungsblock.**
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
@@ -194,5 +186,5 @@ Start/Ende sind in Jira als Start date / Due date gespiegelt.
 ## Pflege
 
 - `transcript-roadmap.py` ist die Quelle (Reihenfolge, Aufwände, Kapazität, Pausen); diese Datei und die Jira-Daten sind generiert. Ändern → Skript laufen lassen → Jira per `editJiraIssue` (`customfield_10015`, `duedate`) aus der JSON-Ausgabe nachziehen.
-- Nach jedem Meilenstein `START`/Aufwände an die Realität anpassen und neu rechnen; nach M4 die Phasen 5–7 bewusst neu terminieren (Pilot-Erkenntnisse).
+- Nach jedem Meilenstein `START`/Aufwände an die Realität anpassen und neu rechnen; nach M4 die Phasen 5–6 bewusst neu terminieren (Pilot-Erkenntnisse).
 - Verworfene oder neu geschnittene Tickets im Skript entfernen bzw. ergänzen und den Grund im Jira-Ticket festhalten.
