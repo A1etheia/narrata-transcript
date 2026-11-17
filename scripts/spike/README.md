@@ -56,3 +56,67 @@ Whisper liefert auf demselben WAV nicht zweimal dasselbe Ergebnis (Temperatur-Fa
 | `dfn`, `hp-dfn` | 48 kHz, `deep-filter -D` (Verzögerung ausgeglichen), optional mit Hochpass davor |
 
 Nach jedem Filter folgt `aresample=16000,apad,atrim` auf die Frame-Zahl des Manifests, sonst verweigert die Pipeline das WAV.
+
+# ASR-Spike (TOOL-93)
+
+Misst, welche lokalen Whisper-Einstellungen und Modelle die WER an den Handreferenzen senken. `asr.py` nutzt Kette, Filter und Kennzahlen aus `denoise.py`, das selbst unverändert bleibt. Plan: [`TOOL-93`](../../docs/plans/TOOL-93-asr-quality.md), Bericht: [`docs/spikes/TOOL-93-erkennungsqualitaet.md`](../../docs/spikes/TOOL-93-erkennungsqualitaet.md).
+
+## Datenschutz
+
+Wie oben: Wurzeln, Audio und Snapshots liegen nur unter `work/<gruppe>/<ordinal>/experiments/asr/`. Die Konsole bekommt Zähler, Anteile, Zeiten und Fenstergrenzen, nie Text, Namen oder Sprecher-Labels.
+
+## Ablauf
+
+```bash
+V="base pchw nohw nohw-hp"
+.venv/bin/python scripts/spike/asr.py prepare $S $V --seeds 3
+.venv/bin/python scripts/spike/asr.py run $S $V --seeds 3
+.venv/bin/python scripts/spike/asr.py score $S $V --seeds 3
+```
+
+- **Varianten** heißen `<basis>[+<modifikator>…]`, z. B. `nohw+vad-t35+beam10`. Jede Kombination ist erlaubt, jeder Modifikator höchstens einmal.
+- **`prepare`** legt pro Variante und Seed die Wurzel `work/$S/experiments/asr/<variante>.seed<n>/` an: Kopien von Manifest, `audio.json` und `narrata/`, eine Config mit eigener `paths.root` und `asr.model` (bei `beam10` auch `asr.beam_size`) und einen Hardlink auf das WAV. Gefiltertes Audio entsteht einmal pro Kette unter `experiments/asr/audio/<kette>/`. `pchw` setzt jedes Budget in `knowledge.keyword_budget` auf 0 und baut den Snapshot der Wurzel neu, damit nur `pc`-Einträge Hotwords werden.
+- **`run`** ruft `transcript transcribe $S --segment 1 --no-diarize` je Wurzel nacheinander auf, mit `--diarize` samt Diarisierung. Ein Wrapper setzt `ctranslate2.set_random_seed(<n>)` vor jeder Transkription, schaltet bei `nohw*` die Hotwords ab und ergänzt die Whisper-Settings. `seed` und `hotwords` stehen mit den Overrides in `asr.settings`, so greift die Wiederaufnahme der Pipeline pro Wurzel. Wall-Zeit, Peak-RAM (`os.wait4` auf den Kindprozess) und Peak-VRAM (`nvidia-smi` im Sekundentakt, ganze GPU, dazu der Stand davor) landen in `<wurzel>/run.json`, aber nur, wenn wirklich neu gerechnet wurde.
+- **`score`** gibt Markdown-Tabellen aus: Modell, Revision und Snapshot je Variante (Abbruch, wenn sie zwischen den Seeds abweichen), WER-Mittel und Spanne mit Auslassungen, Wortzahl und Wiederholung je Variante, dann jeden Lauf einzeln (E/A/Ei, Auslassungen getrennt nach Füllwörtern aus `FILLERS` und übrigen Wörtern samt WER ohne Füllwörter, Stufen, übersehene Fehler), für diarisierte Wurzeln Labels, WDER und Übereinstimmung mit `--baseline`, zuletzt Laufzeit pro Stunde, RAM und VRAM. Andere Clips gibt `--clip NAME=DATEI@H:MM:SS-H:MM:SS` an (mehrfach), z. B. für Referenz C.
+- **`windows $S <variante> [--seed n]`** schlägt drei sich nicht überlappende 3-min-Fenster für eine neue Handreferenz vor: mindestens mediane Wortdichte, 2–4 Sprecher mit je 10 Wörtern, möglichst wenig markierte Passagen und Wörter ohne Label. Braucht eine diarisierte Wurzel.
+
+## Varianten
+
+| Name | Wirkung |
+| --- | --- |
+| `base` | wie die Pipeline: large-v3-turbo, alle Hotwords |
+| `pchw` | nur `pc`-Einträge als Hotwords |
+| `nohw` | keine Hotwords |
+| `nohw-hp` | keine Hotwords, `highpass=f=80` |
+| `+novad` | `vad_filter: false` |
+| `+vad-t35`, `+vad-pad800`, `+vad-sil500` | `vad_parameters` mit `threshold 0.35`, `speech_pad_ms 800` bzw. `min_silence_duration_ms 500`; kombinierbar |
+| `+beam10` | `asr.beam_size: 10` |
+| `+nospeech-off` | `no_speech_threshold: null` |
+| `+logprob-lax` | `log_prob_threshold: -1.5` |
+| `+cond-prev` | `condition_on_previous_text: true` |
+| `+large-v3` | Modell large-v3 statt large-v3-turbo |
+| `+de-turbo` | `primeline/whisper-large-v3-turbo-german`, selbst nach CTranslate2 konvertiert (Einrichtung unten); mit `turbo` im Namen bekommt es Hotwords, außer auf `nohw` |
+| `+crisper` | `nyralabs/faster_CrisperWhisper` (CrisperWhisper 1.0, Deutsch und Englisch, wortgetreu) |
+| `+twin` | ändert nur die Wurzel; prüft, ob ein Seed einen Lauf reproduziert |
+
+## Modelle einrichten
+
+large-v3 kommt wie in der Haupt-README in den HF-Cache. Die beiden anderen Modelle:
+
+```bash
+# CrisperWhisper 1.0, schon im CTranslate2-Format (CC-BY-NC-4.0 vom Basismodell)
+.venv/bin/python -c "from huggingface_hub import snapshot_download as d; d('nyralabs/faster_CrisperWhisper')"
+
+# Deutsches Turbo-Modell (Apache-2.0): Konvertierung in einer Wegwerf-venv, nicht in .venv
+C=~/.cache/narrata-spike/asr; O=$C/whisper-large-v3-turbo-german-ct2-9e7012dad924
+python3 -m venv $C/convert-venv
+$C/convert-venv/bin/pip install --index-url https://download.pytorch.org/whl/cpu torch
+$C/convert-venv/bin/pip install ctranslate2==4.8.5 transformers
+$C/convert-venv/bin/ct2-transformers-converter --model primeline/whisper-large-v3-turbo-german \
+  --revision 9e7012dad924 --output_dir $O --copy_files preprocessor_config.json --quantization float16
+# das Repo hat kein tokenizer.json, die Pipeline braucht eins
+$C/convert-venv/bin/python -c "import sys; from transformers import AutoTokenizer as T; T.from_pretrained('primeline/whisper-large-v3-turbo-german', revision='9e7012dad924').save_pretrained(sys.argv[1])" $O/tok
+mv $O/tok/tokenizer.json $O/ && rm -r $O/tok
+```
+
+`snapshot_download` ohne feste Revision, damit `refs/main` im Cache steht: Pipeline und faster-whisper suchen das Modell über `main`. Das konvertierte Verzeichnis trägt die Quell-Revision im Namen, `score` zeigt dafür keine Hub-Revision (`n/a`). CrisperWhisper 2.0 (`nyralabs/CrisperWhisper2.0_*`) läuft nur mit eigener Laufzeit `crisperwhisper` und steht unter einer Forschungslizenz ohne Betriebseinsatz; es ist nicht Teil des Spikes.
