@@ -16,6 +16,12 @@ Gemessen wird, welche lokalen Einstellungen und Modelle die WER an den beiden Pi
 - CTranslate2 4.8.5 hat `set_random_seed`. faster-whisper hat keinen eigenen Seed-Parameter.
 - Hardware: RTX 3080 Ti mit 12 GB, WSL jetzt mit 25 GB RAM. Im HF-Cache liegen large-v3-turbo, large-v3, Parakeet und Granite. In der venv fehlt `transformers`.
 
+### Stand nach Chunk 4 (2026-11-17)
+- **Stufen 1–3 ohne Gewinner** (Bericht, Commits bis `de1c426`). `base` bleibt bei A 24,0 % und B 36,1 % (32,9–41,1). Keine Einstellung und kein Modell bringt an A und B 3 Punkte. Stufe 4 hat damit keinen Finalisten, die Go-Regel ergibt No-Go.
+- Die zweite Sitzung ist mit `base`, Seed 1 und Diarisierung transkribiert. `windows` hat drei Fenster für Referenz C vorgeschlagen, sie stehen im Bericht.
+- **Vergleich mit Plaud** (Kommentar am Ticket, 2026-11-17): Die Projektverantwortliche hat die Pilotaufnahme außerhalb der Pipeline in Plaud transkribiert und mit eigenem Skript gegen A und B gemessen, mit entfernten Füllwörtern. Plaud liegt dabei an A und B 8–13 Punkte über der Pipeline. Plauds zusätzliche Auslassungen sind vor allem Füll- und Mundartwörter, dazu falsch oder gar nicht erkannte Figurennamen. Auch ein kommerzielles System erkennt dasselbe Audio also nicht wörtlicher. Das ist ein Hinweis, dass die Aufnahme (ein Mikrofon in der Tischmitte, Mundart, Übersprechen) die Grenze setzt, und stützt die Empfehlung zur Aufnahme am Tisch, ohne sie zu beweisen.
+- Neue Verknüpfungen am Ticket: TOOL-96 (Passagen am Sprecherwechsel teilen) verfolgt den Vorsprung von Plaud bei der Sprecherzuordnung. IOA-1302 (IT/OT-Klassifikation und LLM-Korrektur an der Pilotsitzung) wartet auf das Ergebnis dieses Spikes.
+
 ## Entscheidungen
 - **Eigenes Skript `scripts/spike/asr.py`, das `denoise.py` importiert.** Schattenwurzeln, Hochpass-Kette, Score-Tabellen und der CLI-Wrapper kommen aus `denoise.py` (gleicher Ordner, also importierbar). `denoise.py` bleibt so, wie TOOL-92 es beschreibt. Wurzeln liegen unter `work/<s>/experiments/asr/<variante>.seed<n>/`.
 - **Eine Variante besteht aus Modell, Hotwords an oder aus, Whisper-Overrides und optional `hp`-Kette.** Overrides gehen wie bei `base-t0` in `FIXED_SETTINGS` und landen damit in `asr.settings`. Hotwords aus heißt `takes_hotwords` liefert im Wrapper `False`, das Transkript zeigt dann `keywords_used: []`. Das Modell kommt über `asr.model` in der Config der Wurzel.
@@ -46,6 +52,8 @@ Gemessen wird, welche lokalen Einstellungen und Modelle die WER an den beiden Pi
   4. **Kombination und Finalisten:** Das beste Modell mit allen Einstellungen aus Stufe 2, die einzeln mindestens 3 Punkte gebracht haben. Das läuft gegen `base` und gegen den besten Einzelstand, mit Diarisierung.
 - **Go-Regel:** Ein Gewinner muss an A **und** B im Mittel mindestens 3 Punkte unter `base` liegen, ohne dass sich die Spannen überlappen. Wiederholungsanteil und Wortzahl dürfen dabei nicht über die Spanne von `base` hinaus kippen, und WDER sowie die übersehenen Fehler dürfen nicht steigen. Hilft eine Variante nur an einem Clip, ist sie ein Hinweis, kein Gewinner.
 - **Gegenprobe C:** Die zweite Sitzung wird mit `base` und dem Gewinner (je 3 Seeds) transkribiert. Aus Zählwerten (Wörter pro Minute, Labels) schlägt das Skript zwei oder drei ruhige 3-min-Fenster vor, ohne Text. Die Projektverantwortliche wählt eins und tippt es als `review/calibration/reference-1.txt` dieser Sitzung ab. An C wird nicht mehr optimiert.
+  - *Nach Chunk 4:* Es gibt keinen Gewinner. Laut Ticket wird C erst abgetippt, wenn ein Gewinner feststeht, sie ist also nicht mehr Pflicht. Liegt C trotzdem vor, misst Chunk 5 `base` daran (3 Seeds), um zu prüfen, ob die Werte der Pilotsitzung auf eine zweite Sitzung übertragbar sind. Sonst bleiben die Fenster im Bericht für ein späteres Ticket, etwa nach einer geänderten Aufnahme.
+- **Auslassungen aufschlüsseln (nach dem Plaud-Vergleich):** Chunk 5 zählt die Auslassungen von `base` an A und B getrennt nach Füllwörtern und übrigen Wörtern und gibt die WER zusätzlich ohne Füllwörter aus. Die Füllwortliste steht fest in `asr.py` (z. B. „ja“, „also“, „halt“, „dann“, „äh“, „ähm“, Mundartformen wie „des“) und wird im Bericht genannt. Die Ausgabe enthält nur Zähler. So wird sichtbar, wie viel der Auslassungen auf Füll- und Mundartwörter fällt, und die Pipeline-Werte lassen sich neben die Plaud-Werte stellen. Die Plaud-Werte selbst werden nur zitiert und nicht nachgerechnet: Plaud ist ein Cloud-Dienst, die Pipeline schickt kein Audio dorthin.
 - **Kennzahlen** wie in TOOL-92, dazu:
   - Peak-RAM über `resource.getrusage(RUSAGE_CHILDREN)` nach jedem Lauf
   - Peak-VRAM über `nvidia-smi`-Abfrage im Sekundentakt während des Laufs
@@ -104,20 +112,25 @@ Gemessen wird, welche lokalen Einstellungen und Modelle die WER an den beiden Pi
 - Änderung: Kombination rechnen, Finalisten mit Diarisierung, Go-Regel anwenden, Gewinner festlegen. Danach die zweite Sitzung mit `base` und Gewinner transkribieren, `windows` ausführen und der Projektverantwortlichen Fenster und Zeitpunkt für Referenz C nennen.
 - Verify: `scripts/check`. Die Finalistentabelle enthält WDER und übersehene Fehler.
 - AC: Gewinner (oder kein Gewinner) mit Begründung im Bericht.
+- *Erledigt* (`de1c426`): kein Finalist, No-Go, Fenster für C im Bericht. Die Finalistentabelle mit WDER entfällt mangels Finalist.
 
-### Chunk 5 — Gegenprobe, Entscheidung, Übergaben
-- Dateien: `docs/spikes/TOOL-93-erkennungsqualitaet.md`, `docs/plans/TOOL-93-asr-quality.md` (Folge-Tickets)
+### Chunk 5 — Auslassungen, Entscheidung, Übergaben
+- Dateien: `scripts/spike/asr.py` (Füllwort-Aufschlüsselung), `scripts/spike/README.md`, `docs/spikes/TOOL-93-erkennungsqualitaet.md`, `docs/plans/TOOL-93-asr-quality.md` (Folge-Tickets)
 - Änderung:
-  - Nach dem Abtippen `score` an C für `base` und Gewinner
-  - Abschnitte Gegenprobe, Entscheidung, Empfehlung zur Aufnahme am Tisch (aus Auslassungen bei Übersprechen und Fehlern je Sprecher, ohne Messung) und Offen
+  - `score`: Auslassungen je Clip getrennt nach Füllwörtern und übrigen Wörtern, dazu die WER ohne Füllwörter; für `base` an A und B (3 Seeds)
+  - Falls Referenz C vorliegt: `score` an C für `base`; sonst steht im Bericht, dass C mangels Gewinner entfällt
+  - Abschnitte Auslassungen (mit den Plaud-Werten aus dem Ticketkommentar als Vergleich, ausdrücklich mit anderer Methode und Einzellauf), Entscheidung, Empfehlung zur Aufnahme am Tisch (aus Auslassungen bei Übersprechen, Fehlern je Sprecher und dem Plaud-Befund, ohne Messung) und Offen
+  - Kurzfassung des Berichts ausfüllen: No-Go, „bei dieser Aufnahme ist lokal nicht viel mehr drin“ als gültiges Ergebnis laut Ticket, mit Empfehlung zur Aufnahme
   - Bei Go: Umsetzungsticket mit Leitplanken (neue Settings in der Config, `stale` für gespeicherte Transkripte samt Hinweis zur Neuverarbeitung, Bewertung bei Modellwechsel neu kalibrieren, TOOL-35)
-  - Übergaben an TOOL-60 und TOOL-81
-- Verify: `scripts/check`. `grep` im Bericht gegen Session-Keys, Gruppenname und Personennamen aus beiden Snapshots ergibt keinen Treffer.
-- AC: Gegenprobe im Dokument, Empfehlung oder begründetes No-Go, bei Go ein Umsetzungsticket.
+  - Übergaben an TOOL-60, TOOL-81 und IOA-1302
+- Verify: `scripts/check`. Die Summe aus Füllwort- und übrigen Auslassungen ergibt die Auslassungen aus der WER-Tabelle. `grep` im Bericht gegen Session-Keys, Gruppenname und Personennamen aus beiden Snapshots ergibt keinen Treffer.
+- AC: Auslassungen aufgeschlüsselt, Gegenprobe im Dokument oder ihr Wegfall begründet, Empfehlung oder begründetes No-Go mit Empfehlung zur Aufnahme, bei Go ein Umsetzungsticket.
 
 ## Folge-Tickets
 - TOOL-81: Messbefund Hotwords an/aus an A und B (Stufe 1) als Kommentar. Ursache, Schalter und README bleiben dort.
-- TOOL-60: Modell und Einstellungen für V0.2 (oder No-Go) mit Spanne statt Einzelwert, Ergebnis der Gegenprobe C.
+- TOOL-60: Modell und Einstellungen für V0.2 (oder No-Go) mit Spanne statt Einzelwert, Ergebnis der Gegenprobe C oder ihr Wegfall, Empfehlung zur Aufnahme.
+- IOA-1302: Kommentar mit dem Ergebnis. Die Pipeline bleibt bei `base`, das Pilot-Transkript ist damit der Stand, an dem IT/OT und LLM-Korrektur gemessen werden. Dazu die WER-Spanne und der Anteil der Füllwörter an den Auslassungen.
+- TOOL-96: nur Verweis im Bericht. Die Sprecherzuordnung aus dem Plaud-Vergleich ist dort schon erfasst, eine Übergabe braucht es nicht.
 - Umsetzung bei Go: [kein Ticket: entsteht erst in Chunk 5, falls die Go-Regel greift]
 - Neukalibrierung der Bewertung bei Modellwechsel: [kein Ticket: Leitplanke im Umsetzungsticket]
 
@@ -128,4 +141,4 @@ Gemessen wird, welche lokalen Einstellungen und Modelle die WER an den beiden Pi
 | 2 | Stufen 1–2: Hotwords, VAD, Dekodierung | no |
 | 3 | Stufe 3: Modelle | no |
 | 4 | Stufe 4: Kombination, Finalisten, Fenster für Referenz C | yes |
-| 5 | Gegenprobe C, Entscheidung, Übergaben | no |
+| 5 | Auslassungen, Gegenprobe C (falls vorhanden), Entscheidung, Übergaben | no |
