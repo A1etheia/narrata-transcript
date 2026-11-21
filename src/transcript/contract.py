@@ -115,7 +115,7 @@ def validate(document: Any) -> tuple[str, ...]:
         (_pointer(error.absolute_path), tuple(error.absolute_path), error.validator)
         for error in _validator().iter_errors(document)
     )
-    upload = source.get("kind") == "upload"
+    upload = is_upload(data)
     return (
         *(
             f"{_located(pointer, path, passages)}: {rule}"
@@ -126,6 +126,12 @@ def validate(document: Any) -> tuple[str, ...]:
         *(() if upload else _it_ot_rules(data, passages)),
         *_source_rules(data, source, passages),
     )
+
+
+def is_upload(document: Any) -> bool:
+    """Whether `document` says `source.kind = upload`; no kind is the pipeline."""
+    source = document.get("source") if isinstance(document, dict) else None
+    return isinstance(source, dict) and source.get("kind") == "upload"
 
 
 def summarize(violations: Sequence[str], shown: int = 10) -> str:

@@ -5,7 +5,8 @@ This is the reading core shared by TXT (`render_txt`) and DOCX
 The JSON export (`output/<s>/transcript.json`, contract v1) is the only source:
 nothing here reads the working version, so TXT, DOCX and Narrata show the same
 state. `load_export` reads the file and refuses one that `contract.validate`
-finds fault with.
+finds fault with, and an upload (`source.kind = upload`, contract 1.3): that is
+no pipeline export, may lack times and is Narrata's to check.
 
 `paragraphs` groups the passages into one paragraph per change of speaker. A
 speaker is the assigned person, so two labels of one person in a row stay one
@@ -39,7 +40,7 @@ from itertools import groupby
 from typing import Any, Literal
 
 from transcript.config import TimestampRule
-from transcript.contract import summarize, validate
+from transcript.contract import is_upload, summarize, validate
 from transcript.jsonfile import DataFileError, read_object, write_bytes_atomic
 from transcript.markers import Marker, contract_marker_label, marker_label
 from transcript.session import SessionPaths
@@ -116,6 +117,8 @@ def load_export(paths: SessionPaths) -> dict[str, Any]:
     violations = validate(document)
     if violations:
         raise ExportUnreadable(f"{path}: not rendered, {summarize(violations)}")
+    if is_upload(document):
+        raise ExportUnreadable(f"{path}: not rendered, an upload is no pipeline export")
     return document
 
 
