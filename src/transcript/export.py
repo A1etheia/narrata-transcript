@@ -11,11 +11,16 @@ What the contract needs and the working version holds differently:
   becomes `s<NN>-<label>`, e.g. `s01-SPEAKER_00`. A passage without a label is
   `unlabelled`. In `speakers`, only a label assigned to a person names one; an
   open, unknown, several-people or missing label is `null`.
-- A passage id is minted as `p-<session start in ms, 8 digits>-<label slug>`,
-  with `-2`, `-3`, … for a second or third passage with the same start and
-  label. Start and label come from the reference transcript, which no review
-  changes, so a re-export after more review keeps every id; only transcribing
-  or diarizing again makes new passages, with new ids.
+- A passage id is minted once and then carried (contract rule 2): each passage
+  of the previous export hands its id to the first new passage that starts
+  within it, so a passage split at a speaker change (TOOL-96) keeps its id in
+  its first part, whatever that part's label. Every other passage gets a new id
+  `p-<session start in ms, 8 digits>-<label slug>`, with `-2`, `-3`, … where
+  that id is taken, also by an old passage no new one took over: an id that
+  disappears, because two passages merged, never names a different passage.
+  Without a previous export every id is minted; start and label come from the
+  reference transcript, which no review changes, so a re-export after more
+  review keeps every id either way.
 - An unintelligible passage has the text `""` and an `unintelligible` marker;
   the recognised text stays in `asr_text`. An open passage is
   `review_status: open`, not a marker.
@@ -37,6 +42,7 @@ messages name segment, passage, field and contract rule, never text, a name or
 an id.
 """
 
+import bisect
 import dataclasses
 import hashlib
 import itertools
@@ -58,11 +64,13 @@ from transcript.knowledge import load_snapshot
 from transcript.manifest import Manifest, Segment
 from transcript.markers import Marker, MarkerKind, block_markers
 from transcript.narrata import Participant
+from transcript.rendering import ExportUnreadable, load_export
 from transcript.report import Pipeline, SessionReport, Used, report_json
 from transcript.report import compose as compose_report
 from transcript.session import SessionPaths, segment_name
 from transcript.session_time import passage_span
 from transcript.speakers import SpeakerRef, UserId
+from transcript.timecode import seconds_to_ms
 from transcript.working import Block, WorkingTranscript, load_working
 
 UNLABELLED = "unlabelled"
@@ -92,17 +100,36 @@ class _Timed:
     block: Block
 
 
+@dataclass(frozen=True, slots=True)
+class Previous:
+    """A passage of the previous export: its id and session time in ms."""
+
+    passage_id: str
+    start_ms: int
+    end_ms: int
+
+    def holds(self, start_ms: int) -> bool:
+        """Whether a passage starting at `start_ms` starts within this one.
+
+        The span is half-open, but at least 1 ms long, so a passage of no
+        length still holds the one that starts where it does.
+        """
+        return self.start_ms <= start_ms < max(self.end_ms, self.start_ms + 1)
+
+
 def build(
     stored: WorkingTranscript,
     manifest: Manifest,
     report: SessionReport,
     participants: Sequence[Participant],
     group_id: int,
+    previous: Sequence[Previous] = (),
 ) -> dict[str, Any]:
     """The contract v1 document of `stored`, the working version `report` describes.
 
     `participants` are those of the knowledge snapshot, for the display names;
-    `group_id` is the Narrata id of the session's group.
+    `group_id` is the Narrata id of the session's group; `previous` are the
+    passages of the session's previous export, whose ids are carried.
     """
     if not stored.blocks:
         raise ExportError("the working version has no passages; nothing to export")
@@ -114,13 +141,14 @@ def build(
     names = {p.user_id: p.display_name for p in participants}
     split = len(manifest.segments) > 1
     speakers: dict[str, dict[str, Any] | None] = {}
-    used: set[str] = set()
+    carried = _carried(timed, previous)
+    used = {old.passage_id for old in previous}
     passages = []
-    for found in timed:
+    for position, found in enumerate(timed):
         label = session_label(found.block)
         speaker = speakers[label] = _speaker(found.block.speaker, names)
         participant_id = None if speaker is None else speaker["participant_id"]
-        passage_id = _mint(found.start_ms, label, used)
+        passage_id = carried.get(position) or _mint(found.start_ms, label, used)
         passages.append(
             _passage(found, passage_id, label, participant_id, manifest, split)
         )
@@ -168,6 +196,27 @@ def compose(
         closing,
         load_snapshot(paths).participants,
         group_id,
+        load_previous(paths),
+    )
+
+
+def load_previous(paths: SessionPaths) -> tuple[Previous, ...]:
+    """The passages of the session's export, if there is a valid one.
+
+    A missing, unreadable or invalid export carries no id; the export then
+    mints every id, as it did before ids were carried.
+    """
+    try:
+        return previous_passages(load_export(paths))
+    except ExportUnreadable:
+        return ()
+
+
+def previous_passages(document: Mapping[str, Any]) -> tuple[Previous, ...]:
+    """The passages of a valid export, as the next export carries their ids."""
+    return tuple(
+        Previous(p["id"], seconds_to_ms(p["start"]), seconds_to_ms(p["end"]))
+        for p in document["passages"]
     )
 
 
@@ -219,6 +268,24 @@ def _speaker(ref: SpeakerRef, names: Mapping[UserId, str]) -> dict[str, Any] | N
         "participant_id": _integer(ref.user_id, "user_id"),
         "display_name": names.get(ref.user_id),
     }
+
+
+def _carried(timed: Sequence[_Timed], previous: Sequence[Previous]) -> dict[int, str]:
+    """The old id of each passage of `timed` (sorted by start) that takes one over.
+
+    Each old passage, in time order, hands its id to the first passage of
+    `timed` that starts within it and has none yet.
+    """
+    starts = [found.start_ms for found in timed]
+    carried: dict[int, str] = {}
+    for old in sorted(previous, key=lambda o: (o.start_ms, o.end_ms)):
+        position = bisect.bisect_left(starts, old.start_ms)
+        while position < len(timed) and old.holds(starts[position]):
+            if position not in carried:
+                carried[position] = old.passage_id
+                break
+            position += 1
+    return carried
 
 
 def _mint(start_ms: int, label: str, used: set[str]) -> str:
