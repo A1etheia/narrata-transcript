@@ -1,4 +1,5 @@
-"""The Narrata transcript contract v1 (IOA-1214, 1.1: IOA-1287): schema and checks.
+"""The Narrata transcript contract v1 (IOA-1214; 1.1: IOA-1287, 1.2: IOA-1224,
+1.3: IOA-1300): schema and checks.
 
 Narrata owns the contract. `contracts/transcript-v1.schema.json` is a copy of
 the schema in the Narrata repository, never a version of our own; `SCHEMA_SOURCE`
@@ -16,10 +17,21 @@ jenseits des Schemas"):
 - `recordings[0]` repeats `source.file_name`, `duration_seconds` and
   `audio_sha256` and starts at 0;
 - `recordings[].starts_at` never falls (recordings may overlap);
-- with `recordings`, every passage starts inside one of them.
+- with `recordings`, every passage starts inside one of them;
+- `layers.it_ot` and `stats.it_ot` only from `IT_OT_SINCE` on;
+- `source.kind` and `source.format` only from `UPLOAD_SINCE` on;
+- outside an upload (`source.kind = upload`): no `source.format`, no `null`
+  in times, `confidence_tier`, `markers[].at`, audio fields or `pipeline`
+  (one violation per file), and no position ids (`u-…`).
 
-As in Narrata, a recording rule stays silent where the schema already reports
-the value, so one defect is one violation.
+The schema allows those `null`s and position ids by type, so the last rule is
+what keeps a pipeline file as strict as before 1.3. The pipeline writes neither
+the IT/OT layer nor uploads, so their own rules (blocks, spans and modes; an
+upload's timing, ids and forbidden fields) are not repeated here: Narrata checks
+them on import. As in Narrata, an upload skips the recording and IT/OT rules.
+
+As in Narrata, a rule stays silent where the schema already reports the value,
+so one defect is one violation.
 
 The transcription context has a contract of its own with its own version
 (`narrata.SUPPORTED_MAJOR`); the two rise independently.
@@ -40,17 +52,26 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-CONTRACT_VERSION = "1.1"  # the latest minor this copy knows
+CONTRACT_VERSION = "1.3"  # the latest minor this copy knows
 SINGLE_RECORDING_VERSION = "1.0"  # a session of one recording needs nothing newer
 RECORDINGS_SINCE = "1.1"  # the first version whose `source` may hold `recordings`
+IT_OT_SINCE = "1.2"  # the first version with `layers.it_ot` and `stats.it_ot`
+UPLOAD_SINCE = "1.3"  # the first version whose `source` may hold `kind`, `format`
 SUPPORTED_MAJOR = 1
 SCHEMA_FILE = "transcript-v1.schema.json"
 SCHEMA_SOURCE = (
-    "ios-archiv e8bfb9702, ios-archiv-backend/resources/contracts/" + SCHEMA_FILE
+    "ios-archiv b1fa375ef, ios-archiv-backend/resources/contracts/" + SCHEMA_FILE
 )
-SCHEMA_SHA256 = "019ae2df0cbe2a27a35a6e39d6416284d01251be48c3593207236acadd48e41d"
+SCHEMA_SHA256 = "58f9fe56e0386763d12f6d0ba9098e18f109c4a26ef79613b4fa117792af5115"
 
 _VERSION = re.compile(r"([1-9][0-9]*)\.(0|[1-9][0-9]*)")
+# The schema's id form of an untimed upload (`u-<position>-…`); as Narrata's
+# UploadSourceRules, kept here rather than taken apart from the id pattern.
+_POSITION_ID = re.compile(r"u-[0-9]{6}-")
+# The fields the schema types as nullable "only for source.kind = upload";
+# re-check this list whenever the copy changes.
+_NULLABLE_IN_SOURCE = ("duration_seconds", "audio_sha256")
+_NULLABLE_IN_PASSAGE = ("start", "end", "confidence_tier")
 
 
 def schema_bytes() -> bytes:
@@ -77,25 +98,40 @@ def _passage_id() -> re.Pattern[str]:
 
 
 def validate(document: Any) -> tuple[str, ...]:
-    """The violations of contract v1 in `document`; empty if it is valid."""
+    """The violations of contract v1 in `document`; empty if it is valid.
+
+    For an upload (`source.kind = upload`) empty means less: its own rules are
+    Narrata's to check, so a caller that needs a pipeline file must say so.
+    """
     data = document if isinstance(document, dict) else {}
     major = _major(data.get("contract_version"))
     if major is not None and major != SUPPORTED_MAJOR:
         return (f"/contract_version: unsupported major {major}",)
     passages = data.get("passages")
     passages = passages if isinstance(passages, list) else []
+    source = data.get("source")
+    source = source if isinstance(source, dict) else {}
     found = sorted(
         (_pointer(error.absolute_path), tuple(error.absolute_path), error.validator)
         for error in _validator().iter_errors(document)
     )
+    upload = is_upload(data)
     return (
         *(
             f"{_located(pointer, path, passages)}: {rule}"
             for pointer, path, rule in found
         ),
         *_rules(data, passages),
-        *_recording_rules(data, passages),
+        *(() if upload else _recording_rules(data, source, passages)),
+        *(() if upload else _it_ot_rules(data, passages)),
+        *_source_rules(data, source, passages),
     )
+
+
+def is_upload(document: Any) -> bool:
+    """Whether `document` says `source.kind = upload`; no kind is the pipeline."""
+    source = document.get("source") if isinstance(document, dict) else None
+    return isinstance(source, dict) and source.get("kind") == "upload"
 
 
 def summarize(violations: Sequence[str], shown: int = 10) -> str:
@@ -116,6 +152,20 @@ def _version(version: Any) -> tuple[int, int] | None:
     """Major and minor of a well-formed `contract_version`."""
     match = _VERSION.fullmatch(version) if isinstance(version, str) else None
     return None if match is None else (int(match.group(1)), int(match.group(2)))
+
+
+def _needs(
+    data: dict[str, Any], pointer: str, since: str, what: str = "needs"
+) -> Iterable[str]:
+    """A violation at `pointer` if a well-formed version predates `since`."""
+    version, first = _version(data.get("contract_version")), _version(since)
+    if version is not None and first is not None and version < first:
+        yield f"{pointer}: {what} contract version {since} or later"
+
+
+def _null(container: dict[str, Any], key: str) -> bool:
+    """Whether `key` is present and null (absent is the schema's to report)."""
+    return key in container and container[key] is None
 
 
 def _rules(data: dict[str, Any], passages: Sequence[Any]) -> Iterable[str]:
@@ -145,17 +195,13 @@ def _rules(data: dict[str, Any], passages: Sequence[Any]) -> Iterable[str]:
             yield f"{where}: speaker_label not in speakers"
 
 
-def _recording_rules(data: dict[str, Any], passages: Sequence[Any]) -> Iterable[str]:
-    source = data.get("source")
-    if not isinstance(source, dict):
-        return
+def _recording_rules(
+    data: dict[str, Any], source: dict[str, Any], passages: Sequence[Any]
+) -> Iterable[str]:
     recordings = source.get("recordings")
     if not isinstance(recordings, list):
         return
-    version = _version(data.get("contract_version"))
-    since = _version(RECORDINGS_SINCE)
-    if version is not None and since is not None and version < since:
-        yield f"/source/recordings: needs contract version {RECORDINGS_SINCE} or later"
+    yield from _needs(data, "/source/recordings", RECORDINGS_SINCE)
     spans = {
         n: span
         for n, recording in enumerate(recordings)
@@ -178,6 +224,90 @@ def _recording_rules(data: dict[str, Any], passages: Sequence[Any]) -> Iterable[
         if start is None or any(a <= start <= b for a, b in spans.values()):
             continue
         yield f"/passages/{n}/start{_passage_note(passage)}: in no recording"
+
+
+def _it_ot_rules(data: dict[str, Any], passages: Sequence[Any]) -> Iterable[str]:
+    """The version of the IT/OT layer; its shape is Narrata's to check."""
+    first = next(
+        (
+            n
+            for n, passage in enumerate(passages)
+            if isinstance(passage, dict)
+            and isinstance(passage.get("layers"), dict)
+            and "it_ot" in passage["layers"]
+        ),
+        None,
+    )
+    stats = data.get("stats")
+    if first is not None:
+        yield from _needs(data, f"/passages/{first}/layers/it_ot", IT_OT_SINCE)
+    elif isinstance(stats, dict) and "it_ot" in stats:
+        yield from _needs(data, "/stats/it_ot", IT_OT_SINCE)
+
+
+def _source_rules(
+    data: dict[str, Any], source: dict[str, Any], passages: Sequence[Any]
+) -> Iterable[str]:
+    """`source.kind` and what only an upload may do; an upload's own rules are Narrata's."""
+    kind = source.get("kind", "pipeline")
+    if kind not in ("pipeline", "upload"):
+        return  # the schema reports it
+    if "kind" in source or "format" in source:
+        yield from _needs(data, "/source", UPLOAD_SINCE, "kind and format need")
+    if kind == "upload":
+        return
+    if "format" in source:
+        if "kind" not in source:
+            # an upload that forgot to say so: one violation, not one per null
+            yield "/source: format without kind upload"
+            return
+        yield "/source/format: only an upload carries a format"
+    yield from _pipeline_rules(data, source, passages)
+
+
+def _pipeline_rules(
+    data: dict[str, Any], source: dict[str, Any], passages: Sequence[Any]
+) -> Iterable[str]:
+    """No `null` and no position id outside an upload, each once per file."""
+    readable = [(n, p) for n, p in enumerate(passages) if isinstance(p, dict)]
+    nulls = {n: found for n, p in readable if (found := _passage_nulls(p))}
+    fields = [
+        *(f"source.{field}" for field in _NULLABLE_IN_SOURCE if _null(source, field)),
+        *(["pipeline"] if _null(data, "pipeline") else []),
+        *dict.fromkeys(field for found in nulls.values() for field in found),
+    ]
+    if fields:
+        first = next(iter(nulls), None)
+        where = (
+            "/"
+            if first is None
+            else f"/passages/{first}{_passage_note(passages[first])}"
+        )
+        yield f"{where}: only an upload may leave {', '.join(fields)} null"
+    position = next(
+        (
+            n
+            for n, passage in readable
+            if isinstance(passage.get("id"), str) and _POSITION_ID.match(passage["id"])
+        ),
+        None,
+    )
+    if position is not None:
+        note = _passage_note(passages[position])
+        yield f"/passages/{position}/id{note}: position id outside an untimed upload"
+
+
+def _passage_nulls(passage: dict[str, Any]) -> list[str]:
+    """The fields of `passage` that are null and only an upload may leave null."""
+    fields = [
+        f"passages[].{field}" for field in _NULLABLE_IN_PASSAGE if _null(passage, field)
+    ]
+    markers = passage.get("markers")
+    if isinstance(markers, list) and any(
+        isinstance(marker, dict) and _null(marker, "at") for marker in markers
+    ):
+        fields.append("passages[].markers[].at")
+    return fields
 
 
 def _span(recording: Any) -> tuple[float, float] | None:

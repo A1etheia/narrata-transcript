@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://narrata.cloud/contracts/transcript-v1.schema.json",
   "title": "Narrata session transcript, contract v1",
-  "description": "One structured transcript of one play session, written by the Transcript pipeline (TOOL-69) and read by Narrata (IOA-1218). Human-readable contract: docs/transcript-contract.md. Rules a schema cannot express (unique ids, chronological order, end >= start, known speaker labels, supported major) are checked by transcript:validate.",
+  "description": "One structured transcript of one play session, written by the Transcript pipeline (TOOL-69) or, since 1.3, converted from an upload (source.kind = upload), and read by Narrata (IOA-1218). Human-readable contract: docs/transcript-contract.md. Rules a schema cannot express (unique ids, chronological order, end >= start, known speaker labels, supported major, the IT/OT cross-references, which values only an upload may leave null) are checked by transcript:validate.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -22,7 +22,7 @@
       "pattern": "^[1-9][0-9]*\\.(0|[1-9][0-9]*)$"
     },
     "tool_version": {
-      "description": "Version of the pipeline that wrote the file.",
+      "description": "Version of the pipeline or converter that wrote the file.",
       "type": "string",
       "minLength": 1
     },
@@ -53,6 +53,7 @@
       }
     },
     "source": {
+      "description": "Where the transcript comes from. Null values (duration, audio hash) only for source.kind = upload.",
       "type": "object",
       "additionalProperties": false,
       "required": ["file_name", "duration_seconds", "audio_sha256"],
@@ -64,12 +65,22 @@
           "pattern": "^[^/\\\\]+$"
         },
         "duration_seconds": {
-          "type": "number",
+          "description": "Null only for source.kind = upload.",
+          "type": ["number", "null"],
           "minimum": 0
         },
         "audio_sha256": {
-          "type": "string",
+          "description": "Null only for source.kind = upload.",
+          "type": ["string", "null"],
           "pattern": "^[0-9a-f]{64}$"
+        },
+        "kind": {
+          "description": "Since 1.3, optional: pipeline (the default when absent) or upload, a transcript converted from a foreign file.",
+          "enum": ["pipeline", "upload"]
+        },
+        "format": {
+          "description": "Since 1.3: the origin of an upload; required for source.kind = upload, absent otherwise.",
+          "enum": ["vtt", "srt", "text"]
         },
         "recordings": {
           "description": "Since 1.1, optional: every recording of the session in session order; the first equals the top-level source fields.",
@@ -82,7 +93,8 @@
       }
     },
     "pipeline": {
-      "type": "object",
+      "description": "Null only for source.kind = upload.",
+      "type": ["object", "null"],
       "additionalProperties": false,
       "required": ["backend", "model", "config_hash", "knowledge_snapshot_id", "thresholds"],
       "properties": {
@@ -121,8 +133,13 @@
       }
     },
     "stats": {
-      "description": "Pipeline report figures (TOOL-53); open object, not interpreted by Narrata.",
-      "type": "object"
+      "description": "Pipeline report figures (TOOL-53). Open object; Narrata reads only stats.it_ot (since 1.2).",
+      "type": "object",
+      "properties": {
+        "it_ot": {
+          "$ref": "#/$defs/it_ot_stats"
+        }
+      }
     },
     "passages": {
       "description": "Chronological by start.",
@@ -205,18 +222,18 @@
       ],
       "properties": {
         "id": {
-          "description": "Stable passage id, minted once as p-<start in ms, 8 digits>-<speaker label slug> and kept on every re-export.",
+          "description": "Stable passage id, minted once as p-<start in ms, 8 digits>-<speaker label slug> and kept on every re-export; an untimed upload mints u-<position from 1, 6 digits>-<speaker label slug> instead.",
           "type": "string",
-          "pattern": "^p-[0-9]{8}-[a-z0-9]+(-[a-z0-9]+)*$"
+          "pattern": "^(p-[0-9]{8}|u-[0-9]{6})-[a-z0-9]+(-[a-z0-9]+)*$"
         },
         "start": {
-          "description": "Absolute seconds from the start of the recording, at most three decimals.",
-          "type": "number",
+          "description": "Absolute seconds from the start of the recording, at most three decimals; null in an untimed upload.",
+          "type": ["number", "null"],
           "minimum": 0
         },
         "end": {
-          "description": "Absolute seconds from the start of the recording, at most three decimals; not before start.",
-          "type": "number",
+          "description": "Absolute seconds from the start of the recording, at most three decimals; not before start; null in an untimed upload.",
+          "type": ["number", "null"],
           "minimum": 0
         },
         "speaker_label": {
@@ -235,7 +252,8 @@
           "type": ["string", "null"]
         },
         "confidence_tier": {
-          "enum": ["confident", "needs_review", "uncertain"]
+          "description": "Null only for source.kind = upload.",
+          "enum": ["confident", "needs_review", "uncertain", null]
         },
         "review_status": {
           "enum": ["unreviewed", "confirmed", "corrected", "open"]
@@ -261,8 +279,13 @@
           }
         },
         "layers": {
-          "description": "Open object for later layers. layers.it_ot is reserved (draft in docs/transcript-contract.md) and not validated in v1.",
-          "type": "object"
+          "description": "Open object for layers. layers.it_ot (since 1.2) is the in-time / out-of-time classification; all passages carry it or none.",
+          "type": "object",
+          "properties": {
+            "it_ot": {
+              "$ref": "#/$defs/it_ot_layer"
+            }
+          }
         }
       }
     },
@@ -275,8 +298,8 @@
           "enum": ["unintelligible", "speaker_unclear", "crosstalk", "gap"]
         },
         "at": {
-          "description": "Absolute seconds from the start of the recording.",
-          "type": "number",
+          "description": "Absolute seconds from the start of the recording; null in an untimed upload.",
+          "type": ["number", "null"],
           "minimum": 0
         },
         "note": {
@@ -295,6 +318,283 @@
         "id": {
           "type": "integer",
           "minimum": 1
+        }
+      }
+    },
+    "frame": {
+      "description": "it = in-time (the fiction), ot = out-of-time (table talk), mixed = both in one passage, unclear = not decidable.",
+      "enum": ["it", "ot", "mixed", "unclear"]
+    },
+    "mode": {
+      "description": "Inside IT: speech = character speech, narration = description, action = a player's action call.",
+      "enum": ["speech", "narration", "action"]
+    },
+    "reason": {
+      "description": "Machine-readable reason category, an open snake_case catalogue (rule_talk, dice_call, break, meta_comment, agreement, organisational, …).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "probability": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "char_offset": {
+      "description": "Character offset into text (Unicode code points), from inclusive, to exclusive.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "frame_span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "frame"],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/char_offset"
+        },
+        "to": {
+          "$ref": "#/$defs/char_offset"
+        },
+        "frame": {
+          "enum": ["it", "ot"]
+        }
+      }
+    },
+    "mode_span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "mode"],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/char_offset"
+        },
+        "to": {
+          "$ref": "#/$defs/char_offset"
+        },
+        "mode": {
+          "$ref": "#/$defs/mode"
+        }
+      }
+    },
+    "it_ot_layer": {
+      "description": "Since 1.2: the IT/OT classification of one passage (TOOL-71). Frame-bound fields follow frame, the model result, not review.manual_frame.",
+      "type": "object",
+      "additionalProperties": false,
+      "dependentRequired": {
+        "mode_confidence": ["mode"],
+        "mode_spans": ["mode"]
+      },
+      "required": ["frame", "confidence", "tier", "reason", "pass", "block"],
+      "properties": {
+        "frame": {
+          "$ref": "#/$defs/frame"
+        },
+        "confidence": {
+          "$ref": "#/$defs/probability"
+        },
+        "tier": {
+          "enum": ["confident", "needs_review", "uncertain"]
+        },
+        "reason": {
+          "description": "Reason category or null.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/reason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pass": {
+          "description": "Which classification pass set this result, starting at 1.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "first_pass": {
+          "description": "Optional: the first pass's result, kept when a later pass changed it.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["frame", "confidence"],
+          "properties": {
+            "frame": {
+              "$ref": "#/$defs/frame"
+            },
+            "confidence": {
+              "$ref": "#/$defs/probability"
+            }
+          }
+        },
+        "block": {
+          "description": "Id of the block in stats.it_ot.blocks this passage belongs to.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "spans": {
+          "description": "Optional, only for frame mixed: the IT and OT parts of text.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/frame_span"
+          }
+        },
+        "mode": {
+          "description": "Optional, only for frame it or mixed.",
+          "$ref": "#/$defs/mode"
+        },
+        "mode_confidence": {
+          "description": "Optional, only for frame it or mixed, only with mode.",
+          "$ref": "#/$defs/probability"
+        },
+        "mode_spans": {
+          "description": "Optional, only for frame it or mixed, only with mode: parts of text with a different mode.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/mode_span"
+          }
+        },
+        "review": {
+          "description": "Optional: the manual review result; it adds to the model result instead of replacing it.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["manual_frame"],
+          "properties": {
+            "manual_frame": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/frame"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "share": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seconds", "passages"],
+      "properties": {
+        "seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "passages": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "it_ot_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "frame", "start", "end", "first_passage_id", "last_passage_id", "trigger_label", "reason"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "frame": {
+          "enum": ["it", "ot"]
+        },
+        "start": {
+          "type": "number",
+          "minimum": 0
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0
+        },
+        "first_passage_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "last_passage_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "trigger_label": {
+          "description": "Speaker label of the passage that opened the block, or null.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/speaker_label"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "description": "For OT blocks the reason category, else null.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/reason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "it_ot_speaker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "talk_seconds", "it_seconds", "ot_triggers"],
+      "properties": {
+        "label": {
+          "$ref": "#/$defs/speaker_label"
+        },
+        "talk_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "it_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "ot_triggers": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "it_ot_stats": {
+      "description": "Since 1.2: the IT/OT session statistics (TOOL-75), required exactly when the passages carry layers.it_ot. Figures only, never passage text.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shares", "blocks", "speakers"],
+      "properties": {
+        "shares": {
+          "description": "Speaking time and passage count per frame; one key per frame.",
+          "type": "object",
+          "propertyNames": {
+            "enum": ["it", "ot", "mixed", "unclear"]
+          },
+          "required": ["it", "ot", "mixed", "unclear"],
+          "additionalProperties": {
+            "$ref": "#/$defs/share"
+          }
+        },
+        "blocks": {
+          "description": "Contiguous IT and OT blocks in session order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/it_ot_block"
+          }
+        },
+        "speakers": {
+          "description": "Per speaker label: speaking time overall and inside IT, OT blocks opened.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/it_ot_speaker"
+          }
         }
       }
     }

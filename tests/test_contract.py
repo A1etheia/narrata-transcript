@@ -10,6 +10,8 @@ from jsonschema import Draft202012Validator
 
 from transcript.contract import (
     CONTRACT_VERSION,
+    IT_OT_SINCE,
+    RECORDINGS_SINCE,
     SCHEMA_FILE,
     SCHEMA_SHA256,
     SINGLE_RECORDING_VERSION,
@@ -20,10 +22,17 @@ from transcript.contract import (
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "contract"
-# Narrata's reference fixtures (IOA-1214, IOA-1287): an invented play session,
-# once as one recording and once as two
+# Narrata's reference fixtures (IOA-1214, IOA-1287, IOA-1224, IOA-1300): an
+# invented play session as one recording (1.0), two recordings (1.1), with the
+# IT/OT layer (1.2) and as a timed and an untimed upload (1.3)
 FIXTURE = FIXTURES / "session-v1.json"
 MULTI_FIXTURE = FIXTURES / "session-v1-multi.json"
+CLASSIFIED_FIXTURE = FIXTURES / "session-v1-classified.json"
+UPLOAD_FIXTURES = (
+    FIXTURES / "session-v1-upload-timed.json",
+    FIXTURES / "session-v1-upload-untimed.json",
+)
+NARRATA_FIXTURES = (FIXTURE, MULTI_FIXTURE, CLASSIFIED_FIXTURE, *UPLOAD_FIXTURES)
 NARRATA_SCHEMA = (
     REPO_ROOT.parent
     / "ios-archiv"
@@ -36,23 +45,31 @@ SECRET = "Geheimname Mira"
 
 
 @functools.cache
+def _load(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load(path: Path) -> dict[str, Any]:
+    """A fresh copy of one of Narrata's fixtures, to change in a test."""
+    return copy.deepcopy(_load(path))
+
+
 def _fixture() -> dict[str, Any]:
-    return json.loads(FIXTURE.read_text(encoding="utf-8"))
+    return _load(FIXTURE)
 
 
 def fixture() -> dict[str, Any]:
     """A fresh copy of Narrata's fixture, to change in a test."""
-    return copy.deepcopy(_fixture())
+    return load(FIXTURE)
 
 
-@functools.cache
 def _multi_fixture() -> dict[str, Any]:
-    return json.loads(MULTI_FIXTURE.read_text(encoding="utf-8"))
+    return _load(MULTI_FIXTURE)
 
 
 def multi_fixture() -> dict[str, Any]:
     """A fresh copy of Narrata's two-recording fixture, to change in a test."""
-    return copy.deepcopy(_multi_fixture())
+    return load(MULTI_FIXTURE)
 
 
 class SchemaTest(unittest.TestCase):
@@ -69,7 +86,15 @@ class SchemaTest(unittest.TestCase):
 
     def test_the_contract_versions_are_those_of_the_fixtures(self) -> None:
         self.assertEqual(_fixture()["contract_version"], SINGLE_RECORDING_VERSION)
-        self.assertEqual(_multi_fixture()["contract_version"], CONTRACT_VERSION)
+        self.assertEqual(_multi_fixture()["contract_version"], RECORDINGS_SINCE)
+        self.assertEqual(load(CLASSIFIED_FIXTURE)["contract_version"], IT_OT_SINCE)
+        for path in UPLOAD_FIXTURES:
+            self.assertEqual(load(path)["contract_version"], CONTRACT_VERSION)
+
+    def test_every_narrata_fixture_is_valid(self) -> None:
+        for path in NARRATA_FIXTURES:
+            with self.subTest(fixture=path.name):
+                self.assertEqual(validate(load(path)), ())
 
 
 class ValidateTest(unittest.TestCase):
@@ -248,6 +273,102 @@ class RecordingsTest(unittest.TestCase):
         found = validate(document)
 
         self.assertEqual(found, ("/source/recordings/1/starts_at: type",))
+
+
+class LaterMinorsTest(unittest.TestCase):
+    """What 1.2 and 1.3 allow, kept out of a pipeline file."""
+
+    def test_a_null_time_outside_an_upload_is_one_violation(self) -> None:
+        document = fixture()
+        for passage in document["passages"]:
+            passage["start"] = passage["end"] = None
+        first = document["passages"][0]["id"]
+        expected = (
+            f"/passages/0 ({first}): only an upload may leave "
+            "passages[].start, passages[].end null"
+        )
+
+        self.assertEqual(validate(document), (expected,))
+
+    def test_each_nullable_field_is_named_outside_an_upload(self) -> None:
+        document = fixture()
+        document["source"]["audio_sha256"] = None
+        document["pipeline"] = None
+        passage = document["passages"][2]
+        passage["confidence_tier"] = None
+        passage["markers"] = [{"type": "unintelligible", "at": None}]
+        expected = (
+            f"/passages/2 ({passage['id']}): only an upload may leave "
+            "source.audio_sha256, pipeline, passages[].confidence_tier, "
+            "passages[].markers[].at null"
+        )
+
+        self.assertEqual(validate(document), (expected,))
+
+    def test_a_null_violation_quotes_no_value(self) -> None:
+        document = fixture()
+        document["passages"][0]["id"] = SECRET
+        document["passages"][0]["start"] = None
+
+        for violation in validate(document):
+            self.assertNotIn("Geheim", violation)
+
+    def test_a_position_id_outside_an_upload_is_named(self) -> None:
+        document = fixture()
+        passage = document["passages"][1]
+        passage["id"] = "u-000002-mira"
+
+        self.assertEqual(
+            validate(document),
+            ("/passages/1/id (u-000002-mira): position id outside an untimed upload",),
+        )
+
+    def test_kind_and_format_need_version_1_3(self) -> None:
+        document = fixture()
+        document["source"]["kind"] = "pipeline"
+
+        self.assertEqual(
+            validate(document),
+            ("/source: kind and format need contract version 1.3 or later",),
+        )
+
+    def test_an_explicit_pipeline_kind_is_accepted_from_1_3(self) -> None:
+        document = fixture()
+        document["contract_version"] = "1.3"
+        document["source"]["kind"] = "pipeline"
+
+        self.assertEqual(validate(document), ())
+
+    def test_a_format_belongs_to_an_upload(self) -> None:
+        document = fixture()
+        document["contract_version"] = "1.3"
+        document["source"]["format"] = "vtt"
+        document["passages"][0]["start"] = None
+
+        self.assertEqual(validate(document), ("/source: format without kind upload",))
+
+        document["source"]["kind"] = "pipeline"
+        found = validate(document)
+
+        self.assertEqual(found[0], "/source/format: only an upload carries a format")
+        self.assertEqual(len(found), 2)  # and the null
+
+    def test_the_it_ot_layer_needs_version_1_2(self) -> None:
+        document = load(CLASSIFIED_FIXTURE)
+        document["contract_version"] = "1.1"
+
+        self.assertEqual(
+            validate(document),
+            ("/passages/0/layers/it_ot: needs contract version 1.2 or later",),
+        )
+
+    def test_it_ot_stats_alone_need_version_1_2(self) -> None:
+        document = fixture()
+        document["stats"]["it_ot"] = load(CLASSIFIED_FIXTURE)["stats"]["it_ot"]
+
+        self.assertIn(
+            "/stats/it_ot: needs contract version 1.2 or later", validate(document)
+        )
 
 
 if __name__ == "__main__":

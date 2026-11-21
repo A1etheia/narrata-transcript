@@ -18,11 +18,10 @@ from transcript.rendering import (
 )
 from transcript.session import SessionKey, SessionPaths
 
+CONTRACT_FIXTURES = Path(__file__).parent / "fixtures" / "contract"
 # Narrata's reference fixture (IOA-1214): 320 made-up passages
 FIXTURE: dict[str, Any] = json.loads(
-    (Path(__file__).parent / "fixtures" / "contract" / "session-v1.json").read_text(
-        "utf-8"
-    )
+    (CONTRACT_FIXTURES / "session-v1.json").read_text("utf-8")
 )
 MIRA = {"participant_id": 102, "display_name": "Mira"}  # made up, as in FIXTURE
 
@@ -271,6 +270,16 @@ class FileTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ExportUnreadable, "unsupported major 2"):
             load_export(self.paths)
+
+    def test_an_upload_is_refused(self) -> None:
+        for name in ("session-v1-upload-timed.json", "session-v1-upload-untimed.json"):
+            with self.subTest(fixture=name):
+                upload = json.loads((CONTRACT_FIXTURES / name).read_text("utf-8"))
+                self.assertEqual(validate(upload), ())
+                self.stored(upload)
+
+                with self.assertRaisesRegex(ExportUnreadable, "an upload is no"):
+                    load_export(self.paths)
 
     def test_the_export_is_left_unchanged(self) -> None:
         self.stored(FIXTURE)
