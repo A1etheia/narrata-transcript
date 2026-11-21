@@ -118,7 +118,7 @@ Danach enthält eine Passage nur noch eine sprechende Person. Heute ist jedes Wh
 
 ## Folge-Tickets
 - Hörblöcke im Review (Nachbarpassagen beim Hören zusammenfassen): TOOL-60, Entscheidung über Review-Kanal und Review-Umfang
-- Diarisierung selbst (Sprecherzahl aus TOOL-79, pyannote-Einstellungen), nur wenn der Abstand zu Plaud über 5 Punkte bleibt: [kein Ticket: entscheidet Chunk 5]
+- Diarisierung selbst (Sprecherzahl aus TOOL-79, pyannote-Einstellungen), angelegt nach einer Ausgangsmessung mit Parserfehler, nach der Korrektur nur bedingt nötig; Chunk 5 entscheidet nach der 5-Punkte-Regel, ob es bleibt oder geschlossen wird: TOOL-97
 - Narrata-Guard IOA-1280 prüft abhängige Links und Provenienz nicht: [kein Ticket: Befund im Bericht, Entscheidung in TOOL-60, ob ein IOA-Ticket nötig ist]
 
 ## Chunk-Tabelle

@@ -120,3 +120,24 @@ mv $O/tok/tokenizer.json $O/ && rm -r $O/tok
 ```
 
 `snapshot_download` ohne feste Revision, damit `refs/main` im Cache steht: Pipeline und faster-whisper suchen das Modell über `main`. Das konvertierte Verzeichnis trägt die Quell-Revision im Namen, `score` zeigt dafür keine Hub-Revision (`n/a`). CrisperWhisper 2.0 (`nyralabs/CrisperWhisper2.0_*`) läuft nur mit eigener Laufzeit `crisperwhisper` und steht unter einer Forschungslizenz ohne Betriebseinsatz; es ist nicht Teil des Spikes.
+
+# Sprecherwechsel-Spike (TOOL-96)
+
+Misst, was das Teilen der Passagen am Sprecherwechsel bringt und welche Mindestschwelle passt. `turns.py` schneidet nur im Speicher mit `transcript.diarization.turns.split_at_speaker_changes` und nutzt Clips und Kennzahlen aus `denoise.py`. Plan: [`TOOL-96`](../../docs/plans/TOOL-96-speaker-turns.md), Bericht: [`docs/spikes/TOOL-96-sprecherwechsel.md`](../../docs/spikes/TOOL-96-sprecherwechsel.md).
+
+## Datenschutz
+
+Das Skript schreibt nichts. Es liest die gespeicherten Transkripte unter `work/<gruppe>/<ordinal>/` und die Handreferenzen A und B aus `review/calibration/`. Die Konsole bekommt Zähler, Anteile und Zeiten, nie Text, Namen oder Sprecher-Labels.
+
+## Ablauf
+
+```bash
+.venv/bin/python scripts/spike/turns.py $S [--config PATH]
+```
+
+- **Voraussetzung:** Alle Segmente der Sitzung sind transkribiert und diarisiert. Ohne Modell, ohne GPU.
+- **Varianten:** die gespeicherten Passagen (ungeteilt), dann Schnitte mit 0, 250, 500, 1000, 1500 und 2000 ms sowie 2, 3 und 4 Wörtern Mindestlänge pro Label-Lauf.
+- **Ausgabe:** zwei Markdown-Tabellen.
+  - *Sprecherfehler an A und B:* WDER wie in TOOL-20 auf Passagenebene (jedes Wort trägt das Label seiner Passage, wie im Export) und einmal auf Wortebene (Wortlabel der Diarisierung, gleich für alle Schnitte). Dazu der Anteil der Passagen mit Wörtern mehrerer Hand-Sprecher.
+  - *Ganze Sitzung:* Passagen gesamt und pro Stunde, Länge P10/Median/P90, gemischte Passagen (mehr als ein Wortlabel), Anteil der Wörter unter fremdem Label, Review-Kandidaten und markierte Zeit, Zahl der Hinweise. Hinweise und Bewertung werden für jede Variante neu berechnet (`segment_hints`, `segment_assessment`), mit den Schwellen der Config.
+  - Zuletzt die Zahl der Passagen mit mehr als einem Label, die nicht geteilt werden, weil ihre Wortfolge nicht genau den Text ergibt.
