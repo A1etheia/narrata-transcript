@@ -70,6 +70,16 @@ class HandReferenceTest(unittest.TestCase):
         self.assertEqual(hand.speakers, ("S1",) * 4 + ("S2",) * 3)
         self.assertEqual(hand.gaps, frozenset({6}))
 
+    def test_a_label_with_notes_in_parentheses_names_its_speaker(self) -> None:
+        hand = parse_hand_reference(
+            "Ærwyn (Spielleitung): wir reiten\n"
+            "Brakk (Zwerg) (leise): gut\n"
+            "Ærwyn(Erzählung):nach Norden\n"
+        )
+
+        self.assertEqual(hand.tokens, ("wir", "reiten", "gut", "nach", "norden"))
+        self.assertEqual(hand.speakers, ("S1", "S1", "S2", "S1", "S1"))
+
     def test_an_empty_or_unreadable_reference_is_rejected_without_content(
         self,
     ) -> None:

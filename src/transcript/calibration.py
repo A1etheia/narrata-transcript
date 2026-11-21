@@ -40,7 +40,8 @@ from transcript.uncertainty import PassageRating, Rule, segment_assessment
 
 _K = TypeVar("_K")
 _TOKEN = re.compile(r"[\w'-]+")
-_LABEL = re.compile(r"^\s*([^\s:]+):")
+# `Name:`, optionally with notes in parentheses: `Name (role) (aside):`
+_LABEL = re.compile(r"^\s*([^\s:()]+)(?:\s*\([^)]*\))*\s*:")
 _NOTE = re.compile(r"\[[^\]]*\]")
 _UNKNOWN = re.compile(r"\?{3,}")
 TOP_SHARES = (0.1, 0.2, 0.3)  # of the words with the lowest confidence

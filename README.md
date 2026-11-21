@@ -413,7 +413,7 @@ Die Datei `work/<gruppe>/<ordinal>/review/segment-NN.uncertainty.json` (`format_
 
 ### Kalibrierung
 
-`transcript calibrate` misst die Bewertung an einer Handreferenz: einer Textdatei, die beim Anhören eines Abschnitts eines Segments entsteht. Jede Zeile darf mit einer Sprecherkennung beginnen (`Name:`), Notizen in eckigen Klammern sind keine Sprache, `???` markiert Unverständliches. Was die Spracherkennung dort erkennt, zählt weder als richtig noch als Einfügung (Konvention aus [TOOL-62](docs/spikes/TOOL-62-asr-vergleich.md)).
+`transcript calibrate` misst die Bewertung an einer Handreferenz: einer Textdatei, die beim Anhören eines Abschnitts eines Segments entsteht. Jede Zeile darf mit einer Sprecherkennung beginnen (`Name:`, auch mit Zusätzen in runden Klammern wie `Name (Rolle):`; die Person bestimmt allein der Name), Notizen in eckigen Klammern sind keine Sprache, `???` markiert Unverständliches. Was die Spracherkennung dort erkennt, zählt weder als richtig noch als Einfügung (Konvention aus [TOOL-62](docs/spikes/TOOL-62-asr-vergleich.md)).
 
 ```bash
 transcript calibrate beispielgruppe/042 --segment 1 --reference work/beispielgruppe/042/review/calibration/reference.txt \
