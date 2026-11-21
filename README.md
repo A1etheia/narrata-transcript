@@ -479,6 +479,8 @@ Die Datei enthält Zieltexte und Notizen und bleibt deshalb unter `work/`. Die [
 
 ## Review-CSV
 
+> **Eingefroren seit TOOL-60.** Die CSV bleibt lauffähig, bekommt aber keine Erweiterungen mehr. Das Review mit Anhören wandert in die Narrata-UI ([IOA-1326](https://alethe1a.atlassian.net/browse/IOA-1326)). Ein Review in der Pipeline ist keine Pflicht: Nach der Sprecherzuordnung lässt sich exportieren, unsichere Stellen bleiben markiert. Begründung: [TOOL-60-Bericht](docs/pilot/TOOL-60-bewertung.md).
+
 `transcript review-export <gruppe>/<ordinal> [--all] [--force]` schreibt die Kandidaten, die noch zu entscheiden sind, als Tabelle nach `work/<gruppe>/<ordinal>/review/review.csv` (`transcript.review_sheet`). Gelesen werden `candidates.json` und `decisions.json`, beide bleiben unverändert. Fehlt die Kandidatendatei, verweist der Befehl auf `transcript assess`.
 
 - **Umfang:** standardmäßig die Status `open` und `deferred`. Ein Kandidat mit veralteter Entscheidung zählt als `open`. Mit `--all` kommen alle Kandidaten dazu, entschiedene mit Status, Zieltext und Notiz. Sichere Passagen erscheinen nie, sie sind keine Kandidaten.
