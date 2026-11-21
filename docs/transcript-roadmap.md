@@ -7,9 +7,9 @@ Stand 2026-11-21, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 - **Eine Person, ein Zeitbudget.** TOOL- und IOA-Tickets konkurrieren um dieselben Tage; der Plan ist deshalb eine *lineare* Folge. Echte Parallelität gibt es nur dort, wo ASR-Läufe oder Modell-Downloads im Hintergrund laufen — dann wird am Narrata-Ticket derselben Phase gearbeitet.
 - **Kapazität: 3 Entwicklungstage pro Woche**, Start 23.11.2026, Pause 21.12.2026–03.01.2027. Das ist der Umrechnungsfaktor für die Kalenderspalte, nicht Teil des Plans — ändert sich die Kapazität, verschieben sich nur die Daten, nicht die Reihenfolge.
 - **Aufwände sind Entwicklungstage in 0,5er-Schritten**, grob geschätzt aus den Ticket-Beschreibungen. Sie dienen der Reihenfolge und den Meilenstein-Abständen; keine Zusage.
-- **Offener Umfang: 2.5 Entwicklungstage** ≈ 1 Wochen → letzter Meilenstein 26.11.2026; erledigt 69 Tage.
+- **Offener Umfang: 1.5 Entwicklungstage** ≈ 1 Wochen → letzter Meilenstein 24.11.2026; erledigt 70 Tage.
 - **Neu terminiert am 17.11.2026, Qualität zuerst, fortgeschrieben am 21.11.2026:** Erledigte Tickets belegen keine Tage mehr und tragen kein Datum; die offenen Tickets beginnen am ersten Arbeitstag ab heute, angeführt von der Erkennungsqualität (TOOL-93, TOOL-96) vor dem Pilot-Review (TOOL-60). Die Narrata-Nacharbeit aus Epic IOA-1297 (Korrektur, IT/OT, Lesefassung) steht nicht in dieser Folge und konkurriert um dieselben Tage.
-- Nicht eingeplant: TOOL-14 (Remote-Backend, geparkt), die Epics selbst, verworfene Tickets (TOOL-21–32, 34; TOOL-3, 7; TOOL-11, 33 nach TOOL-62; TOOL-78 nach TOOL-59; Epic TOOL-65 mit TOOL-70–75, IT/OT nach Narrata verlegt in Epic IOA-1297), in andere aufgenommene Tickets (TOOL-77 in TOOL-57).
+- Nicht eingeplant: die Epics selbst, verworfene Tickets (TOOL-14 nach TOOL-60; TOOL-21–32, 34; TOOL-3, 7; TOOL-11, 33 nach TOOL-62; TOOL-78 nach TOOL-59; Epic TOOL-65 mit TOOL-70–75, IT/OT nach Narrata verlegt in Epic IOA-1297), in andere aufgenommene Tickets (TOOL-77 in TOOL-57).
 
 ## Leitlinien der Reihenfolge
 
@@ -28,11 +28,11 @@ Stand 2026-11-21, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 | M1 | Backend gewählt, Diarisierung entschieden, TOOL-11/33 entschieden, Export-Endpoint live | Phase 1 | erledigt | 8.5 |
 | M2 | Eine Session läuft vom MP4 bis zur Referenztranskription mit Sprecher-Labels und Wissens-Snapshot | Phase 2 | erledigt | 17 |
 | M3 | JSON-Export (Contract v1) einer Session importiert lokal in Narrata und rendert dort als Rohliste | Phase 3 | erledigt | 12.5 |
-| M4 | Pilot-Review (TOOL-60): Kernhypothese geprüft; Entscheidungen Review-Kanal, Remote-Backend, Freigabe IT/OT | Phase 4 | 23.11.2026 – 23.11.2026 | 14 |
+| M4 | Pilot-Review (TOOL-60): Kernhypothese geprüft; Entscheidungen Review-Kanal, Remote-Backend, Freigabe IT/OT | Phase 4 | erledigt | 14 |
 | M5 | Transkript per Chat/MCP befragbar, in Narrata durchsuchbar, lesbar, verlinkt | Phase 5 | erledigt | 8 |
 | M6 | Erste Welt-Archiv-Einträge mit Transkript-Provenienz; IT/OT-Statistik und Abendvergleich sichtbar | Phase 6 | erledigt | 5 |
-| M7 | Entscheidung, ob und wie andere Narrata-Nutzer ihre Aufnahmen transkribieren können | Phase 7 | 24.11.2026 – 24.11.2026 | 0.5 |
-| M8 | Konzept für Stimmprofile mit Einwilligung pro Spielrunde, Go/No-Go | Phase 8 | 24.11.2026 – 26.11.2026 | 1 |
+| M7 | Entscheidung, ob und wie andere Narrata-Nutzer ihre Aufnahmen transkribieren können | Phase 7 | 23.11.2026 – 23.11.2026 | 0.5 |
+| M8 | Konzept für Stimmprofile mit Einwilligung pro Spielrunde, Go/No-Go | Phase 8 | 23.11.2026 – 24.11.2026 | 1 |
 
 ## Reflexionspunkte
 
@@ -42,8 +42,8 @@ Stand 2026-11-21, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 | M1 | Liefert Diarisierung stabile Labels? | TOOL-20 | Beantwortet: ja, pyannote hält 4 Labels für 4 Personen über 5 h, 8 % Fehlzuordnung in der Stichprobe; TOOL-68 bleibt bei 1 Tag |
 | M1 | Liefert das ASR-Backend die Sprecher-Labels selbst? | TOOL-20 | Beantwortet: nein, separate Diarisierung mit pyannote; Integration als TOOL-76 (1,5 Tage) in Phase 2, M2 verschiebt sich entsprechend |
 | M3 | Trägt der Contract den Import ohne Rückfragen? | IOA-1218 gegen TOOL-69 | Contract-Minor-Bump vor Phase 4, nicht danach; erster Bump erledigt: 1.1 mit `source.recordings[]` (IOA-1287), Pipeline-Seite TOOL-89 |
-| M4 | Trägt die Kernhypothese (Konfidenz grenzt Review ein)? Aufwand pro Abend alltagstauglich? | TOOL-60 | Go/No-Go IT/OT in Narrata (IOA-1302); Review-Kanal CSV vs. Narrata-UI (→ ggf. neues IOA-Ticket); TOOL-14 |
-| M4 | Reicht das Teilen am Sprecherwechsel, oder braucht die Diarisierung selbst ein Ticket? | TOOL-96 | über 5 Punkte Abstand zu Plaud: Folge-Ticket Diarisierung (Sprecherzahl aus TOOL-79, pyannote-Einstellungen) |
+| M4 | Trägt die Kernhypothese (Konfidenz grenzt Review ein)? Aufwand pro Abend alltagstauglich? | TOOL-60 | Beantwortet: als Rangfolge ja, als Eingrenzung nein (74–89 % der Hörzeit markiert); Review wandert nach Narrata (IOA-1326), Go für IT/OT (IOA-1302), TOOL-14 verworfen |
+| M4 | Reicht das Teilen am Sprecherwechsel, oder braucht die Diarisierung selbst ein Ticket? | TOOL-96 | Beantwortet: reicht, 3,4 / 3,6 Punkte Abstand zu Plaud, kein Diarisierungs-Ticket |
 | M6 | Welche Fragen aus der Zielliste sind jetzt beantwortbar, welche nicht? | Retro, kein Ticket | V0.2-Backlog beider Projekte |
 | M7 | Öffnen wir die Transkription für andere Nutzer, und auf welchem Weg? | TOOL-85 | Entscheidung; bei „ja“ Folge-Tickets |
 | M8 | Lohnt sich die Wiedererkennung der Sprecher, und trägt die Einwilligung pro Spielrunde? | TOOL-87 | Go/No-Go; bei „ja“ Umsetzungstickets in TOOL und IOA |
@@ -145,7 +145,7 @@ Start/Ende der offenen Tickets sind in Jira als Start date / Due date gespiegelt
 | TOOL-93 | Spike: Erkennungsqualität an den Pilot-Handreferenzen verbessern | 1.5 | — | — | erledigt: `docs/spikes/TOOL-93-erkennungsqualitaet.md`; No-Go, large-v3-turbo mit Hotwords bleibt; keine VAD-/Dekodier-Einstellung und kein lokales Modell bringt ≥ 3 Punkte; Auslassungen sind zu 85–90 % Inhaltswörter; Empfehlung: Aufnahme am Tisch verbessern |
 | TOOL-96 | Passagen am Sprecherwechsel teilen | 1.5 | — | — | erledigt: `src/transcript/diarization/turns.py`, `docs/spikes/TOOL-96-sprecherwechsel.md`; `transcript diarize` teilt Passagen am Sprecherwechsel (`diarization.min_turn_ms`, 500 ms), Referenzformat v3 mit `asr_passage` und `processing.renumbered`; Sprecherfehler an der Pilotsitzung 17,4 % → 6,2 % (A) und 14,0 % → 3,6 % (B), 3,4 / 3,6 Punkte über Plaud, daher kein Diarisierungs-Ticket (TOOL-97 geschlossen); 2.166 statt 997 Passagen, Kandidaten 65,7 % statt 87,3 %; Passagen-IDs aus der Backend-Passage, Re-Import in Narrata ohne `--replace` (0 entfernt); Review-Entscheidungen folgen ihrer Passage (26 von 35 gelten weiter); Arbeitsfassung `format_version: 2` |
 | TOOL-95 | CLI ohne Startskript: cuBLAS vorladen, `paths.root` verankern | 0.5 | — | — | erledigt: `whisper.preload_cuda_libraries` lädt `libcublas.so.12` aus `nvidia-cublas-cu12` per absolutem Pfad mit `RTLD_GLOBAL` vor (Fallback: System-Bibliothek), `doctor` und Whisper-Smoke-Test auf `cuda` grün ohne `LD_LIBRARY_PATH`; relativer `paths.root`, Default-Config und `.env` gelten ab dem Projektordner, Argumente wie `--config` weiter ab dem aktuellen Verzeichnis; `scripts/transcript` entfernt, Aufruf direkt über `.venv/bin/transcript` |
-| TOOL-60 | V0.1 bewerten, Entscheidungen, V0.2-Backlog | 1 | 23.11.2026 | 23.11.2026 | Go/No-Go für die IT/OT-Arbeit in Narrata (IOA-1302); aus TOOL-93: No-Go, V0.2 bleibt bei large-v3-turbo mit Hotwords; WER als Spanne über drei Seeds (A 24,0 %, B 32,9–41,1 %); Gegenprobe an einer dritten Referenz entfällt mangels Gewinner; Empfehlung zur Aufnahme am Tisch (Ansteckmikrofone oder mehrere Grenzflächenmikrofone) einbeziehen; aus TOOL-58: ein vollständiges Review dauert rund 25 h pro Abend, Review-Kanal und Review-Umfang neu entscheiden (ohne Review, nur Glossar-Begriffe, vollständig); lange Passagen sind beim Hören hilfreicher als kurze; ein Review-Dialog mit Abspielen hängt an dieser Entscheidung; aus TOOL-92: kein Entrauschen vor der Erkennung (No-Go); die Pilot-WER ist ein Einzellauf, an B liegt das Mittel aus drei Läufen bei 42,3 % statt 32,9 %, die Bewertung sollte die Spanne nennen; aus TOOL-35: am vollen Pilotlauf mit `transcript calibrate` prüfen, ob die Eingrenzung aus dem Bericht hält; aus TOOL-83: Archiv-Schreibtreffer am vollen Pilotlauf nach Methode und Stufe nachmessen (`--similar-judged`), bisher nur ein beurteilter Hinweis; aus TOOL-68: prüfen, ob die Unsicherheit pro Person gewichtet werden muss (Mundart 47,5 % gegen 14,0 % falsche Wörter, aus TOOL-36); aus TOOL-96: Hörblöcke im Review (Nachbarpassagen beim Hören zusammenfassen) hängen an der Entscheidung über Review-Kanal und Review-Umfang; aus TOOL-96: der Narrata-Guard IOA-1280 prüft abhängige Links und Provenienz an aktualisierten Passagen nicht, entscheiden, ob ein IOA-Ticket nötig ist; aus TOOL-96: 9 Review-Entscheidungen der Pilotsitzung auf geteilten Passagen sind veraltet und kommen beim nächsten Review wieder vor |
+| TOOL-60 | V0.1 bewerten, Entscheidungen, V0.2-Backlog | 1 | — | — | erledigt: `docs/pilot/TOOL-60-bewertung.md`; Kernhypothese hält als Rangfolge (AUC 0,75–0,78 an zwei Sitzungen), nicht als Eingrenzung (74–89 % der Hörzeit markiert, 5–16 % der Fehler in sicheren Passagen); WER Pilot 21–26 %, zweite Sitzung 31,5 % gegen eine Hochdeutsch-Referenz; Review mit Anhören wandert nach Narrata (IOA-1326), CSV eingefroren, kein Pflicht-Review in der Pipeline; Go für IT/OT (IOA-1302); Mikrofon-Empfehlung nur dokumentiert; TOOL-14 verworfen; Archiv-Schreibtreffer 2 von 18 richtig (TOOL-99); Mundartsprecher an zwei Abenden etwa doppelte Fehlerquote, Gewichtung pro Person in IOA-1326; Re-Import-Warnung bei abhängigen Links (IOA-1327); TOOL-82 zurückgestellt |
 
 ### Phase 5 — Narrata-Oberflächen
 
@@ -173,7 +173,7 @@ Start/Ende der offenen Tickets sind in Jira als Start date / Due date gespiegelt
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| TOOL-85 | Entscheidung: Transkription für andere Narrata-Nutzer öffnen? | 0.5 | 24.11.2026 | 24.11.2026 | Wege: Nutzer rechnen lokal, eigener Worker getrennt vom Prod-VPS, externer ASR-Dienst, nichts tun; Datenschutz der Mitspielenden und Betriebsgrenzen klären; Erkenntnisse aus TOOL-59 und TOOL-60 einbeziehen; bei „ja“ Folge-Tickets |
+| TOOL-85 | Entscheidung: Transkription für andere Narrata-Nutzer öffnen? | 0.5 | 23.11.2026 | 23.11.2026 | Wege: Nutzer rechnen lokal, eigener Worker getrennt vom Prod-VPS, externer ASR-Dienst, nichts tun; Datenschutz der Mitspielenden und Betriebsgrenzen klären; Erkenntnisse aus TOOL-59 und TOOL-60 einbeziehen; bei „ja“ Folge-Tickets; aus TOOL-60: bei „ja“ prüfen, ob eine Modellwahl auf Gruppenebene in Narrata nötig wird, weil andere Nutzer keine YAML-Datei pflegen |
 
 ### Phase 8 — Sprecher-Wiedererkennung
 
@@ -181,7 +181,7 @@ Start/Ende der offenen Tickets sind in Jira als Start date / Due date gespiegelt
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| TOOL-87 | Konzept: Sprecher über Sessions hinweg wiedererkennen | 1 | 24.11.2026 | 26.11.2026 | nur Konzept, Umsetzung als Folge-Tickets (TOOL und IOA); Stimmprofil = biometrisches Datum (Art. 9 DSGVO), Opt-in pro Mitgliedschaft im Narrata-Profil; Profile nur lokal, nur aus bestätigten Zuordnungen, Vorschläge nie ohne Bestätigung; Go/No-Go nach `effort_minutes` aus TOOL-59 mit TOOL-86; Kandidaten auf Anwesende eingrenzen (TOOL-79); aus TOOL-86: automatische Vorschläge über Stimmprofile |
+| TOOL-87 | Konzept: Sprecher über Sessions hinweg wiedererkennen | 1 | 23.11.2026 | 24.11.2026 | nur Konzept, Umsetzung als Folge-Tickets (TOOL und IOA); Stimmprofil = biometrisches Datum (Art. 9 DSGVO), Opt-in pro Mitgliedschaft im Narrata-Profil; Profile nur lokal, nur aus bestätigten Zuordnungen, Vorschläge nie ohne Bestätigung; Go/No-Go nach `effort_minutes` aus TOOL-59 mit TOOL-86; Kandidaten auf Anwesende eingrenzen (TOOL-79); aus TOOL-86: automatische Vorschläge über Stimmprofile; aus TOOL-60: Hauptnutzen wäre die Gewichtung pro Person ohne Handarbeit, die Sprecherfehler liegen nach TOOL-96 schon nahe an Plaud |
 
 ## Pflege
 
