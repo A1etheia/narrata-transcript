@@ -13,7 +13,7 @@ from test_smoke import _ExportableSession, run
 
 from transcript import candidates, decisions, knowledge, manifest, review_sheet, status
 from transcript.audio import extract, find_recordings, probe
-from transcript.config import UncertaintyThresholds, load_config
+from transcript.config import Config, UncertaintyThresholds, load_config
 from transcript.domain import DomainContext
 from transcript.knowledge import build_snapshot, load_snapshot
 from transcript.manifest import build_manifest
@@ -30,6 +30,18 @@ from transcript.reference import (
 )
 from transcript.session import SessionPaths
 from transcript.uncertainty import assess_session
+
+
+def diarization(
+    min_turn_ms: int | None = Config.diarization_min_turn_ms,
+) -> Diarization:
+    """What `diarize` stores, cut with `min_turn_ms`."""
+    return Diarization(
+        backend_id="fake",
+        model="fake",
+        labels=("SPEAKER_00",),
+        min_turn_ms=min_turn_ms,
+    )
 
 
 @needs_media
@@ -96,9 +108,7 @@ class StatusTestCase(unittest.TestCase):
             ),
         }
         if diarized:
-            values["diarization"] = Diarization(
-                backend_id="fake", model="fake", labels=("SPEAKER_00",)
-            )
+            values["diarization"] = diarization()
         else:
             values["passages"] = ()
         values.update(changes)
@@ -280,6 +290,17 @@ class TranscribeTest(StatusTestCase):
 
         self.assertEqual(state, "partial")
         self.assertIn("no speaker labels: 1", detail)
+
+    def test_passages_cut_with_another_or_no_threshold_are_stale(self) -> None:
+        self.prepared()
+        for min_turn_ms in (None, Config.diarization_min_turn_ms + 250):
+            with self.subTest(min_turn_ms=min_turn_ms):
+                self.reference(diarization=diarization(min_turn_ms))
+
+                state, detail = self.statuses()["transcribe"]
+
+                self.assertEqual(state, "stale")
+                self.assertIn("cut outdated: 1", detail)
 
     def test_a_missing_segment_among_transcribed_ones_is_partial(self) -> None:
         self.prepared(recordings=2)

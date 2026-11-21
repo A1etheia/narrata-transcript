@@ -8,7 +8,7 @@ Pro Segment gibt es zwei Dateien unter `work/<gruppe>/<ordinal>/asr/`:
 
 | Datei | Inhalt |
 | --- | --- |
-| `segment-NN.json` | Normalform, `format_version: 2` |
+| `segment-NN.json` | Normalform, `format_version: 3` |
 | `segment-NN.raw.json` | `{"backend_id": …, "raw": …}`: die Antwort des Backends, unverändert |
 
 `NN` ist der Segmentindex aus dem Manifest, wie bei `audio/segment-NN.wav`. Geschrieben wird zuerst die Rohform, dann die Normalform, beide atomar. Erst die Normalform markiert ein Segment als fertig. Bricht ein Lauf dazwischen ab, liegt höchstens eine Rohdatei ohne Normalform da, und das Segment gilt als nicht transkribiert.
@@ -29,21 +29,21 @@ Schlägt ein Segment fehl, hält `failed_reference(error, backend, manifest, seg
 
 | Feld | Pflicht | Inhalt |
 | --- | --- | --- |
-| `format_version` | ja | `2` (gelesen werden `1` und `2`) |
+| `format_version` | ja | `3` (gelesen werden `1` bis `3`) |
 | `session` | ja | `group`, `ordinal`; muss zum Pfad passen |
 | `play_session_id` | ja | aus dem Manifest |
 | `segment` | ja | `index`, `file` (WAV-Name), `source_sha256` der Originalaufnahme |
 | `status` | ja | `transcribed` oder `failed` |
 | `error` | bei `failed` | `category` (Name der Fehlerklasse, z. B. `ResourceError`), `retryable`; nie die Message |
 | `asr` | ja | siehe unten |
-| `processing` | ja | `pipeline_version`, `processed_at` (ISO 8601 mit Offset), `elapsed_ms` oder `null` |
+| `processing` | ja | `pipeline_version`, `processed_at` (ISO 8601 mit Offset, die Version der Passagen, siehe unten), `elapsed_ms` oder `null` |
 | `diarization` | nein | `null` oder siehe unten |
 | `raw_file` | ja | Name der Rohdatei |
 | `passages` | ja | Liste der Passagen, bei `failed` leer |
 
 **`asr`:** `backend_id`, `model`, `model_version`, `runtime_version`, `capabilities` (wie `Capabilities.to_dict()`), `settings` (Inferenzparameter), `language`, `language_probability`, `keywords_used` (die Begriffe, die tatsächlich gewirkt haben), `knowledge_snapshot_id` (die `snapshot_id` des Wissens-Snapshots, mit dem der Lauf gestartet wurde, `null` ohne Snapshot). Nur `backend_id` und `model` sind Pflicht, alles andere darf `null` oder leer sein.
 
-**Passage:** ein Stück Sprache, so wie das Backend es abgegrenzt hat, bei Whisper ein Segment der Ausgabe. Felder: `index` (fortlaufend ab 1), `text` (wie erkannt), `start_ms`, `end_ms`, `speaker`, `signals` (Zahlen pro Passage, z. B. `avg_logprob`), `words`.
+**Passage:** ein Stück Sprache einer Person. Das Backend grenzt es ab, bei Whisper ein Segment der Ausgabe, und die Diarisierung teilt es, wo die sprechende Person wechselt (siehe [Sprecher](#sprecher)). Felder: `index` (fortlaufend ab 1), `asr_passage` (Nummer der Backend-Passage, aus der sie stammt; gleich `index`, solange nichts geteilt ist), `text` (wie erkannt), `start_ms`, `end_ms`, `speaker`, `signals` (Zahlen pro Passage, z. B. `avg_logprob`), `words`.
 
 **Wort:** `text`, `start_ms`, `end_ms`, `confidence` (0–1), `speaker`.
 
@@ -83,15 +83,21 @@ Ein `SessionSpan` enthält `granularity` (`word` oder `passage`), die lokalen We
 Sprecher kommen aus einer separaten Diarisierung mit pyannote (TOOL-76, Grundlage [`spikes/TOOL-20-diarisierung.md`](spikes/TOOL-20-diarisierung.md)):
 
 - **Das Wort-Label ist maßgeblich.** `null` ist ein gültiger Wert: Im Test lagen 6–14 % der Wörter in keinem Turn.
-- **`speaker` einer Passage** ist das Label, das die meisten ihrer Wörter tragen (`majority_speaker`). Bei Gleichstand oder ohne Wort-Labels ist es `null`. Liefert ein Backend nur ein Label pro Passage, wird dieses übernommen. Wechsel innerhalb einer Passage bleiben an den Wörtern sichtbar.
+- **Teilen am Sprecherwechsel** (TOOL-96, [`spikes/TOOL-96-sprecherwechsel.md`](spikes/TOOL-96-sprecherwechsel.md)): `transcript diarize` teilt jede Backend-Passage dort, wo das Wort-Label wechselt.
+  - Ein Abschnitt eines Labels, der kürzer als `diarization.min_turn_ms` dauert (Konfiguration, 500 ms), geht an den Abschnitt davor, am Anfang an den danach. Wörter ohne Label bleiben beim Abschnitt davor.
+  - **Kein Text wird erfunden.** Ein Teil hat als `text` seine Wörter, mit einem Leerzeichen verbunden. Geteilt wird nur, wenn diese Verbindung aller Wörter genau den `text` der Backend-Passage ergibt; sonst bleibt sie ganz, und `transcript diarize` meldet die Zahl. Die Teile ergeben so zusammen immer den erkannten Text.
+  - Jeder Teil behält `asr_passage` und `signals` der Backend-Passage. Der erste beginnt an ihrem Start, der letzte endet an ihrem Ende, dazwischen gelten die Zeiten des ersten und letzten Worts.
+  - Ein neuer Lauf setzt die Teile zuerst über `asr_passage` wieder zusammen und teilt dann neu. Das Ergebnis hängt so nie von einem früheren Schnitt ab; eine geänderte Schwelle schneidet ohne Modell neu.
+- **`processed_at` ist die Version der Passagen.** Hinweise, Bewertung, Review-Kandidaten und Entscheidungen zeigen über Segment und Passagennummer auf eine Passage und merken sich `processed_at`. Verschiebt die Diarisierung eine Passagengrenze, setzt sie `processed_at` neu, immer später als zuvor. Alles, was auf den alten Passagen beruht, gilt dann als veraltet, statt still auf eine falsche Passage zu zeigen. Ein Lauf mit gleichem Ergebnis ändert nichts.
+- **`speaker` einer Passage** ist das Label, das die meisten ihrer Wörter tragen (`majority_speaker`). Bei Gleichstand oder ohne Wort-Labels ist es `null`. Liefert ein Backend nur ein Label pro Passage, wird dieses übernommen. Ein Wechsel innerhalb einer Passage unterhalb der Schwelle oder in einer nicht teilbaren Passage bleibt an den Wörtern sichtbar.
 - **Labels sind generisch** (`SPEAKER_00`), nie Namen. Die Zuordnung zu Personen steht getrennt in `work/<gruppe>/<ordinal>/speakers/assignment.json` (TOOL-68, README „Sprecherzuordnung“) und kommt nie in diese Datei.
 - **Labels gelten pro Segment.** Jede Aufnahme wird für sich diarisiert; `SPEAKER_00` in zwei Segmenten ist nicht automatisch dieselbe Person.
 - **Rohform getrennt:** Die Turns des Modells liegen unverändert unter `work/<gruppe>/<ordinal>/diarization/segment-NN.json` (`format_version: 1`): `backend_id`, `model`, `model_version`, `runtime_version`, `settings`, `num_speakers`, `audio_sha256` des Segment-WAVs, `turns` und `exclusive_turns` (`[{start_ms, end_ms, label}]`), dazu `elapsed_ms`, die Dauer des Modellaufrufs, der die Datei erzeugt hat (`null` in Dateien von vor TOOL-59; eine wiederverwendete Datei behält ihren Wert). Nur die exklusiven Turns, in denen immer genau eine Person spricht, bestimmen die Wort-Labels; aus den überlappenden Turns entstehen `overlaps`. `transcript diarize` schreibt danach nur die Normalform neu (`update_reference`), die ASR-Rohdatei bleibt unberührt. Code: `src/transcript/diarization/`.
-- **`diarization`** hält die Metadaten getrennt von `asr`: `backend_id`, `model`, `model_version`, `settings`, `num_speakers` (die Vorgabe, nicht das Ergebnis), `labels` (alle Labels des Segments) und `overlaps` (`[{start_ms, end_ms}]`, Bereiche mit Übersprechen). Ist es gesetzt, darf kein Wort und keine Passage ein Label außerhalb von `labels` tragen.
+- **`diarization`** hält die Metadaten getrennt von `asr`: `backend_id`, `model`, `model_version`, `settings`, `num_speakers` (die Vorgabe, nicht das Ergebnis), `labels` (alle Labels des Segments), `overlaps` (`[{start_ms, end_ms}]`, Bereiche mit Übersprechen) und `min_turn_ms` (die Schwelle, mit der geteilt wurde; `null`: nicht geteilt). Ist es gesetzt, darf kein Wort und keine Passage ein Label außerhalb von `labels` tragen.
 
 ## Versionierung
 
-`format_version` steht an erster Stelle. Geschrieben wird immer `2`. `load_reference` liest `1` und `2`, bei `1` ist `knowledge_snapshot_id` `null`. Jede andere Version lehnt es ab und verlangt, das Segment neu zu transkribieren. Schreibt `transcript diarize` eine Datei der Version `1` neu, wird sie dabei zu `2`. Eine Änderung, die alte Dateien unlesbar macht, erhöht die Version. Fehlermeldungen beim Laden nennen Datei, Feld und Passagennummer, nie Text, Keywords oder Labels.
+`format_version` steht an erster Stelle. Geschrieben wird immer `3`. `load_reference` liest `1` bis `3`. Bei `1` ist `knowledge_snapshot_id` `null`. Bei `1` und `2` fehlen `asr_passage` und `min_turn_ms`: Jede Passage ist dann eine ganze Backend-Passage (`asr_passage` = `index`), und `transcript status` meldet die Passagen als `cut outdated`, bis `transcript diarize` oder `process` sie teilt. Jede andere Version lehnt es ab und verlangt, das Segment neu zu transkribieren. Schreibt `transcript diarize` eine ältere Datei neu, wird sie dabei zu `3`. Eine Änderung, die alte Dateien unlesbar macht, erhöht die Version. Fehlermeldungen beim Laden nennen Datei, Feld und Passagennummer, nie Text, Keywords oder Labels.
 
 ## Beispiel
 
@@ -99,7 +105,7 @@ Erfundener Inhalt, gekürzt auf eine Passage:
 
 ```json
 {
-  "format_version": 2,
+  "format_version": 3,
   "session": {"group": "beispielgruppe", "ordinal": 42},
   "play_session_id": 4711,
   "segment": {"index": 1, "file": "segment-01.wav", "source_sha256": "abab…"},
@@ -125,12 +131,14 @@ Erfundener Inhalt, gekürzt auf eine Passage:
     "settings": {},
     "num_speakers": null,
     "labels": ["SPEAKER_00", "SPEAKER_01"],
-    "overlaps": [{"start_ms": 1180, "end_ms": 1420}]
+    "overlaps": [{"start_ms": 1180, "end_ms": 1420}],
+    "min_turn_ms": 500
   },
   "raw_file": "segment-01.raw.json",
   "passages": [
     {
       "index": 1,
+      "asr_passage": 1,
       "text": " Wir betreten den Drachenhort.",
       "start_ms": 0,
       "end_ms": 1500,

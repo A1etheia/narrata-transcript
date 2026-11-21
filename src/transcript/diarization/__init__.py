@@ -5,10 +5,18 @@ WAV with turns: time ranges with a generic label such as `SPEAKER_00`. Its answe
 is stored unchanged under `work/<session>/diarization/segment-NN.json`, apart
 from the reference transcript, so it can be reused without the model.
 
-`assign_speakers` copies the labels onto the words of a reference transcript.
-Only speaker fields and the `diarization` block change; text, times and
-confidence stay as the ASR backend delivered them. Labels hold within one
-segment only; matching them across segments is TOOL-68.
+`assign_speakers` copies the labels onto the words of a reference transcript
+and, given a minimum turn, cuts each backend passage where the speaker changes
+(TOOL-96, `transcript.diarization.turns`). Words keep text, times and
+confidence as the ASR backend delivered them, and the parts of a passage joined
+again give its recognised text. Labels hold within one segment only; matching
+them across segments is TOOL-68.
+
+The passages are the unit hints, ratings and review decisions point at, by
+number. A run that moves a passage boundary therefore sets a new
+`processing.processed_at`, so that everything made from the old passages counts
+as stale instead of pointing at the wrong passage. A run with the same result
+keeps it.
 
 A retryable diarizer error is tried again up to `retries` times
 (`transcript.retry`); a segment that still fails is reported as `failed` and
@@ -19,6 +27,7 @@ label or any text.
 """
 
 import bisect
+import datetime
 import functools
 import itertools
 import logging
@@ -31,6 +40,12 @@ from typing import Any, Protocol
 from transcript import jsonfile
 from transcript.asr import BackendIdentity, BackendInfo
 from transcript.audio import sha256_file
+from transcript.diarization.turns import (
+    MinTurn,
+    can_split,
+    rejoin,
+    split_at_speaker_changes,
+)
 from transcript.jsonfile import DataFileError
 from transcript.manifest import Manifest
 from transcript.reference import (
@@ -42,6 +57,7 @@ from transcript.reference import (
     check_span,
     load_reference,
     majority_speaker,
+    next_processed_at,
     update_reference,
 )
 from transcript.retry import FailureLog, SegmentFailure, attempt
@@ -161,6 +177,11 @@ class SegmentSummary:
     words: int = 0
     labelled_words: int = 0
     elapsed_ms: int | None = None  # of the diarizer call, when it ran
+    passages: int = 0  # after the cut
+    recut: bool = False  # passage boundaries moved: hints and ratings are stale
+    # passages with more than one label left whole: their words joined are not
+    # exactly their text, so a cut would change the recognised text
+    uncut: int = 0
 
 
 def diarize_session(
@@ -171,11 +192,14 @@ def diarize_session(
     force: bool = False,
     retries: int = 0,
     sleep: Callable[[float], None] = time.sleep,
+    min_turn_ms: int | None = None,
 ) -> list[SegmentSummary]:
     """Label the words of every transcribed segment with speakers.
 
-    A stored run is reused when audio, model, revision, settings and
-    `num_speakers` match, unless `force`. The model is loaded only for the first
+    With `min_turn_ms` the passages are cut at speaker changes, see
+    `assign_speakers`. A stored run is reused when audio, model, revision,
+    settings and `num_speakers` match, unless `force`; a new `min_turn_ms`
+    alone cuts again without the model. The model is loaded only for the first
     segment that needs it and closed at the end. Segments without a transcript
     or with a failed one are skipped. A retryable `BackendError` from one
     segment is tried again up to `retries` times; the last one makes the
@@ -204,6 +228,7 @@ def diarize_session(
                 force=force,
                 retries=retries,
                 sleep=sleep,
+                min_turn_ms=min_turn_ms,
             )
             for segment in manifest.segments
         ]
@@ -223,6 +248,7 @@ def _diarize_segment(
     force: bool,
     retries: int,
     sleep: Callable[[float], None],
+    min_turn_ms: int | None,
 ) -> SegmentSummary:
     """Diarize or reuse one segment and label its words; see `diarize_session`."""
     reference = (
@@ -259,7 +285,7 @@ def _diarize_segment(
         elapsed_ms, attempts = done.elapsed_ms, done.attempts
         run = replace(done.result, elapsed_ms=elapsed_ms)
         write_run(paths, index, run)
-    labelled = assign_speakers(reference, run)
+    labelled = assign_speakers(reference, run, min_turn_ms)
     if labelled != reference:  # a reused run usually changes nothing
         update_reference(paths, labelled)
     words = labelled.words
@@ -272,27 +298,53 @@ def _diarize_segment(
         labelled_words=sum(word.speaker is not None for word in words),
         elapsed_ms=elapsed_ms,
         attempts=attempts,
+        passages=len(labelled.passages),
+        recut=_boundaries(labelled.passages) != _boundaries(reference.passages),
+        uncut=(
+            0 if min_turn_ms is None else sum(_left_whole(p) for p in labelled.passages)
+        ),
     )
 
 
 def assign_speakers(
-    reference: ReferenceTranscript, run: DiarizationRun
+    reference: ReferenceTranscript,
+    run: DiarizationRun,
+    min_turn_ms: int | None = None,
+    now: datetime.datetime | None = None,
 ) -> ReferenceTranscript:
     """`reference` with word, passage and diarization speaker data from `run`.
 
     A word gets the label of the exclusive turn its midpoint lies in, half-open
     `[start, end)`. Without times or outside every turn it keeps no label, which
-    stays visible. A passage takes the majority of its word labels. Labels the
-    reference carried before are replaced.
+    stays visible. Labels the reference carried before are replaced.
+
+    Passages a former run cut are first joined back into their backend passage
+    (`asr_passage`), so the result never depends on an earlier cut. With
+    `min_turn_ms` each is then cut where its label changes, a shorter run of one
+    label drawn into its neighbour (`split_at_speaker_changes`); without, it
+    stays whole. A passage takes the majority of its word labels. When passage
+    boundaries move, `processing.processed_at` becomes `now`, and always later
+    than before.
     """
     if reference.status != "transcribed":
         raise ValueError("only a transcribed segment can get speaker labels")
-    passages = tuple(
-        _labelled(passage, run.exclusive_turns) for passage in reference.passages
-    )
+    found = [
+        _labelled(passage, run.exclusive_turns)
+        for passage in _backend_passages(reference.passages)
+    ]
+    if min_turn_ms is not None:
+        cut = MinTurn(ms=min_turn_ms)
+        found = [part for p in found for part in split_at_speaker_changes(p, cut)]
+    passages = tuple(replace(p, index=n) for n, p in enumerate(found, start=1))
+    processing = reference.processing
+    if _boundaries(passages) != _boundaries(reference.passages):
+        processing = replace(
+            processing, processed_at=next_processed_at(processing.processed_at, now)
+        )
     return replace(
         reference,
         passages=passages,
+        processing=processing,
         diarization=Diarization(
             backend_id=run.info.backend_id,
             model=run.info.model,
@@ -301,8 +353,32 @@ def assign_speakers(
             num_speakers=run.num_speakers,
             labels=run.labels,
             overlaps=overlaps(run.turns),
+            min_turn_ms=min_turn_ms,
         ),
     )
+
+
+def _backend_passages(passages: Iterable[Passage]) -> list[Passage]:
+    """The passages as the backend delivered them, undoing an earlier cut."""
+    return [
+        rejoin(list(parts))
+        for _, parts in itertools.groupby(passages, key=_asr_passage)
+    ]
+
+
+def _asr_passage(passage: Passage) -> int:
+    return passage.asr_passage
+
+
+def _boundaries(passages: Iterable[Passage]) -> tuple[tuple[int, int], ...]:
+    """Where the passages lie: backend passage and word count of each."""
+    return tuple((p.asr_passage, len(p.words)) for p in passages)
+
+
+def _left_whole(passage: Passage) -> bool:
+    """More than one label, but no cut: its words joined are not its text."""
+    labels = {word.speaker for word in passage.words} - {None}
+    return len(labels) > 1 and not can_split(passage)
 
 
 def overlaps(turns: Iterable[Turn]) -> tuple[Overlap, ...]:

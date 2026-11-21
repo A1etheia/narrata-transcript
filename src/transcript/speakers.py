@@ -172,7 +172,8 @@ def segment_labels(reference: ReferenceTranscript) -> tuple[str, ...]:
 def labels_version(reference: ReferenceTranscript) -> str:
     """Fingerprint of the segment's labels; changes with a new transcript or labels.
 
-    `processed_at` alone is not enough, since diarizing again keeps it.
+    `processed_at` alone is not enough: diarizing again keeps it unless a
+    passage boundary moves (TOOL-96), yet may change the labels.
     """
     content = {
         "processed_at": reference.processing.processed_at,

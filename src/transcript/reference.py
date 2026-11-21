@@ -34,8 +34,9 @@ from transcript.manifest import Manifest, Segment
 from transcript.session import SessionKey, SessionPaths, reference_raw_name
 from transcript.timecode import seconds_to_ms
 
-REFERENCE_FORMAT_VERSION = 2
-READABLE_FORMAT_VERSIONS = (1, REFERENCE_FORMAT_VERSION)  # 1 has no snapshot id
+REFERENCE_FORMAT_VERSION = 3
+# 1 has no snapshot id; 1 and 2 have no cut at speaker changes (TOOL-96)
+READABLE_FORMAT_VERSIONS = (1, 2, REFERENCE_FORMAT_VERSION)
 STATUSES = ("transcribed", "failed")
 # Names from `asr.backend.FEATURES` as `Capabilities.to_dict` stores them.
 TIME_CAPABILITIES = ("word_timestamps", "segment_timestamps")
@@ -61,7 +62,12 @@ class Word:
 
 @dataclass(frozen=True)
 class Passage:
-    """A stretch of speech as the backend delimited it, e.g. a Whisper segment."""
+    """A stretch of speech as the backend delimited it, e.g. a Whisper segment.
+
+    The diarization may cut a backend passage where the speaker changes
+    (TOOL-96); every part then keeps the backend passage's number in
+    `asr_passage`. An uncut passage has `asr_passage == index`, the default.
+    """
 
     index: int  # 1-based within the segment
     text: str  # as recognised, never corrected
@@ -70,10 +76,15 @@ class Passage:
     words: tuple[Word, ...] = ()
     speaker: str | None = None  # majority of the word labels, see majority_speaker
     signals: Mapping[str, float] = field(default_factory=dict)  # e.g. avg_logprob
+    asr_passage: int = 0  # 1-based number of the backend passage; 0: `index`
 
     def __post_init__(self) -> None:
         if self.index < 1:
             raise ValueError("passage index must be positive")
+        if self.asr_passage < 0:
+            raise ValueError("passage asr_passage must be positive")
+        if self.asr_passage == 0:
+            object.__setattr__(self, "asr_passage", self.index)
         check_span(self.start_ms, self.end_ms, "passage time")
 
 
@@ -143,12 +154,16 @@ class Diarization:
     settings: Mapping[str, Any] = field(default_factory=dict)
     num_speakers: int | None = None  # the hint given, not the number found
     overlaps: tuple[Overlap, ...] = ()
+    # shortest run of one label that cuts a passage (TOOL-96); None: not cut
+    min_turn_ms: int | None = None
 
     def __post_init__(self) -> None:
         if len(set(self.labels)) != len(self.labels):
             raise ValueError("diarization labels repeat")
         if self.num_speakers is not None and self.num_speakers < 1:
             raise ValueError("num_speakers must be positive")
+        if self.min_turn_ms is not None and self.min_turn_ms < 0:
+            raise ValueError("min_turn_ms must not be negative")
 
 
 @dataclass(frozen=True)
@@ -178,9 +193,14 @@ class ReferenceTranscript:
             raise ValueError("error must be set exactly when the status is failed")
         if self.status == "failed" and self.passages:
             raise ValueError("a failed segment has no passages")
+        backend = 0  # backend passage of the previous passage
         for number, passage in enumerate(self.passages, start=1):
             if passage.index != number:
                 raise ValueError(f"passage {number} is out of order")
+            # the parts of one backend passage follow each other, none is skipped
+            if passage.asr_passage not in (backend, backend + 1):
+                raise ValueError(f"passage {number} has asr_passage out of order")
+            backend = passage.asr_passage
         if self.diarization is not None:
             known = set(self.diarization.labels)
             for passage in self.passages:
@@ -332,6 +352,17 @@ def _processing(elapsed_ms: int | None, now: datetime.datetime | None) -> Proces
     )
 
 
+def next_processed_at(previous: str, now: datetime.datetime | None = None) -> str:
+    """A `processed_at` for a new version of the passages, later than `previous`.
+
+    `now`, or a second after `previous` if `now` is not later: stamps have whole
+    seconds, and a clock behind the stored stamp must not go back in time.
+    """
+    moment = now or datetime.datetime.now().astimezone()
+    earliest = datetime.datetime.fromisoformat(previous) + datetime.timedelta(seconds=1)
+    return max(moment, earliest).isoformat(timespec="seconds")
+
+
 def _passage_from(segment: ResultSegment, index: int) -> Passage:
     """One backend segment as a passage; word labels decide its speaker."""
     words = tuple(
@@ -438,12 +469,14 @@ def to_json(reference: ReferenceTranscript) -> dict[str, Any]:
                     {"start_ms": overlap.start_ms, "end_ms": overlap.end_ms}
                     for overlap in diarization.overlaps
                 ],
+                "min_turn_ms": diarization.min_turn_ms,
             }
         ),
         "raw_file": reference.raw_file,
         "passages": [
             {
                 "index": passage.index,
+                "asr_passage": passage.asr_passage,
                 "text": passage.text,
                 "start_ms": passage.start_ms,
                 "end_ms": passage.end_ms,
@@ -544,6 +577,8 @@ def _diarization(data: dict[str, Any], path: Path) -> Diarization:
             )
             for entry in _field(data, "overlaps", list, path)
         ),
+        # absent before format 3: the passages were not cut
+        min_turn_ms=_optional(data, "min_turn_ms", int, path),
     )
 
 
@@ -560,6 +595,8 @@ def _passage(data: Any, number: int, path: Path) -> Passage:
             end_ms=_optional(data, "end_ms", int, path),
             speaker=_optional(data, "speaker", str, path),
             signals=signals,
+            # absent before format 3: every passage is a whole backend passage
+            asr_passage=_optional(data, "asr_passage", int, path) or 0,
             words=tuple(
                 Word(
                     text=_field(entry, "text", str, path),

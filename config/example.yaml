@@ -45,6 +45,10 @@ diarization:
   device: auto
   # Weitere Versuche pro Segment nach Speichermangel oder Runtime-Fehler, 0 bis 5.
   retries: 2
+  # Passagen werden am Sprecherwechsel geteilt. Ein Abschnitt eines Sprechers,
+  # der kürzer dauert, geht an die Nachbarpassage, 0 bis 10000 ms. 500 ms ist am
+  # Pilot gemessen (TOOL-96). Eine Änderung schneidet ohne Modell neu.
+  min_turn_ms: 500
 
 # Abruf des Transkriptionskontexts aus Narrata (transcript context).
 # Der Token gehört nicht hierher, sondern als NARRATA_TOKEN in .env.

@@ -66,8 +66,8 @@ def split_at_speaker_changes(
 ) -> tuple[Passage, ...]:
     """`passage` cut into parts of one label each; itself if nothing is cut.
 
-    Every part keeps the passage's index and signals; renumbering is the
-    caller's. The first part starts where the passage starts, the last ends
+    Every part keeps the passage's index, `asr_passage` and signals;
+    renumbering is the caller's. The first part starts where the passage starts, the last ends
     where it ends, the others start and end with their first and last timed
     word. A part's speaker is the majority of its word labels.
     """
@@ -86,6 +86,7 @@ def split_at_speaker_changes(
             words=tuple(run.words),
             speaker=majority_speaker(run.words) or run.label,
             signals=dict(passage.signals),
+            asr_passage=passage.asr_passage,
         )
         for n, run in enumerate(runs)
     )
