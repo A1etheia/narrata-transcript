@@ -233,9 +233,9 @@ transcript process beispielgruppe/042
 Danach gilt:
 
 - **Hinweise und Bewertung** rechnet der Lauf selbst neu.
-- **Review-Entscheidungen** zu den alten Passagen werden als veraltet gemeldet und nicht angewendet. Die betroffenen Kandidaten stehen wieder offen im Sheet.
+- **Review-Entscheidungen** folgen ihrer Passage. Auf einer Passage, die der Schnitt nicht verändert, gelten sie unter der neuen Nummer weiter. Auf einer geteilten Passage werden sie als veraltet gemeldet und nicht angewendet; das Sheet zeigt sie als `earlier_decision` beim ersten Teil, der wieder offen ist. Im Pilot galten 26 von 35 Entscheidungen weiter.
 - **Die Sprecherzuordnung** passt nicht mehr zu den neuen Passagen und muss neu bestätigt werden: `transcript speakers beispielgruppe/042 --assign` (im Pilot rund 4 Minuten).
-- **Der Export** bekommt mehr und kürzere Passagen. Narrata lehnt einen Re-Import ab, wenn eine schon importierte Passage fehlt. Dass ihre IDs erhalten bleiben, kommt mit dem Rest von TOOL-96; bis dahin nicht neu importieren.
+- **Der Export** bekommt mehr und kürzere Passagen. Der erste Teil einer geteilten Passage behält ihre ID, deshalb fehlt beim Re-Import in Narrata keine schon importierte Passage, und `--replace` ist nicht nötig.
 
 Wie nach `--redo transcribe` gilt: `review.csv` und `speakers/assignment.json` vorher beiseitelegen, sonst schreibt `process` keine frischen Vorlagen.
 

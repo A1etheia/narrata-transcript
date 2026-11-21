@@ -36,7 +36,7 @@ Schlägt ein Segment fehl, hält `failed_reference(error, backend, manifest, seg
 | `status` | ja | `transcribed` oder `failed` |
 | `error` | bei `failed` | `category` (Name der Fehlerklasse, z. B. `ResourceError`), `retryable`; nie die Message |
 | `asr` | ja | siehe unten |
-| `processing` | ja | `pipeline_version`, `processed_at` (ISO 8601 mit Offset, die Version der Passagen, siehe unten), `elapsed_ms` oder `null` |
+| `processing` | ja | `pipeline_version`, `processed_at` (ISO 8601 mit Offset, die Version der Passagen, siehe unten), `elapsed_ms` oder `null`, nach einem Schnitt `renumbered` (siehe [Sprecher](#sprecher)) |
 | `diarization` | nein | `null` oder siehe unten |
 | `raw_file` | ja | Name der Rohdatei |
 | `passages` | ja | Liste der Passagen, bei `failed` leer |
@@ -89,6 +89,7 @@ Sprecher kommen aus einer separaten Diarisierung mit pyannote (TOOL-76, Grundlag
   - Jeder Teil behält `asr_passage` und `signals` der Backend-Passage. Der erste beginnt an ihrem Start, der letzte endet an ihrem Ende, dazwischen gelten die Zeiten des ersten und letzten Worts.
   - Ein neuer Lauf setzt die Teile zuerst über `asr_passage` wieder zusammen und teilt dann neu. Das Ergebnis hängt so nie von einem früheren Schnitt ab; eine geänderte Schwelle schneidet ohne Modell neu.
 - **`processed_at` ist die Version der Passagen.** Hinweise, Bewertung, Review-Kandidaten und Entscheidungen zeigen über Segment und Passagennummer auf eine Passage und merken sich `processed_at`. Verschiebt die Diarisierung eine Passagengrenze, setzt sie `processed_at` neu, immer später als zuvor. Alles, was auf den alten Passagen beruht, gilt dann als veraltet, statt still auf eine falsche Passage zu zeigen. Ein Lauf mit gleichem Ergebnis ändert nichts.
+  - **`processing.renumbered`** sagt dann, wo jede Passage der vorigen Fassung jetzt liegt: `{"from_processed_at": "<vorige Fassung>", "passages": [[<neue Nummer>, <unverändert>], …]}`, der n-te Eintrag für die alte Passage n. Unverändert heißt gleicher Text und gleiche Zeiten. Sonst nennt der Eintrag den neuen Teil derselben Backend-Passage, der zuletzt vor oder an ihrem alten Start beginnt. Review-Entscheidungen folgen ihrer Passage darüber (siehe README „Review-Entscheidungen“), Hinweise und Bewertung werden neu berechnet. Das Feld fehlt, solange nie geschnitten wurde, und gilt nur eine Fassung zurück.
 - **`speaker` einer Passage** ist das Label, das die meisten ihrer Wörter tragen (`majority_speaker`). Bei Gleichstand oder ohne Wort-Labels ist es `null`. Liefert ein Backend nur ein Label pro Passage, wird dieses übernommen. Ein Wechsel innerhalb einer Passage unterhalb der Schwelle oder in einer nicht teilbaren Passage bleibt an den Wörtern sichtbar.
 - **Labels sind generisch** (`SPEAKER_00`), nie Namen. Die Zuordnung zu Personen steht getrennt in `work/<gruppe>/<ordinal>/speakers/assignment.json` (TOOL-68, README „Sprecherzuordnung“) und kommt nie in diese Datei.
 - **Labels gelten pro Segment.** Jede Aufnahme wird für sich diarisiert; `SPEAKER_00` in zwei Segmenten ist nicht automatisch dieselbe Person.

@@ -10,6 +10,12 @@ A decision names the version of the transcript it was made on. When the segment
 is transcribed again, the decision is *stale*; when its candidate is gone, it is
 *orphaned*. Both stay in the file and are reported, never applied or dropped.
 
+A cut at speaker changes (TOOL-96) renumbers passages without new recognition.
+A decision on the version before the cut follows its passage through the
+reference's `renumbered` map: unchanged, it applies at the new number; cut, it
+is stale and shown at the part where the passage began. A decision made on the
+new version takes precedence. The file keeps every decision as it was made.
+
 The file holds corrected text and notes, so it stays under `work/`; this module
 logs nothing, and its error messages name file, entry and field only.
 """
@@ -25,6 +31,7 @@ from typing import Any, Literal, get_args
 from transcript import jsonfile
 from transcript.candidates import ReviewCandidate, SessionCandidates, candidate_id
 from transcript.jsonfile import DataFileError, write_atomic
+from transcript.reference import Renumbering
 from transcript.session import SessionPaths
 
 DECISIONS_FORMAT_VERSION = 1
@@ -148,23 +155,52 @@ class ReviewState:
 def review_items(found: SessionCandidates, decisions: SessionDecisions) -> ReviewState:
     """Pair each candidate with its decision; set aside those that no longer fit."""
     processed_at = found.processed_at
+    renumbered = {rated.segment: rated.renumbered for rated in found.rated}
     ids = {candidate.id for candidate in found.candidates}
     current: dict[str, ReviewDecision] = {}
+    carried: dict[str, ReviewDecision] = {}  # made before a cut, passage unchanged
     stale: dict[str, ReviewDecision] = {}
     orphaned: list[ReviewDecision] = []
-    for decision in decisions.decisions:
+    for made in decisions.decisions:
+        version = processed_at.get(made.segment)
+        decision = _followed(made, version, renumbered.get(made.segment))
         if decision.id not in ids:
-            orphaned.append(decision)
-        elif processed_at[decision.segment] != decision.reference_processed_at:
+            orphaned.append(made)
+        elif decision.reference_processed_at != version:
             stale[decision.id] = decision
-        else:
+        elif decision is made:
             current[decision.id] = decision
+        else:
+            carried[decision.id] = decision
+    applying = carried | current
     return ReviewState(
         items=tuple(
-            ReviewItem(c, current.get(c.id), stale.get(c.id)) for c in found.candidates
+            ReviewItem(c, applying.get(c.id), stale.get(c.id)) for c in found.candidates
         ),
         stale=tuple(stale.values()),
         orphaned=tuple(orphaned),
+    )
+
+
+def _followed(
+    made: ReviewDecision, version: str | None, renumbered: Renumbering | None
+) -> ReviewDecision:
+    """`made` at the passage it is about in `version`, after a cut since.
+
+    Unchanged by the cut, it is a decision on `version`; cut, it stays on its
+    old version, at the part where its passage began. Else `made` itself.
+    """
+    if made.reference_processed_at == version or renumbered is None:
+        return made
+    moved = renumbered.find(made.reference_processed_at, made.passage)
+    if moved is None or version is None:
+        return made
+    return dataclasses.replace(
+        made,
+        passage=moved.passage,
+        reference_processed_at=version
+        if moved.unchanged
+        else made.reference_processed_at,
     )
 
 

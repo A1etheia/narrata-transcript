@@ -30,6 +30,7 @@ Danach enthält eine Passage nur noch eine sprechende Person. Heute ist jedes Wh
   - Ein Lauf mit gleichem Ergebnis schreibt nichts und ändert die Marke nicht.
   - `processed_at` heißt danach „Version der Passagen“. Das wird in `docs/referenzformat.md` dokumentiert.
   - Diese Lösung ist kleiner als eine zweite Versionsmarke in sieben Modulen.
+  - **Entscheidungen folgen ihrer Passage** (ergänzt vor der Neuverarbeitung, siehe Chunk 5): Die Normalform hält in `processing.renumbered` fest, wo jede Passage der vorigen Fassung jetzt liegt. Eine Entscheidung auf einer unverändert gebliebenen Passage gilt unter der neuen Nummer weiter. Eine auf einer geteilten Passage ist `stale` und erscheint als `earlier_decision` beim Teil, an dem die Passage begann.
 - **Passagen-IDs werden aus der Herkunft geprägt** (Contract-Regel 2 und Teilungsregel; geändert in Chunk 4, siehe Nachtrag):
   - Die Arbeitsfassung führt pro Block `asr_passage` und `asr_speaker`, das Mehrheitslabel der ganzen Backend-Passage (`rejoin`). Sie steigt dafür auf Format 2.
   - Der erste Teil einer Backend-Passage bekommt die ID aus deren Start und `asr_speaker`, also genau die ID, die die Passage vor TOOL-96 hatte. Die anderen Teile bekommen eine neue ID aus eigenem Start und Label, eindeutig gegen die ersten Teile.
@@ -106,7 +107,17 @@ Danach enthält eine Passage nur noch eine sprechende Person. Heute ist jedes Wh
 - AC: Ein Re-Export nach dem Schnitt enthält alle IDs des Exports vor dem Schnitt. Eine geteilte Passage behält ihre ID im ersten Teil, auch wenn dessen Label wechselt. Der Export liest `output/` nicht. Die Schema-Prüfung bleibt grün.
 - Nachtrag: Die erste Umsetzung (`be8a71f`) las die vorige `output/<s>/transcript.json` und vergab IDs nach Zeitlage. Die Review fand zwei Schwächen. Erstens hingen die IDs an einer Ausgabedatei: Wer `output/` löscht oder anderswo exportiert, bekommt still neue IDs, und `transcript status` verglich gegen eine Datei, aus der es sein Soll selbst baute. Zweitens war unklar, was bei einer ungültigen Vorgängerdatei passiert. Die Herkunft aus `asr_passage` löst beides ohne Dateizugriff.
 
-### Chunk 5 — Neuverarbeitung, Messung nachher, Entscheidung
+### Chunk 5 — Entscheidungen folgen ihrer Passage
+- Dateien: `src/transcript/reference.py`, `src/transcript/diarization/__init__.py`, `src/transcript/candidates.py`, `src/transcript/decisions.py`, Tests, `docs/referenzformat.md`, README „Review-Entscheidungen“
+- Änderung:
+  - `Renumbering` mit `Moved` pro alter Passage, berechnet in `assign_speakers`, wenn sich Grenzen verschieben, gespeichert als `processing.renumbered` der Normalform (v3, noch nicht veröffentlicht, daher ohne Versionssprung).
+  - `RatedSegment` und `candidates.json` führen die Abbildung mit.
+  - `review_items` lässt eine Entscheidung auf einer unveränderten Passage unter der neuen Nummer gelten und zeigt eine auf einer geteilten Passage beim Teil, an dem sie begann. Eine Entscheidung auf der neuen Fassung geht vor. `decisions.json` bleibt unverändert.
+- Verify: `scripts/check`; Probelauf im Speicher an JdG #22 (nur Zähler).
+- AC: Von den 35 Entscheidungen an JdG #22 gelten 26 weiter (davon 15 Korrekturen), 9 auf geteilten Passagen sind `stale` und stehen beim richtigen Teil.
+- Nachtrag: Ursprünglich sollten alle Entscheidungen `stale` werden. Ein Probelauf zeigte, dass das 23 Korrekturen aus dem Pilot-Review aus dem Export nähme, obwohl 15 davon auf Passagen liegen, die der Schnitt nicht verändert. Außerdem hätte der Hinweis `earlier_decision` nach der Neunummerierung bei der falschen Passage gestanden. Die frühere Chunk 5 ist jetzt Chunk 6.
+
+### Chunk 6 — Neuverarbeitung, Messung nachher, Entscheidung
 - Dateien: `docs/spikes/TOOL-96-sprecherwechsel.md`, Plan-Nachtrag
 - Änderung:
   - Vorher sichert die Projektverantwortliche den alten Export und misst ihn mit ihrem Skript.
@@ -119,7 +130,7 @@ Danach enthält eine Passage nur noch eine sprechende Person. Heute ist jedes Wh
 
 ## Folge-Tickets
 - Hörblöcke im Review (Nachbarpassagen beim Hören zusammenfassen): TOOL-60, Entscheidung über Review-Kanal und Review-Umfang
-- Diarisierung selbst (Sprecherzahl aus TOOL-79, pyannote-Einstellungen), angelegt nach einer Ausgangsmessung mit Parserfehler, nach der Korrektur nur bedingt nötig; Chunk 5 entscheidet nach der 5-Punkte-Regel, ob es bleibt oder geschlossen wird: TOOL-97
+- Diarisierung selbst (Sprecherzahl aus TOOL-79, pyannote-Einstellungen), angelegt nach einer Ausgangsmessung mit Parserfehler, nach der Korrektur nur bedingt nötig; Chunk 6 entscheidet nach der 5-Punkte-Regel, ob es bleibt oder geschlossen wird: TOOL-97
 - Narrata-Guard IOA-1280 prüft abhängige Links und Provenienz nicht: [kein Ticket: Befund im Bericht, Entscheidung in TOOL-60, ob ein IOA-Ticket nötig ist]
 
 ## Chunk-Tabelle
@@ -129,4 +140,5 @@ Danach enthält eine Passage nur noch eine sprechende Person. Heute ist jedes Wh
 | 2 | Spike-Skript, Ausgangsmessung, Schwellenwahl | no |
 | 3 | Schnitt in der Diarisierung, Referenzformat v3, Status, Config | yes |
 | 4 | Passagen-IDs im Export mitführen | no |
-| 5 | Neuverarbeitung JdG #22, Messung nachher, Diarisierungs-Entscheidung | no |
+| 5 | Entscheidungen folgen ihrer Passage | no |
+| 6 | Neuverarbeitung JdG #22, Messung nachher, Diarisierungs-Entscheidung | no |

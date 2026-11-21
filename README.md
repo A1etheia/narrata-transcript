@@ -469,6 +469,10 @@ Was beim Anhören eines Kandidaten entschieden wird, steht in einer eigenen Date
 - **Pro Eintrag:** Kandidaten-ID, Segment, Passage, die Fassung des Transkripts, auf die sich die Entscheidung bezieht (`reference_processed_at`), Status, Zeitpunkt, optional `target_text` und `note`. Einen `target_text` gibt es nur bei `corrected`, dort ist er Pflicht. Ein Eintrag pro Kandidat, ein späterer ersetzt den früheren.
 - **Veraltet:** Ist das Segment seitdem neu transkribiert, gilt die Entscheidung nicht mehr, und der Kandidat ist wieder offen. Eine neue Bewertung bei gleichem Transkript ändert nichts, denn die Entscheidung betrifft den Text.
 - **Verwaist:** Ist der Kandidat verschwunden, etwa weil die Passage nach neuer Kalibrierung sicher ist, bleibt die Entscheidung ebenfalls in der Datei stehen.
+- **Nach einem Schnitt am Sprecherwechsel** (TOOL-96) bekommen die Passagen neue Nummern, ohne neu erkannt zu sein. Die Normalform hält dann in `processing.renumbered` fest, wo jede Passage der vorigen Fassung jetzt liegt. Eine Entscheidung auf der vorigen Fassung folgt ihrer Passage:
+  - Ist die Passage unverändert (gleicher Text, gleiche Zeiten), gilt die Entscheidung unter der neuen Nummer weiter.
+  - Wurde sie geteilt, ist die Entscheidung veraltet. Die Review-CSV zeigt sie als `earlier_decision` beim Teil, an dem die Passage begann. Ein Zieltext wird nicht auf die Teile verteilt, das hieße Text erfinden.
+  - Eine Entscheidung auf der neuen Fassung geht vor. Verfolgt wird nur eine Fassung zurück; eine Entscheidung von vor zwei Schnitten bleibt veraltet. Die Datei selbst bleibt, wie sie geschrieben wurde.
 - Veraltete und verwaiste Entscheidungen werden gemeldet, nie gelöscht und nie angewendet. Angewendet wird eine Entscheidung erst in der [Arbeitsfassung](#arbeitsfassung).
 
 Die Datei enthält Zieltexte und Notizen und bleibt deshalb unter `work/`. Die [Review-CSV](#review-csv) liest sie, der [Review-Import](#review-import) schreibt sie.

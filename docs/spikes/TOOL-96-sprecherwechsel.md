@@ -5,7 +5,7 @@ Stand 2026-11-21. Bericht zu [TOOL-96](../plans/TOOL-96-speaker-turns.md), Werkz
 ## Ergebnis vorab
 
 - **Das Teilen senkt den Sprecherfehler deutlich.** Mit 500 ms sinkt er an A von 17,4 % auf 6,2 % und an B von 14,0 % auf 3,6 %. Nach dem Schnitt trägt jede Passage im Wesentlichen das Label ihrer Wörter und liegt damit nahe an der Fehlerrate der Wortlabels (A 5,4 %, B 3,4 %). Der größte Teil des heutigen Fehlers kommt also vom Mehrheitslabel pro Whisper-Segment, nicht von der Diarisierung.
-- **Abstand zu Plaud voraussichtlich unter 5 Punkten.** Plaud liegt bei 2,8 % / 0,0 %, der Abstand wäre damit 3,4 bzw. 3,6 Punkte. Die Methoden unterscheiden sich (siehe unten), die Entscheidung fällt deshalb erst in Chunk 5 mit dem Skript der Projektverantwortlichen am neuen Export. Bis dahin bleibt TOOL-97 (Diarisierung) offen und bedingt.
+- **Abstand zu Plaud voraussichtlich unter 5 Punkten.** Plaud liegt bei 2,8 % / 0,0 %, der Abstand wäre damit 3,4 bzw. 3,6 Punkte. Die Methoden unterscheiden sich (siehe unten), die Entscheidung fällt deshalb erst in Chunk 6 mit dem Skript der Projektverantwortlichen am neuen Export. Bis dahin bleibt TOOL-97 (Diarisierung) offen und bedingt.
 - **Strukturell bringt der Schnitt viel.** Mit 500 ms enthalten 8,7 % statt 48,5 % der Passagen Wörter mit mehr als einem Label, und nur 2,8 % statt 26,7 % der beschrifteten Wörter stehen unter einem fremden Label. Review-Kandidaten sinken von 87,3 % auf 65,7 % der Passagen. IT/OT-Einstufung (IOA-1302) und Lesefassung (IOA-1318) bekommen damit den Sprecherwechsel als Grenze.
 - **Schwelle: 500 ms.** Bis 1000 ms ist der Fehler an A und B gleich. 500 ms hält die gemischten Passagen unter 10 % und die Zahl der Passagen unter der von Plaud.
 
@@ -24,7 +24,7 @@ Stand 2026-11-21. Bericht zu [TOOL-96](../plans/TOOL-96-speaker-turns.md), Werkz
   - Auf **Wortebene** trägt es das Label, das die Diarisierung ihm selbst gibt. Daran ändert kein Schnitt etwas.
 - **Mehrere Sprecher:** Passagen im Ausschnitt, deren gewertete Wörter laut Handreferenz mehr als einer Person gehören.
 - **Kandidaten und Hinweise:** Für jede Variante findet das Skript die Hinweise neu und bewertet die Passagen neu (`segment_hints`, `segment_assessment`), mit den Schwellen der Projektkonfiguration.
-- **Vergleichbarkeit:** Die Zahlen aus dem Ticket (17,6 % / 14,0 % Pipeline, 2,8 % / 0,0 % Plaud) stammen aus dem Skript der Projektverantwortlichen: Füllwörter entfernt, freie Ausrichtung der Clipgrenzen, ohne 1:1-Zuordnung nach bester Übereinstimmung. Für die gespeicherten Passagen liefert die Repo-Methode fast dieselben Werte (17,4 % / 14,0 %). Gegen Plaud gilt trotzdem die Messung mit jenem Skript am neuen Export (Chunk 5).
+- **Vergleichbarkeit:** Die Zahlen aus dem Ticket (17,6 % / 14,0 % Pipeline, 2,8 % / 0,0 % Plaud) stammen aus dem Skript der Projektverantwortlichen: Füllwörter entfernt, freie Ausrichtung der Clipgrenzen, ohne 1:1-Zuordnung nach bester Übereinstimmung. Für die gespeicherten Passagen liefert die Repo-Methode fast dieselben Werte (17,4 % / 14,0 %). Gegen Plaud gilt trotzdem die Messung mit jenem Skript am neuen Export (Chunk 6).
 
 ### Korrektur des Handreferenz-Parsers
 
@@ -51,7 +51,7 @@ Wortebene, gleich für alle Schnitte: A 5,4 % (n = 424), B 3,4 % (n = 320). Die 
 | 2 / 3 / 4 Wörter | 6,2 % | 11 von 19 | 3,6 % | 2 von 10 |
 
 - **Obergrenze des Gewinns:** Vor dem Schnitt liegen Passagen- und Wortebene an A 12,0 und an B 10,6 Punkte auseinander. Mit 500 ms holt der Schnitt davon 11,2 bzw. 10,4 Punkte.
-- **Mehrere Sprecher bleiben:** An A enthalten auch nach dem Schnitt 11 von 19 Passagen Wörter mehrerer Hand-Sprecher, an B 2 von 10. Die Diarisierung setzt dort keinen Wechsel, also kann auch der Schnitt keinen setzen. Weil die Wortlabels trotzdem zu rund 95 % stimmen, sind das vermutlich meist kurze Einwürfe am Rand einer Passage (nicht gemessen). Wie viel davon an der Diarisierung selbst hängt, misst TOOL-97, falls es nach Chunk 5 nötig bleibt.
+- **Mehrere Sprecher bleiben:** An A enthalten auch nach dem Schnitt 11 von 19 Passagen Wörter mehrerer Hand-Sprecher, an B 2 von 10. Die Diarisierung setzt dort keinen Wechsel, also kann auch der Schnitt keinen setzen. Weil die Wortlabels trotzdem zu rund 95 % stimmen, sind das vermutlich meist kurze Einwürfe am Rand einer Passage (nicht gemessen). Wie viel davon an der Diarisierung selbst hängt, misst TOOL-97, falls es nach Chunk 6 nötig bleibt.
 
 ## Ganze Sitzung
 
@@ -84,7 +84,7 @@ Wortebene, gleich für alle Schnitte: A 5,4 % (n = 424), B 3,4 % (n = 320). Die 
 
 ## Folgen
 
-- **Diarisierung (TOOL-97):** angelegt nach der ersten, fehlerhaften Fassung dieses Berichts. Nach der Korrektur ist es nur noch bedingt nötig. Chunk 5 misst den neuen Export mit dem Skript der Projektverantwortlichen. Liegt der Abstand zu Plaud an A oder B über 5 Punkten, bleibt TOOL-97 offen. Sonst wird es mit Verweis auf diesen Bericht geschlossen.
+- **Diarisierung (TOOL-97):** angelegt nach der ersten, fehlerhaften Fassung dieses Berichts. Nach der Korrektur ist es nur noch bedingt nötig. Chunk 6 misst den neuen Export mit dem Skript der Projektverantwortlichen. Liegt der Abstand zu Plaud an A oder B über 5 Punkten, bleibt TOOL-97 offen. Sonst wird es mit Verweis auf diesen Bericht geschlossen.
 - **Frühere Spikes:** Die absoluten WER- und WDER-Werte an A und B aus TOOL-92 und TOOL-93 sind durch den Parserfehler verzerrt (siehe oben). [kein Ticket: Berichte eingefroren, das No-Go aus TOOL-93 hält nach der Neuwertung unten]
 
 ### Neuwertung TOOL-93

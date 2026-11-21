@@ -15,7 +15,7 @@ keywords or labels: they may contain names of real people.
 import collections
 import datetime
 import functools
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -126,10 +126,97 @@ class AsrInfo:
 
 
 @dataclass(frozen=True)
+class Moved:
+    """Where a passage of the previous version lies now (TOOL-96)."""
+
+    passage: int  # the new passage it is, or that begins where it began
+    unchanged: bool  # the new passage is the old one, text and times alike
+
+
+@dataclass(frozen=True)
+class Renumbering:
+    """How the passages of the version `from_processed_at` map to this one.
+
+    A new cut at speaker changes renumbers passages; a decision made on the
+    previous version can follow its passage instead of losing it. Only one
+    version back: a passage two cuts old is not followed.
+    """
+
+    from_processed_at: str
+    passages: tuple[Moved, ...]  # the n-th for old passage n
+
+    @classmethod
+    def between(
+        cls, previous: "ReferenceTranscript", passages: Sequence["Passage"]
+    ) -> "Renumbering":
+        """How `previous.passages` map to `passages`, cut from the same backend passages.
+
+        An old passage maps to the new one equal in text and times, else to the
+        last new part of its backend passage starting no later than it did.
+        """
+        groups: dict[int, list[Passage]] = {}
+        for passage in passages:
+            groups.setdefault(passage.asr_passage, []).append(passage)
+        moved = []
+        for old in previous.passages:
+            group = groups[old.asr_passage]
+            same = next((p for p in group if _same_place(p, old)), None)
+            if same is not None:
+                moved.append(Moved(same.index, unchanged=True))
+                continue
+            before = [p for p in group if _starts_by(p, old.start_ms)]
+            moved.append(Moved((before[-1] if before else group[0]).index, False))
+        return cls(previous.processing.processed_at, tuple(moved))
+
+    def find(self, processed_at: str, passage: int) -> Moved | None:
+        """Where old `passage` of version `processed_at` lies now, if known."""
+        if processed_at != self.from_processed_at:
+            return None
+        if not 1 <= passage <= len(self.passages):
+            return None
+        return self.passages[passage - 1]
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "from_processed_at": self.from_processed_at,
+            "passages": [[m.passage, m.unchanged] for m in self.passages],
+        }
+
+    @classmethod
+    def from_json(
+        cls, data: dict[str, Any], path: Path, error: type[DataFileError]
+    ) -> "Renumbering":
+        entries = jsonfile.field(data, "passages", list, path, error=error)
+        if not all(
+            isinstance(e, list)
+            and len(e) == 2
+            and type(e[0]) is int
+            and isinstance(e[1], bool)
+            for e in entries
+        ):
+            raise error(f"{path}: field 'passages' of 'renumbered' invalid")
+        return cls(
+            jsonfile.field(data, "from_processed_at", str, path, error=error),
+            tuple(Moved(e[0], e[1]) for e in entries),
+        )
+
+
+def _same_place(new: "Passage", old: "Passage") -> bool:
+    return (new.text, new.start_ms, new.end_ms) == (old.text, old.start_ms, old.end_ms)
+
+
+def _starts_by(new: "Passage", start_ms: int | None) -> bool:
+    return (
+        new.start_ms is not None and start_ms is not None and new.start_ms <= start_ms
+    )
+
+
+@dataclass(frozen=True)
 class Processing:
     pipeline_version: str
     processed_at: str  # ISO 8601 with offset
     elapsed_ms: int | None = None
+    renumbered: Renumbering | None = None  # since the last cut (TOOL-96)
 
 
 @dataclass(frozen=True)
@@ -454,6 +541,11 @@ def to_json(reference: ReferenceTranscript) -> dict[str, Any]:
             "pipeline_version": reference.processing.pipeline_version,
             "processed_at": reference.processing.processed_at,
             "elapsed_ms": reference.processing.elapsed_ms,
+            **(
+                {}
+                if reference.processing.renumbered is None
+                else {"renumbered": reference.processing.renumbered.to_json()}
+            ),
         },
         "diarization": (
             None
@@ -549,6 +641,7 @@ def from_json(data: dict[str, Any], path: Path) -> ReferenceTranscript:
                 pipeline_version=_field(processing, "pipeline_version", str, path),
                 processed_at=_field(processing, "processed_at", str, path),
                 elapsed_ms=_optional(processing, "elapsed_ms", int, path),
+                renumbered=_renumbered(processing, path),
             ),
             diarization=(
                 None if diarization is None else _diarization(diarization, path)
@@ -560,6 +653,11 @@ def from_json(data: dict[str, Any], path: Path) -> ReferenceTranscript:
         )
     except ValueError as error:
         raise ReferenceError(f"{path}: {error}") from None
+
+
+def _renumbered(processing: dict[str, Any], path: Path) -> Renumbering | None:
+    data = _optional(processing, "renumbered", dict, path)
+    return None if data is None else Renumbering.from_json(data, path, ReferenceError)
 
 
 def _diarization(data: dict[str, Any], path: Path) -> Diarization:

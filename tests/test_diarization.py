@@ -29,9 +29,11 @@ from transcript.hints import SegmentHints, write_hints
 from transcript.reference import (
     Diarization,
     Failure,
+    Moved,
     Overlap,
     Passage,
     ReferenceTranscript,
+    Renumbering,
     Word,
     load_reference,
     update_reference,
@@ -265,6 +267,27 @@ class CutAtSpeakerChangesTest(unittest.TestCase):
         self.assertEqual(result.diarization.min_turn_ms, 0)
         self.assertEqual(result.processing.processed_at, NOW.isoformat())
 
+    def test_a_cut_says_where_each_former_passage_lies_now(self) -> None:
+        single = Passage(
+            index=2,
+            text="e",
+            start_ms=2500,
+            end_ms=2800,
+            words=(Word("e", 2500, 2800),),
+        )
+        before = reference(two_speaker_passage(), single)
+
+        result = assign_speakers(before, TWO_SPEAKERS, min_turn_ms=0, now=NOW)
+
+        self.assertEqual(
+            result.processing.renumbered,
+            Renumbering(
+                before.processing.processed_at,
+                # the cut one where its first part begins; the other unchanged
+                (Moved(1, unchanged=False), Moved(3, unchanged=True)),
+            ),
+        )
+
     def test_the_same_inputs_again_change_nothing_and_keep_the_version(self) -> None:
         first = assign_speakers(
             reference(two_speaker_passage()), TWO_SPEAKERS, min_turn_ms=0, now=NOW
@@ -291,6 +314,13 @@ class CutAtSpeakerChangesTest(unittest.TestCase):
             (whole.passages[0].start_ms, whole.passages[0].end_ms), (0, 2000)
         )
         self.assertEqual(whole.processing.processed_at, later.isoformat())
+        self.assertEqual(
+            whole.processing.renumbered,
+            Renumbering(
+                cut.processing.processed_at,
+                (Moved(1, unchanged=False), Moved(1, unchanged=False)),
+            ),
+        )
 
     def test_without_threshold_a_former_cut_is_undone(self) -> None:
         cut = assign_speakers(
@@ -674,6 +704,8 @@ class DiarizeSessionTest(unittest.TestCase):
 
         self.assertEqual((first.passages, first.recut, first.uncut), (2, True, 0))
         self.assertEqual([p.text for p in cut.passages], ["Wir den", SECRET])
+        assert cut.processing.renumbered is not None  # stored and read back
+        self.assertEqual(cut.processing.renumbered.passages, (Moved(1, False),))
         self.assertEqual((second.passages, second.recut), (2, False))
         update.assert_not_called()
         self.assertEqual(load_reference(self.paths, 1), cut)

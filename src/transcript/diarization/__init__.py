@@ -53,6 +53,7 @@ from transcript.reference import (
     Overlap,
     Passage,
     ReferenceTranscript,
+    Renumbering,
     Word,
     check_span,
     load_reference,
@@ -324,7 +325,8 @@ def assign_speakers(
     label drawn into its neighbour (`split_at_speaker_changes`); without, it
     stays whole. A passage takes the majority of its word labels. When passage
     boundaries move, `processing.processed_at` becomes `now`, and always later
-    than before.
+    than before, and `processing.renumbered` says where each passage of the
+    previous version lies now, so that review decisions can follow it.
     """
     if reference.status != "transcribed":
         raise ValueError("only a transcribed segment can get speaker labels")
@@ -339,7 +341,9 @@ def assign_speakers(
     processing = reference.processing
     if _boundaries(passages) != _boundaries(reference.passages):
         processing = replace(
-            processing, processed_at=next_processed_at(processing.processed_at, now)
+            processing,
+            processed_at=next_processed_at(processing.processed_at, now),
+            renumbered=Renumbering.between(reference, passages),
         )
     return replace(
         reference,
