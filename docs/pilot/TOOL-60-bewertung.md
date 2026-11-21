@@ -2,6 +2,20 @@
 
 Stand 2026-11-21. Grundlage sind die Pilotsitzung aus [TOOL-58](TOOL-58-erste-session.md) im Stand nach [TOOL-96](../spikes/TOOL-96-sprecherwechsel.md) und eine zweite Sitzung derselben Gruppe. Der Bericht enthält nur Kennzahlen: keine Session-Keys, keine Gruppe, keine Namen, keine Labels und keinen Transkripttext (TOOL-66). Handreferenzen und Bögen bleiben unter `work/`. Der Agent hat nur die Zählwerte von `transcript calibrate` gesehen. Plan: [`docs/plans/TOOL-60-pilot-review.md`](../plans/TOOL-60-pilot-review.md).
 
+## Ergebnis in Kürze
+
+- **Die Pipeline trägt, das Transkript ist das Limit.** Von der Aufnahme bis zum Narrata-Import läuft alles lokal, in rund 12 min Rechenzeit und mit 2–4 min Handarbeit pro Abend. Der Wortlaut bleibt mit 21–32 % WER fehlerhaft, und lokal ist nicht mehr drin (TOOL-93). Die Grenze setzt die Aufnahme am Tisch.
+- **Die Kernhypothese hält als Rangfolge, nicht als Eingrenzung.** Die Confidence sortiert die Fehler an zwei Sitzungen gleich gut (AUC 0,75–0,78), und Fehlalarme sind selten. Bei dieser Fehlerrate bleiben aber 74–89 % der Hörzeit markiert, und 5–16 % der Fehler liegen in sicheren Passagen. Ein Review, das nur die Markierten prüft, ist weder kurz noch vollständig.
+- **Die Sprecher stimmen.** Nach TOOL-96 liegt der Sprecherfehler 3,4–3,6 Punkte über Plaud. Die Diarisierung braucht kein Ticket.
+- **Entscheidungen:**
+  - Das Review mit Anhören wandert nach Narrata (IOA-1326), die CSV der Pipeline wird eingefroren.
+  - IT/OT in Narrata bekommt das Go (IOA-1302).
+  - Die Mikrofon-Empfehlung wird nur dokumentiert.
+  - Das Remote-Backend (TOOL-14) entfällt.
+- **Neu beobachtet:**
+  - Archiv-Schreibtreffer sind fast immer Fehlalarm, 2 von 18 (TOOL-99).
+  - Der Mundartsprecher hat an zwei Abenden etwa die doppelte Fehlerquote, auch gegen eine Hochdeutsch-Referenz (IOA-1326).
+
 ## Messungen
 
 ### Material
@@ -91,3 +105,76 @@ Nach Score-Band sind die Archiv-Schreibtreffer unter 0,9 zu 0 % richtig (0 von 1
 
 - **Archiv-Schreibtreffer sind fast immer Fehlalarm.** Mit 11 % liegen sie weit unter den Schreibtreffern bei `recent` (80 %) und noch unter den Klang-Treffern (28 %). Diese heben eine Passage seit TOOL-35 schon nicht mehr an.
 - **Die Wirkung auf die Bewertung ist klein.** Laut TOOL-83 haben nur 15 Passagen ausschließlich Archiv-Schreibtreffer, und 5 davon sind auch aus anderem Grund markiert. Die Hinweisdatei und das Review würden aber um 16 falsche Vorschläge leichter.
+- **Ohne Kontext nicht entscheidbar:** Der Vergleich nach Schreibung oder Klang weiß nicht, ob ein Begriff in die Szene passt. Diese Entscheidung gehört zur LLM-Korrektur mit Kontext in Narrata (IOA-1297). Der beurteilte Bogen dient dem Spike IOA-1302 als lokaler Testsatz.
+
+## Bewertung je Bereich
+
+| Bereich | Bewertung | Grundlage |
+| --- | --- | --- |
+| Referenztranskription | **Begrenzt, lokal ausgereizt.** WER an der Pilotsitzung 21–30 % (Spanne über Seeds 25,6–35,4 % an B), an der zweiten Sitzung 31,5 %. Fast die Hälfte der Fehler sind Auslassungen von Inhaltswörtern. Kein Modell und keine Einstellung bringt mehr als die Seed-Streuung, Entrauschen auch nicht. Plaud ist bei den Wörtern nicht besser. | TOOL-92, TOOL-93, TOOL-96 (Neuwertung), Messungen oben |
+| Konfidenz- und Unsicherheitssignale | **Gut als Rangfolge.** AUC 0,75–0,78 an zwei Sitzungen, unter den unsichersten 30 % der Wörter sind 57–68 % falsch. Auslassungen haben keine Confidence und fallen nur über `gap`, `sparse` oder `crosstalk` auf. Halluzinationen am Aufnahmeende wurden richtig `uncertain`. | TOOL-35, TOOL-58, Messungen oben |
+| Sprechertrennung und Zuordnung | **Gut.** Sprecherfehler 6,2 % / 3,6 % nach dem Schnitt am Sprecherwechsel, 3,4–3,6 Punkte über Plaud. Die Zuordnung dauert 2–4 min pro Abend, ist nach einem Schnitt neu zu bestätigen und trifft alle Labels. | TOOL-68, TOOL-86, TOOL-96 |
+| Segmentüberlappungen | **Entfällt.** Ohne eigene Segmentierung gibt es keine Überlappungen, eine Aufnahme ist ein Segment. | TOOL-62 |
+| Review-Kandidaten | **Zu viele für ein vollständiges Review, zu wenige für ein sicheres.** 237–262 Kandidaten pro Stunde Audio, 66 % der Passagen, 79 % der Hörzeit. Fehlalarme: 5 von 50 markierten Passagen an A–C. Übersehen: 5–16 % der Fehler, an der zweiten Sitzung jeder sechste. | TOOL-58, TOOL-96, Messungen oben |
+| Domänenwissen und Relevanzregel | **Hilfreich bei `recent`, schädlich beim Archiv.** Schreibtreffer auf `recent` stimmen zu 80 %, auf `archive` zu 11 %, Klang-Treffer zu 28 %. Die Relevanz-Stufen aus TOOL-41 trennen damit genau dort, wo es zählt. Hotwords helfen bei Namen, lassen aber Sprache aus und erhöhen die Seed-Streuung (TOOL-81). | TOOL-35, TOOL-83, Messungen oben |
+| CSV-Review | **Nicht alltagstauglich.** 35 Entscheidungen pro Stunde, ein vollständiges Review läge bei rund 25 h pro Abend. Ohne Abspielhilfe musste ein eigenes Skript her. Längerer Hörkontext hilft. | TOOL-58, TOOL-59 |
+| JSON-Contract | **Trägt.** Der Export der Pilotsitzung importiert ohne Korrektur, vor und nach dem Schnitt am Sprecherwechsel. Der Re-Import ist idempotent und hat nach dem Schnitt 0 Passagen entfernt, weil die IDs erhalten bleiben. Offen ist, dass Narrata abhängige Links an aktualisierten Passagen nicht prüft. | TOOL-58, TOOL-96, TOOL-98, IOA-1327 |
+| TXT- und DOCX-Ausgabe | **Funktioniert, nicht gesondert bewertet.** Offene Passagen sind als `[unklar …]` markiert, und es gibt keinen beobachteten Fehler. Die Lesbarkeit begrenzt der Wortlaut, eine Lesefassung entsteht in Narrata. | TOOL-58, IOA-1318 |
+| Resume und Fehlerverhalten | **Gut.** Fertige Schritte werden wiederverwendet, Fehlversuche stehen in `pipeline.log`. Bei Wechsel von Modell oder Snapshot hält `process` an. Die Pilot-Workarounds (CUDA-Bibliotheken, Startskript) sind behoben. | TOOL-57, TOOL-59, TOOL-94, TOOL-95 |
+| Laufzeit und Ressourcen | **Gut.** Rund 12 min für 5:26 h Audio (27-fache Echtzeit), bis 13,9 GiB RAM und 2,5 GiB VRAM. Es gibt keine API-Kosten. | TOOL-59 |
+| Manuelle Zeit pro Stunde Audio | **Zuordnung vernachlässigbar, Review nicht.** Die Zuordnung braucht 0,4–0,7 min. Ein Review der markierten Passagen hieße allein 47 min Hören pro Stunde Audio (79 % markierte Zeit), dazu Entscheiden und Tippen. Die Hochrechnung aus TOOL-58 von 4,6 h gilt für die längeren Passagen von damals und ist am geteilten Stand nicht neu gemessen. | TOOL-58, TOOL-59, TOOL-96 |
+
+## Bekannte Grenzen von V0.1
+
+- **Der Wortlaut bleibt fehlerhaft.** Rund jedes vierte bis dritte Wort ist falsch oder fehlt, vor allem bei kurzen Einwürfen, bei Übersprechen und bei Mundart. Das Transkript taugt zum Suchen und Wiederfinden, nicht als wörtliches Protokoll.
+- **Auslassungen bleiben unsichtbar.** Ein fehlendes Wort hat keine Confidence. In sicheren Passagen bleiben 5–16 % der Fehler unmarkiert, die meisten davon Ersetzungen, an B mehr als die Hälfte Auslassungen.
+- **Mundart wird hochdeutsch geschrieben.** Das ist für das Archiv meist richtig, aber kein wörtliches Abbild.
+- **Die Sprecher-Labels gelten nur innerhalb einer Sitzung.** Die Zuordnung zu Personen bleibt Handarbeit, es gibt keine Wiedererkennung über Sitzungen hinweg (TOOL-87).
+- **Die Bewertung kennt keine Personen.** Schwellen pro Person gibt es nicht.
+- **Die Messbasis ist schmal:** zwei Sitzungen derselben Gruppe, drei Handreferenzen, je ein ASR-Lauf. Die WER einer einzelnen Referenz schwankt um mehrere Punkte.
+- **Eine Aufnahme ist eine Spur.** Mehrspur-Aufnahmen verarbeitet die Pipeline nicht.
+
+## Entscheidungen
+
+| Entscheidung | Ergebnis | Begründung |
+| --- | --- | --- |
+| Review-Kanal | **Narrata-UI, die CSV wird eingefroren** (IOA-1326) | Ein Review mit Anhören braucht eine Oberfläche mit Abspielen und Kontext, die CSV ist dafür das falsche Werkzeug. Narrata kennt die Personen hinter den Passagen und die LLM-Korrektur aus IOA-1297 und kann beides in die Reihenfolge einbeziehen. Rohaudio bleibt lokal, IOA-1326 verlangt Abspielen im Browser ohne Upload. Die CSV bleibt lauffähig, bekommt aber keine Erweiterung. |
+| Review-Umfang | **Kein Pflicht-Review in der Pipeline** | Die Pipeline exportiert nach der Sprecherzuordnung. Unsichere Stellen bleiben im Transkript markiert und gehen als `confidence_tier` an Narrata. Was geprüft wird, entscheidet die Spielleitung in Narrata. |
+| Freigabe IT/OT | **Go für IOA-1302** | Der Wortlaut ist lokal ausgereizt, auf Besseres zu warten bringt nichts. Der Sprecherwechsel liegt unter der Grenze aus TOOL-96. Scheitert IT/OT an Passagen mit mehreren Sprechern, ist das der Anlass, die Diarisierung neu aufzugreifen. |
+| Diarisierung | **Kein Ticket** (TOOL-97 geschlossen) | Der Abstand zu Plaud liegt mit 3,4 / 3,6 Punkten unter der 5-Punkte-Grenze aus TOOL-96. |
+| Aufnahme am Tisch | **Nur dokumentiert** | Die Empfehlung aus TOOL-93, in absteigender Wirkung: ein Ansteckmikrofon je Person mit getrennten Spuren, 2–3 verteilte Grenzflächenmikrofone auf einer Spur, das vorhandene Mikrofon näher an die leisen Plätze. Sie ist nicht gemessen. Ob eine Änderung wirkt, zeigt eine neue Sitzung mit Handreferenz. |
+| Alt-Transkripte | **Bleiben verworfen** | Der Pilot zeigt keinen beobachteten Bedarf. |
+| Remote-Backend (TOOL-14) | **Entfällt, TOOL-14 wird geschlossen** | Es gibt kein Qualitätsproblem, das nur remote lösbar wäre. Plaud als Cloud-Dienst ist bei den Wörtern nicht besser, die Grenze setzt die Aufnahme. |
+| Guard IOA-1280 | **IOA-Ticket** (IOA-1327) | Mit IT/OT und dem Review in Narrata entstehen bald Links an Passagen, deren Text sich bei einem Re-Import ändern kann. |
+| Archiv-Schreibtreffer | **Heben nicht mehr an** (TOOL-99) | 2 von 18 richtig, siehe Messungen. |
+| Gewichtung pro Person | **In Narrata, als Teil des Reviews** (IOA-1326) | Beobachtet an zwei Abenden, dieselbe Person bei etwa der doppelten Fehlerquote. Die Pipeline kennt nur Labels pro Segment, Narrata kennt die Person. |
+| Parakeet-Zweitlauf (TOOL-82) | **Zurückgestellt** | Er findet Auslassungen, dehnt die Markierung aber auf rund vier Fünftel der Zeit aus (TOOL-35). Solange das Review in Narrata nicht steht, fehlt ein Maß, ob mehr Markierung hilft. Das Ticket bleibt offen. |
+
+**Bewusst nicht weiterverfolgt:**
+- **Hörblöcke und ein Review-Dialog in der Pipeline:** Das Review wandert nach Narrata.
+- **Ein anderes ASR-Modell oder andere Einstellungen:** TOOL-93 hat sie geprüft, keines bringt mehr als die Seed-Streuung.
+- **Entrauschen vor der Erkennung:** No-Go nach TOOL-92.
+- **Mehrspur-Aufnahme in der Pipeline:** erst sinnvoll, wenn die Gruppe ein Mehrspur-Setup ausprobieren will.
+- **Modellwahl in Narrata, pro Gruppe oder Sprecher:** Es gibt keinen besseren Modellkandidaten, und die Modellwahl gehört zur lokalen Konfiguration (`asr.model`). Neu zu prüfen ist das, wenn das Mundart-Spike unten einen Kandidaten zeigt oder TOOL-85 die Transkription für andere Nutzer öffnet. Ein Hinweis steht an TOOL-85.
+- **Ein zweiter ASR-Lauf, wenn die Sprecher bekannt sind:** Whisper hat keine Anpassung an Sprecher. Kurze Ausschnitte erkennt es schlechter, nicht besser. Mundart folgt in dieser Gruppe nicht sauber einer Person.
+- **Die 9 veralteten Pilot-Entscheidungen:** Sie werden nicht in der Pipeline nachgeholt, sondern im Review in Narrata neu entschieden.
+
+## V0.2-Backlog
+
+„Beobachtet“ heißt: im Pilot oder an der zweiten Sitzung gemessen. „Idee“ heißt: plausibel, aber ohne Messung.
+
+| Punkt | Art | Ticket | Ort |
+| --- | --- | --- | --- |
+| Review mit Anhören in der Narrata-UI, mit Gewichtung pro Person | beobachtet: 25 h CSV-Review, Mundartsprecher bei doppelter Fehlerquote | IOA-1326 | Narrata |
+| Warnung beim Re-Import, wenn an geänderten Passagen Links oder Provenienz hängen | beobachtet: Struktur in TOOL-96, Wirkung nicht gemessen | IOA-1327 | Narrata |
+| IT/OT-Einstufung und LLM-Korrektur mit Kontext, Testsatz aus 18 Archiv-Treffern | Go aus TOOL-60 | IOA-1302 | Narrata |
+| Archiv-Schreibtreffer heben keine Passage an | beobachtet: 2 von 18 richtig | TOOL-99 | Pipeline |
+| Hotwords: Seed-Streuung und Auslassungen | beobachtet: bis 8 Punkte zwischen Seeds | TOOL-81 | Pipeline |
+| Parakeet-Zweitlauf als Signal für Auslassungen | beobachtet: 8 von 9 übersehenen Auslassungen gefunden, aber +15 % Hörzeit | TOOL-82 (zurückgestellt) | Pipeline |
+| Review-Korrekturen auf Archivbegriffe an Narrata | Idee | TOOL-88 (besteht) | Pipeline |
+| Anwesenheit aus dem Kontext, etwa für die Sprecherzahl der Diarisierung | Idee | TOOL-79 (besteht) | Pipeline |
+| Mundart-Spike: bairisch-fähige lokale Modelle an Referenz C | Idee: Gegen die Hochdeutsch-Referenz liegt der Mundartsprecher weiter bei 48 %, an den Auslassungen ändert sich nichts | [kein Ticket: erst, wenn ein lokales bairisch-fähiges Modell bekannt ist] | Pipeline |
+| Zweites Fenster an der zweiten Sitzung, für eine Spanne statt eines Einzelwerts | Idee | [kein Ticket: keine Entscheidung hängt am genauen Wert] | Messung |
+| Neue Sitzung mit geänderter Aufnahme messen | Idee | [kein Ticket: Mikrofon-Empfehlung nur dokumentiert] | Messung |
+| Sprecher über Sitzungen wiedererkennen (Stimmprofile) | Idee, Hauptnutzen wäre die Gewichtung pro Person ohne Handarbeit | TOOL-87 (besteht, M8) | Pipeline |
+| Transkription für andere Narrata-Nutzer | Entscheidung | TOOL-85 (besteht, M7) | beide |
