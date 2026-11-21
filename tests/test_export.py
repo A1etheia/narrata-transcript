@@ -17,11 +17,8 @@ from transcript.export import (
     _REVIEW_STATUS,
     UNLABELLED,
     ExportError,
-    Previous,
     build,
     compose,
-    load_previous,
-    previous_passages,
     write_export,
 )
 from transcript.manifest import Manifest
@@ -61,6 +58,13 @@ def spanning(passage: Passage, start_ms: int | None, end_ms: int | None) -> Pass
     return dataclasses.replace(passage, start_ms=start_ms, end_ms=end_ms)
 
 
+def part(passage: Passage, asr_passage: int, start_ms: int, end_ms: int) -> Passage:
+    """`passage` as a part of backend passage `asr_passage`, cut at a speaker change."""
+    return dataclasses.replace(
+        spanning(passage, start_ms, end_ms), asr_passage=asr_passage
+    )
+
+
 def one_per_second(*passages: Passage) -> ReferenceTranscript:
     """A diarized transcript whose n-th passage starts at n - 1 seconds."""
     return transcript(
@@ -84,10 +88,9 @@ class _ExportCase(_ReportCase):
         assignment: SpeakerAssignment | None = None,
         manifest: Manifest = ONLY_FIRST,
         reference: ReferenceTranscript | None = None,
-        previous: tuple[Previous, ...] = (),
     ) -> dict[str, Any]:
         stored, report = self.reported(decisions, assignment, manifest, reference)
-        return build(stored, manifest, report, PARTICIPANTS, GROUP_ID, previous)
+        return build(stored, manifest, report, PARTICIPANTS, GROUP_ID)
 
     def passages(self, document: dict[str, Any], name: str) -> list[Any]:
         return [passage[name] for passage in document["passages"]]
@@ -267,66 +270,42 @@ class ReviewTest(_ExportCase):
         self.assertEqual(validate(document), ())
 
 
-class CarriedIdTest(_ExportCase):
-    """Ids of the previous export, across a cut at a speaker change (TOOL-96)."""
+class CutIdTest(_ExportCase):
+    """Ids across a cut at a speaker change (TOOL-96)."""
 
-    def setUp(self) -> None:
-        super().setUp()
-        self.reference = one_per_second(
-            spoken(1, *SURE), spoken(2, *SURE), spoken(3, *SURE)
-        )
-        self.rated(self.reference)
-        self.before = self.exported(reference=self.reference)
-
-    def again(self, *passages: Passage) -> dict[str, Any]:
+    def ids(self, *passages: Passage) -> list[str]:
         reference = transcript(*passages, diarization=diarized())
         self.rated(reference)
-        document = self.exported(
-            reference=reference, previous=previous_passages(self.before)
-        )
+        document = self.exported(reference=reference)
         self.assertEqual(validate(document), ())
-        return document
+        return self.passages(document, "id")
 
-    def test_an_unchanged_session_keeps_every_id(self) -> None:
-        after = self.again(*self.reference.passages)
+    def test_a_cut_passage_keeps_its_id_in_its_first_part(self) -> None:
+        uncut = self.ids(at(spoken(1, *SURE), 0), at(spoken(2, *SURE), 1000))
 
-        self.assertEqual(after, self.before)
-
-    def test_a_split_passage_keeps_its_id_in_its_first_part(self) -> None:
-        after = self.again(
-            spanning(spoken(1, *SURE, label="SPEAKER_01"), 0, 400),
-            spanning(spoken(2, *SURE), 400, BLOCK_MS),
-            at(spoken(3, *SURE), 1000),
-            at(spoken(4, *SURE), 2000),
+        cut = self.ids(
+            # one SPEAKER_01 word, three SPEAKER_00: the majority stays SPEAKER_00
+            part(spoken(1, 0.9, label="SPEAKER_01"), 1, 0, 400),
+            part(spoken(2, *SURE), 1, 400, BLOCK_MS),
+            part(spoken(3, *SURE), 2, 1000, 1000 + BLOCK_MS),
         )
 
-        old = self.passages(self.before, "id")
-        self.assertEqual(
-            self.passages(after, "id"),
-            [old[0], "p-00000400-s01-speaker-00", old[1], old[2]],
+        self.assertEqual(cut, [uncut[0], "p-00000400-s01-speaker-00", uncut[1]])
+        self.assertEqual(uncut[0], "p-00000000-s01-speaker-00")
+
+    def test_a_later_part_never_takes_a_first_parts_id(self) -> None:
+        ids = self.ids(
+            part(spoken(1, 0.9, label="SPEAKER_01"), 1, 0, 1000),
+            part(spoken(2, *SURE), 1, 1000, 1000 + BLOCK_MS),  # sorts first at 1 s
+            part(spoken(3, *SURE), 2, 1000, 1000 + BLOCK_MS),
         )
-        self.assertEqual(after["passages"][0]["speaker_label"], "s01-SPEAKER_01")
-
-    def test_only_a_merge_loses_an_id(self) -> None:
-        after = self.again(
-            spanning(spoken(1, *SURE), 0, 1000 + BLOCK_MS),
-            at(spoken(2, *SURE), 2000),
-        )
-
-        old = self.passages(self.before, "id")
-        self.assertEqual(self.passages(after, "id"), [old[0], old[2]])
-
-    def test_an_id_no_passage_took_over_is_not_minted_again(self) -> None:
-        taken = Previous("p-00001000-s01-speaker-00", 5000, 6000)
-
-        document = self.exported(reference=self.reference, previous=(taken,))
 
         self.assertEqual(
-            self.passages(document, "id"),
+            ids,
             [
                 "p-00000000-s01-speaker-00",
                 "p-00001000-s01-speaker-00-2",
-                "p-00002000-s01-speaker-00",
+                "p-00001000-s01-speaker-00",
             ],
         )
 
@@ -442,26 +421,12 @@ class FileTest(_KnownSession):
         self.assertEqual(ids[0], ids[1])
         self.assertEqual(after["passages"][1]["text"], "Grauwasser")
 
-    def test_the_previous_export_hands_on_its_ids(self) -> None:
-        document = json.loads(self.written())
-        for n, passage in enumerate(document["passages"]):
-            passage["id"] = f"p-{n:08d}-earlier"
-        write_export(self.paths, document)
-
-        after = json.loads(self.written())
-
-        self.assertEqual(
-            [p["id"] for p in after["passages"]],
-            [f"p-{n:08d}-earlier" for n in range(len(document["passages"]))],
-        )
-
-    def test_an_invalid_previous_export_hands_on_nothing(self) -> None:
+    def test_the_ids_do_not_depend_on_the_previous_file(self) -> None:
         first = self.written()
-        self.paths.transcript_export.write_bytes(b'{"passages": []}')
-        self.assertEqual(load_previous(self.paths), ())
         self.paths.transcript_export.write_bytes(b"not json")
-        self.assertEqual(load_previous(self.paths), ())
 
+        self.assertEqual(self.written(), first)
+        self.paths.transcript_export.unlink()
         self.assertEqual(self.written(), first)
 
     def test_names_and_text_stay_readable(self) -> None:

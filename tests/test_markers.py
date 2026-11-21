@@ -43,6 +43,8 @@ def block(
         speaker=SpeakerRef(
             segment, "SPEAKER_00", assigned, 11 if assigned == "person" else None
         ),
+        asr_passage=1,
+        asr_speaker="SPEAKER_00",
     )
 
 

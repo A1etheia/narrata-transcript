@@ -16,7 +16,8 @@ first labelled run.
 This module logs nothing and its errors name no text and no label.
 """
 
-from collections.abc import Sequence
+import itertools
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 
 from transcript.reference import Passage, Word, majority_speaker
@@ -106,6 +107,14 @@ def rejoin(parts: Sequence[Passage]) -> Passage:
         words=words,
         speaker=majority_speaker(words),
     )
+
+
+def backend_passages(passages: Iterable[Passage]) -> list[Passage]:
+    """The passages as the backend delivered them, undoing an earlier cut."""
+    return [
+        rejoin(list(parts))
+        for _, parts in itertools.groupby(passages, key=lambda p: p.asr_passage)
+    ]
 
 
 def _runs(words: Sequence[Word]) -> list[_Run]:

@@ -236,6 +236,26 @@ class SpeakerTest(_WorkingCase):
             ),
         )
 
+    def test_a_cut_part_keeps_its_backend_passage_and_label(self) -> None:
+        reference = transcript(
+            spoken(1, 0.9, label="SPEAKER_01"),
+            dataclasses.replace(spoken(2, *SURE), asr_passage=1),
+            dataclasses.replace(spoken(3, *SURE, label="SPEAKER_01"), asr_passage=2),
+            diarization=diarized(),
+        )
+        self.rated(reference)
+
+        result = self.working(reference=reference)
+
+        self.assertEqual(
+            [(b.speaker.label, b.asr_passage, b.asr_speaker) for b in result.blocks],
+            [
+                ("SPEAKER_01", 1, "SPEAKER_00"),  # one word of four
+                ("SPEAKER_00", 1, "SPEAKER_00"),
+                ("SPEAKER_01", 2, "SPEAKER_01"),
+            ],
+        )
+
     def test_a_segment_without_diarization_has_no_label(self) -> None:
         reference = transcript(spoken(1, *SURE, label=None))
         self.rated(reference)

@@ -556,6 +556,7 @@ Jede Passage des Referenztranskripts wird ein Block, in Aufnahmereihenfolge:
   - `origin`, `status` (`null` bei `automatic`)
   - `asr_text` (immer der erkannte Text, unverändert), `text`
   - `speaker` mit `label`, `assigned` und `user_id`
+  - `asr_passage` (Nummer der Backend-Passage, aus der der Block am Sprecherwechsel geschnitten wurde, TOOL-96) und `asr_speaker` (Mehrheitslabel dieser ganzen Backend-Passage). Der Export prägt daraus die Passagen-ID.
 - **Sprecher:** Das Label bleibt immer stehen. Eine gültig zugeordnete Person kommt mit `assigned: person` und `user_id` dazu. Alles andere bleibt `open`, `unknown` oder `multiple` ohne `user_id`. Ohne `assignment.json` sind alle Labels `open`, und die Konsole verweist auf `transcript speakers`. Segmente ohne Diarisierung tragen `label: null`.
 - **Nie angewendet:** veraltete und verwaiste Entscheidungen, nicht anwendbare Einträge der Sprecherzuordnung und Segmente ohne Transkript. Sie stehen unter `findings` mit `kind`:
   - `stale_decision` und `orphaned_decision`, mit Segment und Passage;
@@ -564,7 +565,7 @@ Jede Passage des Referenztranskripts wird ein Block, in Aufnahmereihenfolge:
 - **Gleiche Eingaben, gleiche Datei:** Es gibt keinen Zeitstempel. Unter `inputs` stehen Snapshot-Kennung, pro Segment `reference_processed_at` und `labels_version` sowie die SHA-256 von `decisions.json` und `assignment.json` (`null` ohne Datei). Ein erneuter Lauf mit unveränderten Eingaben ergibt byteweise dieselbe Datei.
 - **Exit-Code:** `0` heißt geschrieben ohne Funde, `1` geschrieben mit Funden, `2` Fehler. Offene Blöcke sind kein Fund. Sie werden nur gezählt.
 
-Die Datei `work/<gruppe>/<ordinal>/working/transcript.json` (`format_version: 1`) enthält Text und User-IDs und bleibt unter `work/`. Die Konsole zeigt nur Zahlen sowie Segment-, Passagen- und Eintragsnummern, etwa `working version: 539 block(s): 482 automatic, 41 decided, 16 open`.
+Die Datei `work/<gruppe>/<ordinal>/working/transcript.json` (`format_version: 2`, seit TOOL-96 mit `asr_passage` und `asr_speaker`; eine Datei der Version 1 lehnen Bericht und Export ab, `transcript working` schreibt sie neu) enthält Text und User-IDs und bleibt unter `work/`. Die Konsole zeigt nur Zahlen sowie Segment-, Passagen- und Eintragsnummern, etwa `working version: 539 block(s): 482 automatic, 41 decided, 16 open`.
 
 ## Markierungen
 
@@ -628,11 +629,9 @@ transcript export beispielgruppe/042
 - **Aufnahmen und Version:** Eine Aufnahme sind die aufeinanderfolgenden Segmente aus derselben Datei in `input/`. Bei einer Aufnahme ist `contract_version` `"1.0"`, und `source` nennt Dateiname, Länge und SHA-256 der Aufnahme. Bei mehreren Aufnahmen ist sie `"1.1"` (IOA-1287): `source` nennt die erste, `source.recordings[]` alle in Sitzungsreihenfolge, jede mit `starts_at`, ihrem Beginn auf der Session-Zeitachse. Pausen zwischen den Aufnahmen sind unbekannt, deshalb liegen sie lückenlos hintereinander.
 - **Sitzung:** `session.group` kommt aus `narrata.groups` der Konfiguration, Ordinal, `play_session_id` und Datum aus dem Manifest. Fehlt der Eintrag für die Gruppe, bricht der Export ab.
 - **Sprecher:** Labels gelten pro Segment, im Contract für die Sitzung, daher `s01-SPEAKER_00`. Passagen ohne Label heißen `unlabelled`. In `speakers` steht nur bei einer zugeordneten Person `participant_id` (User-ID) und `display_name` aus dem Wissens-Snapshot; `open`, `unknown`, `multiple` und `unlabelled` sind `null`.
-- **Passagen-ID:** Eine ID wird einmal geprägt und danach mitgeführt, wie der Contract es verlangt.
-  - **Prägen:** `p-<Sitzungsstart in ms, 8-stellig>-<Slug des Labels>`, etwa `p-00734120-s01-speaker-00`. Ist die ID schon vergeben, kommt `-2`, `-3` dazu.
-  - **Mitführen:** Liegt schon ein gültiger `transcript.json` vor, liest der Export ihn. Jede alte Passage gibt ihre ID an die erste neue Passage weiter, die in ihr beginnt. Eine am Sprecherwechsel geteilte Passage (TOOL-96) behält ihre ID deshalb im ersten Teil, auch wenn dessen Label wechselt. Die übrigen Teile bekommen neu geprägte IDs.
-  - **Verschwinden:** Eine ID geht nur verloren, wenn zwei alte Passagen zu einer verschmelzen, etwa nach einer neuen Diarisierung. Sie wird nie an eine andere Passage vergeben. Narrata lehnt den Import dann ohne `--replace` ab und nennt die fehlenden Keys.
-  - **Ohne vorigen Export** wird jede ID geprägt, das gilt auch für eine ungültige oder unlesbare Datei. Ein Re-Export nach weiterem Review behält jede ID, weil Start und Label aus dem Referenztranskript stammen, das kein Review ändert.
+- **Passagen-ID:** `p-<Sitzungsstart in ms, 8-stellig>-<Slug des Labels>`, etwa `p-00734120-s01-speaker-00`. Ist die ID schon vergeben, kommt `-2`, `-3` dazu. Jeder Export ergibt dieselben IDs, wie der Contract es verlangt, denn Start und Label stammen aus dem Referenztranskript, das kein Review ändert. Der Export liest dafür keine frühere Datei unter `output/`.
+  - **Geteilte Passagen (TOOL-96):** Der erste Teil einer am Sprecherwechsel geteilten Backend-Passage bekommt seine ID aus Start und Mehrheitslabel der ganzen Backend-Passage (`asr_speaker`). Das ist genau die ID, die die Passage vor dem Schnitt hatte, auch wenn der Teil selbst ein anderes Label trägt. Die übrigen Teile bekommen eine neue ID aus eigenem Start und Label. Erste Teile werden zuerst geprägt, damit kein späterer Teil ihre ID belegt.
+  - **Neue IDs:** Nur neu transkribieren oder neu diarisieren mit dem Modell kann Start oder Mehrheitslabel einer Backend-Passage ändern und damit ihre ID. Narrata lehnt den Import dann ohne `--replace` ab und nennt die fehlenden Keys.
 - **Zeit:** `start`, `end` und `markers[].at` in Sekunden Session-Zeit, höchstens drei Nachkommastellen.
 
 | Arbeitsfassung | Contract |

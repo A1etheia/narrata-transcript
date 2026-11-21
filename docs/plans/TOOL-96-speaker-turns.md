@@ -30,11 +30,11 @@ Danach enthält eine Passage nur noch eine sprechende Person. Heute ist jedes Wh
   - Ein Lauf mit gleichem Ergebnis schreibt nichts und ändert die Marke nicht.
   - `processed_at` heißt danach „Version der Passagen“. Das wird in `docs/referenzformat.md` dokumentiert.
   - Diese Lösung ist kleiner als eine zweite Versionsmarke in sieben Modulen.
-- **Passagen-IDs werden mitgeführt** (Contract-Regel 2 und Teilungsregel):
-  - `export` liest die vorige `output/<s>/transcript.json`, falls vorhanden.
-  - Eine neue Passage, deren Start in einer alten Passage liegt und die als erste darin beginnt, erbt deren ID. Die anderen Teile bekommen eine neue ID nach der bisherigen Prägeregel.
-  - So verschwindet beim Re-Import von JdG #22 kein Key, und Narrata braucht keine Änderung und kein IOA-Ticket.
-  - Keys verschwinden nur, wenn zwei alte Passagen zu einer verschmelzen, zum Beispiel nach einer neuen Diarisierung. Die Narrata-Ablehnung macht das sichtbar, das wird dokumentiert.
+- **Passagen-IDs werden aus der Herkunft geprägt** (Contract-Regel 2 und Teilungsregel; geändert in Chunk 4, siehe Nachtrag):
+  - Die Arbeitsfassung führt pro Block `asr_passage` und `asr_speaker`, das Mehrheitslabel der ganzen Backend-Passage (`rejoin`). Sie steigt dafür auf Format 2.
+  - Der erste Teil einer Backend-Passage bekommt die ID aus deren Start und `asr_speaker`, also genau die ID, die die Passage vor TOOL-96 hatte. Die anderen Teile bekommen eine neue ID aus eigenem Start und Label, eindeutig gegen die ersten Teile.
+  - So verschwindet beim Re-Import von JdG #22 kein Key, und Narrata braucht keine Änderung und kein IOA-Ticket. Der Export bleibt eine Funktion von `work/` und liest `output/` nicht.
+  - Keys verschwinden nur, wenn eine neue Diarisierung mit Modell die Mehrheitslabels ändert. Das galt schon vor TOOL-96. Die Narrata-Ablehnung macht es sichtbar, das wird dokumentiert.
 - **Hörblöcke im Review** (Umfang 3) kommen nicht in dieses Ticket. Ob Nachbarpassagen beim Hören wieder zusammengefasst werden, hängt an der Entscheidung über Review-Kanal und Review-Umfang in TOOL-60. Dort steht der Review-Dialog mit Abspielen schon als abhängig vermerkt.
 - **Messung:** gemessen wird auf zwei Wegen.
   - Das Spike-Skript misst mit der Repo-WDER, auf Passagenebene (Passagenlabel je Wort) und auf Wortebene (Wortlabel).
@@ -100,10 +100,11 @@ Danach enthält eine Passage nur noch eine sprechende Person. Heute ist jedes Wh
 - AC: Ein zweiter Lauf mit gleichen Eingaben schreibt nichts und behält `processed_at`. Eine v2-Datei wird gelesen und beim Diarisieren zu v3. Eine geänderte Schwelle ergibt `stale` und wird ohne Modell neu geschnitten. Gespeicherte Entscheidungen auf einem neu geschnittenen Segment werden `stale` gemeldet, nicht angewendet.
 
 ### Chunk 4 — Passagen-IDs mitführen
-- Dateien: `src/transcript/export.py`, `tests/test_export.py`, README „JSON-Export“
-- Änderung: `compose` liest den vorigen Export, falls vorhanden und gültig. `build` vergibt für jede alte Passage ihre ID an die erste neue Passage, die in ihr beginnt. Alle anderen IDs werden wie bisher geprägt und gegen die geerbten eindeutig gehalten. Ohne vorigen Export bleibt das Ergebnis byte-gleich mit heute.
+- Dateien: `src/transcript/working.py`, `src/transcript/export.py`, `src/transcript/diarization/turns.py`, Tests, README „Arbeitsfassung“ und „JSON-Export“
+- Änderung: `Block` bekommt `asr_passage` und `asr_speaker`, die Arbeitsfassung Format 2. `export.build` prägt zuerst die IDs der ersten Teile aus Start und `asr_speaker`, dann die der übrigen Teile aus Start und eigenem Label. Ohne Schnitt bleibt das Ergebnis byte-gleich mit heute.
 - Verify: `scripts/check`
-- AC: Ein Re-Export nach dem Schnitt enthält alle IDs des vorigen Exports, solange keine Passagen verschmolzen sind. Eine geteilte Passage behält ihre ID im ersten Teil, auch wenn dessen Label wechselt. Die Schema-Prüfung bleibt grün.
+- AC: Ein Re-Export nach dem Schnitt enthält alle IDs des Exports vor dem Schnitt. Eine geteilte Passage behält ihre ID im ersten Teil, auch wenn dessen Label wechselt. Der Export liest `output/` nicht. Die Schema-Prüfung bleibt grün.
+- Nachtrag: Die erste Umsetzung (`be8a71f`) las die vorige `output/<s>/transcript.json` und vergab IDs nach Zeitlage. Die Review fand zwei Schwächen. Erstens hingen die IDs an einer Ausgabedatei: Wer `output/` löscht oder anderswo exportiert, bekommt still neue IDs, und `transcript status` verglich gegen eine Datei, aus der es sein Soll selbst baute. Zweitens war unklar, was bei einer ungültigen Vorgängerdatei passiert. Die Herkunft aus `asr_passage` löst beides ohne Dateizugriff.
 
 ### Chunk 5 — Neuverarbeitung, Messung nachher, Entscheidung
 - Dateien: `docs/spikes/TOOL-96-sprecherwechsel.md`, Plan-Nachtrag

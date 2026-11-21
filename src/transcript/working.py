@@ -10,7 +10,9 @@ candidates and decisions (TOOL-36, TOOL-46) and the speaker assignment
 
 The recognised text stays beside the result, so no uncertainty disappears, and
 no step makes text up: an `unintelligible` passage has no text at all. The
-speaker label stays; a validly assigned person is added to it.
+speaker label stays; a validly assigned person is added to it. A passage cut at
+a speaker change (TOOL-96) keeps the number and majority label of the backend
+passage it came from, so the export can give its first part the old id.
 
 A decision or speaker entry that does not fit the transcript any more, and a
 segment without a transcript, is a finding: reported, never applied. Equal
@@ -24,7 +26,7 @@ name file, block and field only.
 import dataclasses
 import functools
 from collections import Counter
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, TypeVar, get_args
@@ -42,6 +44,7 @@ from transcript.decisions import (
     load_decisions,
     review_items,
 )
+from transcript.diarization.turns import backend_passages
 from transcript.jsonfile import DataFileError, write_atomic
 from transcript.knowledge import load_snapshot
 from transcript.manifest import Manifest
@@ -58,7 +61,7 @@ from transcript.speakers import (
 )
 from transcript.speakers import FindingKind as SpeakerFindingKind
 
-WORKING_FORMAT_VERSION = 1
+WORKING_FORMAT_VERSION = 2  # 2: `asr_passage` and `asr_speaker` (TOOL-96)
 _T = TypeVar("_T")
 
 
@@ -95,6 +98,8 @@ class Block:
     asr_text: str  # as recognised, unchanged
     text: str | None  # the result; None for `unintelligible`
     speaker: SpeakerRef
+    asr_passage: int  # the backend passage it was cut from (TOOL-96)
+    asr_speaker: str | None  # that whole backend passage's majority label
 
     @property
     def is_candidate(self) -> bool:
@@ -173,9 +178,7 @@ def build(
     state = review_items(found, decisions)
     items = {(i.candidate.segment, i.candidate.passage): i for i in state.items}
     blocks = tuple(
-        _block(reference.segment.index, passage, items, speakers)
-        for reference in ordered
-        for passage in reference.passages
+        block for reference in ordered for block in _blocks(reference, items, speakers)
     )
     findings = [
         *(WorkingFinding("missing_segment", index) for index in found.not_rated),
@@ -216,11 +219,29 @@ def _segment_inputs(
     )
 
 
+def _blocks(
+    reference: ReferenceTranscript,
+    items: dict[tuple[int, int], ReviewItem],
+    speakers: SpeakerMap,
+) -> Iterator[Block]:
+    """The blocks of one segment, in passage order."""
+    segment = reference.segment.index
+    # the majority label of each backend passage, by `asr_passage`
+    asr_speakers = {
+        p.asr_passage: p.speaker for p in backend_passages(reference.passages)
+    }
+    for passage in reference.passages:
+        yield _block(
+            segment, passage, items, speakers, asr_speakers[passage.asr_passage]
+        )
+
+
 def _block(
     segment: int,
     passage: Passage,
     items: dict[tuple[int, int], ReviewItem],
     speakers: SpeakerMap,
+    asr_speaker: str | None,
 ) -> Block:
     item = items.get((segment, passage.index))
     level: Level = "confident" if item is None else item.candidate.level
@@ -236,6 +257,8 @@ def _block(
         asr_text=passage.text,
         text=text,
         speaker=speakers.resolve(segment, passage.speaker),
+        asr_passage=passage.asr_passage,
+        asr_speaker=asr_speaker,
     )
 
 
@@ -399,6 +422,8 @@ def _block_from(data: dict[str, Any], path: Path) -> Block:
             assigned=_one_of(speaker, "assigned", ASSIGNED, path),
             user_id=speaker.get("user_id"),
         ),
+        asr_passage=_field(data, "asr_passage", int, path),
+        asr_speaker=_optional(data, "asr_speaker", str, path),
     )
 
 

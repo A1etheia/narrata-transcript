@@ -42,8 +42,8 @@ from transcript.asr import BackendIdentity, BackendInfo
 from transcript.audio import sha256_file
 from transcript.diarization.turns import (
     MinTurn,
+    backend_passages,
     can_split,
-    rejoin,
     split_at_speaker_changes,
 )
 from transcript.jsonfile import DataFileError
@@ -330,7 +330,7 @@ def assign_speakers(
         raise ValueError("only a transcribed segment can get speaker labels")
     found = [
         _labelled(passage, run.exclusive_turns)
-        for passage in _backend_passages(reference.passages)
+        for passage in backend_passages(reference.passages)
     ]
     if min_turn_ms is not None:
         cut = MinTurn(ms=min_turn_ms)
@@ -356,18 +356,6 @@ def assign_speakers(
             min_turn_ms=min_turn_ms,
         ),
     )
-
-
-def _backend_passages(passages: Iterable[Passage]) -> list[Passage]:
-    """The passages as the backend delivered them, undoing an earlier cut."""
-    return [
-        rejoin(list(parts))
-        for _, parts in itertools.groupby(passages, key=_asr_passage)
-    ]
-
-
-def _asr_passage(passage: Passage) -> int:
-    return passage.asr_passage
 
 
 def _boundaries(passages: Iterable[Passage]) -> tuple[tuple[int, int], ...]:
