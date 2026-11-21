@@ -28,7 +28,7 @@ import subprocess
 import sys
 import time
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from itertools import permutations
@@ -40,7 +40,12 @@ from transcript import audio, calibration, diarization, manifest
 from transcript.config import DEFAULT_CONFIG, PROJECT_ROOT, load_config
 from transcript.hints import stored_hints
 from transcript.jsonfile import DataFileError
-from transcript.reference import ReferenceTranscript, load_reference
+from transcript.reference import (
+    Passage,
+    ReferenceTranscript,
+    Word,
+    load_reference,
+)
 from transcript.session import SessionKey, SessionPaths
 from transcript.uncertainty import segment_assessment
 
@@ -418,18 +423,33 @@ def _repetition(tokens: Sequence[str]) -> float:
     return len(covered) / len(tokens) if tokens else 0.0
 
 
+def _word_label(word: Word, passage: Passage) -> str | None:
+    return word.speaker
+
+
 def _wder(
-    reference: ReferenceTranscript, hand: calibration.HandReference, clip: HandClip
+    reference: ReferenceTranscript,
+    hand: calibration.HandReference,
+    clip: HandClip,
+    label_of: Callable[[Word, Passage], str | None] = _word_label,
 ) -> tuple[float | None, int]:
-    """TOOL-20: words recognised exactly, label mapped 1:1 to the hand speakers."""
+    """TOOL-20: words recognised exactly, label mapped 1:1 to the hand speakers.
+
+    `label_of` picks the label each word is scored with: by default its own
+    diarization label, TOOL-96 also scores the label of its passage.
+    """
     texts: list[str] = []
     labels: list[str | None] = []
-    for word in reference.words:
-        if word.start_ms is None or not clip.start_ms <= word.start_ms < clip.end_ms:
-            continue
-        for token in calibration.tokens(word.text):
-            texts.append(token)
-            labels.append(word.speaker)
+    for passage in reference.passages:
+        for word in passage.words:
+            if (
+                word.start_ms is None
+                or not clip.start_ms <= word.start_ms < clip.end_ms
+            ):
+                continue
+            for token in calibration.tokens(word.text):
+                texts.append(token)
+                labels.append(label_of(word, passage))
     pairs: Counter[tuple[str, str]] = Counter()
     matcher = SequenceMatcher(a=hand.tokens, b=texts, autojunk=False)
     for block in matcher.get_matching_blocks():

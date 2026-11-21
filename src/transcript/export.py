@@ -11,11 +11,15 @@ What the contract needs and the working version holds differently:
   becomes `s<NN>-<label>`, e.g. `s01-SPEAKER_00`. A passage without a label is
   `unlabelled`. In `speakers`, only a label assigned to a person names one; an
   open, unknown, several-people or missing label is `null`.
-- A passage id is minted as `p-<session start in ms, 8 digits>-<label slug>`,
-  with `-2`, `-3`, … for a second or third passage with the same start and
-  label. Start and label come from the reference transcript, which no review
-  changes, so a re-export after more review keeps every id; only transcribing
-  or diarizing again makes new passages, with new ids.
+- A passage id is `p-<session start in ms, 8 digits>-<label slug>`, with `-2`,
+  `-3`, … where that id is taken. It is the same on every export (contract
+  rule 2), because start and label come from the reference transcript, which
+  no review changes. A passage cut at a speaker change (TOOL-96) keeps its id
+  in its first part, whatever that part's label: first parts are minted first,
+  from the start and majority label of their backend passage, which gives the
+  id the passage had before the cut. The other parts get new ids from their
+  own start and label. Only diarizing again with new turns can change a
+  backend passage's label, and so its id.
 - An unintelligible passage has the text `""` and an `unintelligible` marker;
   the recognised text stays in `asr_text`. An open passage is
   `review_status: open`, not a marker.
@@ -114,13 +118,11 @@ def build(
     names = {p.user_id: p.display_name for p in participants}
     split = len(manifest.segments) > 1
     speakers: dict[str, dict[str, Any] | None] = {}
-    used: set[str] = set()
     passages = []
-    for found in timed:
+    for found, passage_id in zip(timed, _ids(timed), strict=True):
         label = session_label(found.block)
         speaker = speakers[label] = _speaker(found.block.speaker, names)
         participant_id = None if speaker is None else speaker["participant_id"]
-        passage_id = _mint(found.start_ms, label, used)
         passages.append(
             _passage(found, passage_id, label, participant_id, manifest, split)
         )
@@ -194,8 +196,11 @@ def write_export(paths: SessionPaths, document: dict[str, Any]) -> None:
 
 def session_label(block: Block) -> str:
     """The block's label as the contract names it, unique within the session."""
-    label = block.speaker.label
-    return UNLABELLED if label is None else f"s{block.segment:02d}-{label}"
+    return _session_label(block.segment, block.speaker.label)
+
+
+def _session_label(segment: int, label: str | None) -> str:
+    return UNLABELLED if label is None else f"s{segment:02d}-{label}"
 
 
 def _timed(block: Block, segments: Mapping[int, Segment]) -> _Timed:
@@ -219,6 +224,30 @@ def _speaker(ref: SpeakerRef, names: Mapping[UserId, str]) -> dict[str, Any] | N
         "participant_id": _integer(ref.user_id, "user_id"),
         "display_name": names.get(ref.user_id),
     }
+
+
+def _ids(timed: Sequence[_Timed]) -> list[str]:
+    """The passage id of each of `timed`, which is sorted by start.
+
+    The first part of each backend passage is minted first, from the backend
+    passage's label, so it gets the id the passage had before a cut; then the
+    other parts, from their own label.
+    """
+    first: dict[
+        tuple[int, int], int
+    ] = {}  # backend passage: position of its first part
+    for position, found in enumerate(timed):
+        first.setdefault((found.block.segment, found.block.asr_passage), position)
+    used: set[str] = set()
+    ids: dict[int, str] = {}
+    for position in first.values():  # in time order
+        block = timed[position].block
+        label = _session_label(block.segment, block.asr_speaker)
+        ids[position] = _mint(timed[position].start_ms, label, used)
+    return [
+        ids.get(position) or _mint(found.start_ms, session_label(found.block), used)
+        for position, found in enumerate(timed)
+    ]
 
 
 def _mint(start_ms: int, label: str, used: set[str]) -> str:

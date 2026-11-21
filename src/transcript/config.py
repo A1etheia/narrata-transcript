@@ -41,7 +41,8 @@ _SEGMENTATION_KEYS = {"length_seconds", "overlap_seconds"}
 _AUDIO_KEYS = {"sample_rate", "channels"}
 _AUDIO_CHANNELS = (1, 2)
 _ASR_KEYS = {"model", "device", "compute_type", "beam_size", "retries"}
-_DIARIZATION_KEYS = {"model", "device", "retries"}
+_DIARIZATION_KEYS = {"model", "device", "retries", "min_turn_ms"}
+_MIN_TURN_RANGE = (0, 10_000)  # ms
 _NARRATA_KEYS = {"url", "groups", "recent_sessions", "archive_limit"}
 # Bounds of the transcription-context query parameters, see ios-archiv
 # docs/transcripts.md: `n` (recent_sessions) and `archive_limit`.
@@ -167,6 +168,9 @@ class Config:
     diarization_model: str = "pyannote/speaker-diarization-community-1"
     diarization_device: str = "auto"  # one of _DEVICES; auto prefers cuda
     diarization_retries: int = 2
+    # A passage is cut where the speaker changes; a shorter run of one label is
+    # drawn into its neighbour. 500 ms measured on the pilot (TOOL-96).
+    diarization_min_turn_ms: int = 500
     narrata_url: str | None = None  # base URL of the Narrata API host
     # Narrata group id per group slug; the endpoint addresses groups by id
     narrata_groups: dict[str, int] = field(default_factory=dict)
@@ -246,6 +250,14 @@ def load_config(path: Path) -> Config:
     diarization_retries = _retries(
         path, diarization, "diarization", Config.diarization_retries
     )
+    min_turn_ms = _bounded_int(
+        path,
+        diarization,
+        "diarization",
+        "min_turn_ms",
+        Config.diarization_min_turn_ms,
+        _MIN_TURN_RANGE,
+    )
 
     narrata = _section(path, data, "narrata", _NARRATA_KEYS)
     narrata_url = narrata.get("url")
@@ -322,6 +334,7 @@ def load_config(path: Path) -> Config:
         diarization_model=diarization_model,
         diarization_device=diarization_device,
         diarization_retries=diarization_retries,
+        diarization_min_turn_ms=min_turn_ms,
         narrata_url=narrata_url,
         narrata_groups=narrata_groups,
         narrata_recent_sessions=recent_sessions,
@@ -359,6 +372,7 @@ def format_config(config: Config) -> str:
                 "model": config.diarization_model,
                 "device": config.diarization_device,
                 "retries": config.diarization_retries,
+                "min_turn_ms": config.diarization_min_turn_ms,
             },
             "narrata": {
                 "url": config.narrata_url,

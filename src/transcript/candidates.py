@@ -24,7 +24,7 @@ from transcript.config import LEVELS, Level
 from transcript.hints import Hint, hint_from, stored_hints
 from transcript.jsonfile import DataFileError, write_atomic
 from transcript.manifest import Manifest, Segment
-from transcript.reference import ReferenceTranscript, load_transcribed
+from transcript.reference import ReferenceTranscript, Renumbering, load_transcribed
 from transcript.session import SessionPaths
 from transcript.session_time import (
     Granularity,
@@ -91,6 +91,7 @@ class RatedSegment:
     duration_ms: int
     reference_processed_at: str
     knowledge_snapshot_id: str | None  # of the hints the rating used
+    renumbered: Renumbering | None = None  # of the reference, since its last cut
 
 
 @dataclass(frozen=True)
@@ -145,6 +146,7 @@ def collect(paths: SessionPaths, manifest: Manifest) -> SessionCandidates:
                 segment.duration_ms,
                 assessment.reference_processed_at,
                 assessment.knowledge_snapshot_id,
+                reference.processing.renumbered,
             )
         )
         found += _segment_candidates(paths, segment, reference, assessment)
@@ -248,6 +250,11 @@ def write_candidates(
                         "processed_at": rated.reference_processed_at,
                     },
                     "knowledge_snapshot_id": rated.knowledge_snapshot_id,
+                    **(
+                        {}
+                        if rated.renumbered is None
+                        else {"renumbered": rated.renumbered.to_json()}
+                    ),
                 }
                 for rated in found.rated
             ],
@@ -302,11 +309,17 @@ def load_candidates(paths: SessionPaths) -> SessionCandidates:
 
 def _rated_from(data: dict[str, Any], path: Path) -> RatedSegment:
     reference = _field(data, "reference", dict, path)
+    renumbered = _optional(data, "renumbered", dict, path)
     return RatedSegment(
         segment=_field(data, "segment", int, path),
         duration_ms=_field(data, "duration_ms", int, path),
         reference_processed_at=_field(reference, "processed_at", str, path),
         knowledge_snapshot_id=_optional(data, "knowledge_snapshot_id", str, path),
+        renumbered=(
+            None
+            if renumbered is None
+            else Renumbering.from_json(renumbered, path, CandidatesError)
+        ),
     )
 
 

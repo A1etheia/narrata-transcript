@@ -39,7 +39,12 @@ from transcript.narrata import (
     Relevance,
     is_narrata_id,
 )
-from transcript.reference import Passage, ReferenceTranscript, load_reference
+from transcript.reference import (
+    Passage,
+    ReferenceTranscript,
+    load_reference,
+    load_transcribed,
+)
 from transcript.session import SessionPaths
 
 HINTS_FORMAT_VERSION = 1
@@ -469,6 +474,27 @@ def write_hints(
             "hints": [dataclasses.asdict(hint) for hint in hints.hints],
         },
     )
+
+
+def outdated(paths: SessionPaths, indices: Iterable[int]) -> list[int]:
+    """The transcribed segments among `indices` without hints of their version.
+
+    A missing or unreadable hint file counts as outdated, as do hints made from
+    another version of the transcript, e.g. before the diarization cut its
+    passages anew (TOOL-96).
+    """
+    found = []
+    for index in indices:
+        reference = load_transcribed(paths, index)
+        if reference is None:
+            continue
+        try:
+            hints = stored_hints(paths, index)
+        except DataFileError:
+            hints = None
+        if hints is None or not hints.matches(reference):
+            found.append(index)
+    return found
 
 
 def stored_hints(paths: SessionPaths, index: int) -> SegmentHints | None:

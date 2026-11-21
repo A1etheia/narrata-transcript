@@ -1,4 +1,5 @@
 import dataclasses
+import datetime
 import json
 import tempfile
 import unittest
@@ -8,6 +9,7 @@ from unittest import mock
 
 from test_reference import KEY, MANIFEST, SEGMENT, minimal
 
+from transcript import hints
 from transcript.asr import AudioInputError, BackendInfo, ResourceError
 from transcript.audio import sha256_file
 from transcript.diarization import (
@@ -23,12 +25,15 @@ from transcript.diarization import (
     to_json,
     write_run,
 )
+from transcript.hints import SegmentHints, write_hints
 from transcript.reference import (
     Diarization,
     Failure,
+    Moved,
     Overlap,
     Passage,
     ReferenceTranscript,
+    Renumbering,
     Word,
     load_reference,
     update_reference,
@@ -205,6 +210,174 @@ class AssignSpeakersTest(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             assign_speakers(failed, run(Turn(0, 1000, "SPEAKER_00")))
+
+
+NOW = datetime.datetime(2026, 11, 21, 10, 0, tzinfo=datetime.timezone.utc)
+TWO_SPEAKERS = run(Turn(0, 1000, "SPEAKER_00"), Turn(1000, 3000, "SPEAKER_01"))
+
+
+def two_speaker_passage(index: int = 1, start: int = 0) -> Passage:
+    """`a b` in SPEAKER_00, `c d` in SPEAKER_01 under TWO_SPEAKERS from 0."""
+    return Passage(
+        index=index,
+        text="a b c d",
+        start_ms=start,
+        end_ms=start + 2000,
+        signals={"avg_logprob": -0.2},
+        words=(
+            Word("a", start, start + 400),
+            Word("b", start + 400, start + 800),
+            Word("c", start + 1200, start + 1600),
+            Word("d", start + 1600, start + 2000),
+        ),
+    )
+
+
+class CutAtSpeakerChangesTest(unittest.TestCase):
+    """`assign_speakers` with a minimum turn (TOOL-96)."""
+
+    def test_passages_are_cut_numbered_anew_and_keep_their_backend_passage(
+        self,
+    ) -> None:
+        single = Passage(
+            index=2,
+            text="e",
+            start_ms=2500,
+            end_ms=2800,
+            words=(Word("e", 2500, 2800),),
+        )
+        before = reference(two_speaker_passage(), single)
+
+        result = assign_speakers(before, TWO_SPEAKERS, min_turn_ms=0, now=NOW)
+
+        self.assertEqual(
+            [(p.index, p.asr_passage, p.text, p.speaker) for p in result.passages],
+            [
+                (1, 1, "a b", "SPEAKER_00"),
+                (2, 1, "c d", "SPEAKER_01"),
+                (3, 2, "e", "SPEAKER_01"),
+            ],
+        )
+        self.assertEqual(
+            [dataclasses.replace(w, speaker=None) for w in result.words],
+            list(before.words),
+        )
+        self.assertEqual(" ".join(p.text for p in result.passages), before.text)
+        self.assertEqual(result.passages[1].signals, {"avg_logprob": -0.2})
+        self.assertEqual(result.diarization.min_turn_ms, 0)
+        self.assertEqual(result.processing.processed_at, NOW.isoformat())
+
+    def test_a_cut_says_where_each_former_passage_lies_now(self) -> None:
+        single = Passage(
+            index=2,
+            text="e",
+            start_ms=2500,
+            end_ms=2800,
+            words=(Word("e", 2500, 2800),),
+        )
+        before = reference(two_speaker_passage(), single)
+
+        result = assign_speakers(before, TWO_SPEAKERS, min_turn_ms=0, now=NOW)
+
+        self.assertEqual(
+            result.processing.renumbered,
+            Renumbering(
+                before.processing.processed_at,
+                # the cut one where its first part begins; the other unchanged
+                (Moved(1, unchanged=False), Moved(3, unchanged=True)),
+            ),
+        )
+
+    def test_the_same_inputs_again_change_nothing_and_keep_the_version(self) -> None:
+        first = assign_speakers(
+            reference(two_speaker_passage()), TWO_SPEAKERS, min_turn_ms=0, now=NOW
+        )
+        later = NOW + datetime.timedelta(hours=1)
+
+        again = assign_speakers(first, TWO_SPEAKERS, min_turn_ms=0, now=later)
+
+        self.assertEqual(again, first)
+
+    def test_another_threshold_cuts_again_from_the_backend_passage(self) -> None:
+        cut = assign_speakers(
+            reference(two_speaker_passage()), TWO_SPEAKERS, min_turn_ms=0, now=NOW
+        )
+        later = NOW + datetime.timedelta(hours=1)
+
+        whole = assign_speakers(cut, TWO_SPEAKERS, min_turn_ms=10_000, now=later)
+
+        self.assertEqual(
+            [(p.index, p.asr_passage, p.text) for p in whole.passages],
+            [(1, 1, "a b c d")],
+        )
+        self.assertEqual(
+            (whole.passages[0].start_ms, whole.passages[0].end_ms), (0, 2000)
+        )
+        self.assertEqual(whole.processing.processed_at, later.isoformat())
+        self.assertEqual(
+            whole.processing.renumbered,
+            Renumbering(
+                cut.processing.processed_at,
+                (Moved(1, unchanged=False), Moved(1, unchanged=False)),
+            ),
+        )
+
+    def test_without_threshold_a_former_cut_is_undone(self) -> None:
+        cut = assign_speakers(
+            reference(two_speaker_passage()), TWO_SPEAKERS, min_turn_ms=0, now=NOW
+        )
+
+        whole = assign_speakers(cut, TWO_SPEAKERS)
+
+        self.assertEqual([p.text for p in whole.passages], ["a b c d"])
+        self.assertIsNone(whole.diarization.min_turn_ms)
+
+    def test_a_passage_whose_words_do_not_give_its_text_stays_whole(self) -> None:
+        passage = dataclasses.replace(two_speaker_passage(), text=f" a b c d {SECRET}")
+        before = reference(passage)
+
+        result = assign_speakers(before, TWO_SPEAKERS, min_turn_ms=0, now=NOW)
+
+        self.assertEqual([p.text for p in result.passages], [passage.text])
+        self.assertEqual(result.processing, before.processing)
+
+    def test_a_cut_in_the_same_second_still_gets_a_later_version(self) -> None:
+        before = reference(two_speaker_passage())
+        same = datetime.datetime.fromisoformat(before.processing.processed_at)
+
+        result = assign_speakers(before, TWO_SPEAKERS, min_turn_ms=0, now=same)
+
+        self.assertEqual(
+            result.processing.processed_at,
+            (same + datetime.timedelta(seconds=1)).isoformat(),
+        )
+
+    def test_a_clock_behind_the_stored_stamp_still_gives_a_later_version(
+        self,
+    ) -> None:
+        before = reference(two_speaker_passage())
+        stored = datetime.datetime.fromisoformat(before.processing.processed_at)
+
+        result = assign_speakers(
+            before,
+            TWO_SPEAKERS,
+            min_turn_ms=0,
+            now=stored - datetime.timedelta(hours=1),
+        )
+
+        self.assertEqual(
+            result.processing.processed_at,
+            (stored + datetime.timedelta(seconds=1)).isoformat(),
+        )
+
+    def test_hints_of_the_uncut_passages_are_stale_after_a_cut(self) -> None:
+        before = reference(two_speaker_passage())
+        made = SegmentHints(1, None, before.processing.processed_at, 0, ())
+
+        result = assign_speakers(before, TWO_SPEAKERS, min_turn_ms=0, now=NOW)
+
+        self.assertTrue(made.matches(before))
+        self.assertFalse(made.matches(result))
 
 
 class OverlapsTest(unittest.TestCase):
@@ -509,6 +682,83 @@ class DiarizeSessionTest(unittest.TestCase):
             self.diarize(FakeDiarizer())
         update.assert_not_called()
         self.assertEqual(self.paths.reference(1).stat().st_mtime_ns, written)
+
+    def splittable(self) -> None:
+        """Segment 1 with words that give its text: `Wir den` | SECRET."""
+        passage = self.transcribed.passages[0]
+        update_reference(
+            self.paths,
+            dataclasses.replace(
+                self.transcribed,
+                passages=(dataclasses.replace(passage, text=f"Wir den {SECRET}"),),
+            ),
+        )
+
+    def test_a_threshold_cuts_and_a_second_run_writes_nothing(self) -> None:
+        self.splittable()
+
+        first = self.diarize(FakeDiarizer(), min_turn_ms=0)[0]
+        cut = load_reference(self.paths, 1)
+        with mock.patch("transcript.diarization.update_reference") as update:
+            second = self.diarize(FakeDiarizer(), min_turn_ms=0)[0]
+
+        self.assertEqual((first.passages, first.recut, first.uncut), (2, True, 0))
+        self.assertEqual([p.text for p in cut.passages], ["Wir den", SECRET])
+        assert cut.processing.renumbered is not None  # stored and read back
+        self.assertEqual(cut.processing.renumbered.passages, (Moved(1, False),))
+        self.assertEqual((second.passages, second.recut), (2, False))
+        update.assert_not_called()
+        self.assertEqual(load_reference(self.paths, 1), cut)
+
+    def test_hints_of_a_segment_cut_anew_are_outdated(self) -> None:
+        self.splittable()
+        self.diarize(FakeDiarizer(), min_turn_ms=0)
+        made = load_reference(self.paths, 1).processing.processed_at
+        write_hints(self.paths, SegmentHints(1, None, made, 0, ()))
+        self.assertEqual(hints.outdated(self.paths, [1, 2, 3]), [])
+
+        self.diarize(FakeDiarizer(), min_turn_ms=5000)
+
+        # 2 failed and 3 has no transcript: neither has hints to be outdated
+        self.assertEqual(hints.outdated(self.paths, [1, 2, 3]), [1])
+
+    def test_a_new_threshold_cuts_again_without_the_model(self) -> None:
+        self.splittable()
+        self.diarize(FakeDiarizer(), min_turn_ms=0)
+        again = FakeDiarizer()
+
+        summary = self.diarize(again, min_turn_ms=5000)[0]
+
+        self.assertEqual((summary.outcome, summary.recut), ("reused", True))
+        self.assertEqual(again.load_calls, 0)
+        stored = load_reference(self.paths, 1)
+        self.assertEqual(len(stored.passages), 1)
+        self.assertEqual(stored.diarization.min_turn_ms, 5000)
+
+    def test_a_passage_that_cannot_be_cut_is_counted_not_named(self) -> None:
+        summary = self.diarize(FakeDiarizer(), min_turn_ms=0)[0]
+
+        self.assertEqual(
+            (summary.passages, summary.uncut, summary.recut), (1, 1, False)
+        )
+        self.assertNotIn(SECRET, repr(summary))
+
+    def test_a_format_2_transcript_is_read_and_written_as_format_3(self) -> None:
+        self.splittable()
+        path = self.paths.reference(1)
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["format_version"] = 2
+        for passage in data["passages"]:
+            del passage["asr_passage"]
+        path.write_text(json.dumps(data), encoding="utf-8")
+        self.assertEqual(load_reference(self.paths, 1).passages[0].asr_passage, 1)
+
+        self.diarize(FakeDiarizer(), min_turn_ms=0)
+
+        written = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(written["format_version"], 3)
+        self.assertEqual([p["asr_passage"] for p in written["passages"]], [1, 1])
+        self.assertEqual(written["diarization"]["min_turn_ms"], 0)
 
     def transcribe_segment_3(self) -> None:
         segment = dataclasses.replace(self.transcribed.segment, index=3)

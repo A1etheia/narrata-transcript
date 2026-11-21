@@ -50,7 +50,19 @@ TWO_RECORDINGS = dataclasses.replace(
 def at(passage: Passage, start_ms: int | None) -> Passage:
     """`passage`, moved to start at `start_ms`; None leaves it without times."""
     end_ms = None if start_ms is None else start_ms + BLOCK_MS
+    return spanning(passage, start_ms, end_ms)
+
+
+def spanning(passage: Passage, start_ms: int | None, end_ms: int | None) -> Passage:
+    """`passage`, moved to `start_ms` to `end_ms`."""
     return dataclasses.replace(passage, start_ms=start_ms, end_ms=end_ms)
+
+
+def part(passage: Passage, asr_passage: int, start_ms: int, end_ms: int) -> Passage:
+    """`passage` as a part of backend passage `asr_passage`, cut at a speaker change."""
+    return dataclasses.replace(
+        spanning(passage, start_ms, end_ms), asr_passage=asr_passage
+    )
 
 
 def one_per_second(*passages: Passage) -> ReferenceTranscript:
@@ -258,6 +270,46 @@ class ReviewTest(_ExportCase):
         self.assertEqual(validate(document), ())
 
 
+class CutIdTest(_ExportCase):
+    """Ids across a cut at a speaker change (TOOL-96)."""
+
+    def ids(self, *passages: Passage) -> list[str]:
+        reference = transcript(*passages, diarization=diarized())
+        self.rated(reference)
+        document = self.exported(reference=reference)
+        self.assertEqual(validate(document), ())
+        return self.passages(document, "id")
+
+    def test_a_cut_passage_keeps_its_id_in_its_first_part(self) -> None:
+        uncut = self.ids(at(spoken(1, *SURE), 0), at(spoken(2, *SURE), 1000))
+
+        cut = self.ids(
+            # one SPEAKER_01 word, three SPEAKER_00: the majority stays SPEAKER_00
+            part(spoken(1, 0.9, label="SPEAKER_01"), 1, 0, 400),
+            part(spoken(2, *SURE), 1, 400, BLOCK_MS),
+            part(spoken(3, *SURE), 2, 1000, 1000 + BLOCK_MS),
+        )
+
+        self.assertEqual(cut, [uncut[0], "p-00000400-s01-speaker-00", uncut[1]])
+        self.assertEqual(uncut[0], "p-00000000-s01-speaker-00")
+
+    def test_a_later_part_never_takes_a_first_parts_id(self) -> None:
+        ids = self.ids(
+            part(spoken(1, 0.9, label="SPEAKER_01"), 1, 0, 1000),
+            part(spoken(2, *SURE), 1, 1000, 1000 + BLOCK_MS),  # sorts first at 1 s
+            part(spoken(3, *SURE), 2, 1000, 1000 + BLOCK_MS),
+        )
+
+        self.assertEqual(
+            ids,
+            [
+                "p-00000000-s01-speaker-00",
+                "p-00001000-s01-speaker-00-2",
+                "p-00001000-s01-speaker-00",
+            ],
+        )
+
+
 class SpeakerTest(_ExportCase):
     def setUp(self) -> None:
         super().setUp()
@@ -368,6 +420,14 @@ class FileTest(_KnownSession):
         ids = [[p["id"] for p in d["passages"]] for d in (before, after)]
         self.assertEqual(ids[0], ids[1])
         self.assertEqual(after["passages"][1]["text"], "Grauwasser")
+
+    def test_the_ids_do_not_depend_on_the_previous_file(self) -> None:
+        first = self.written()
+        self.paths.transcript_export.write_bytes(b"not json")
+
+        self.assertEqual(self.written(), first)
+        self.paths.transcript_export.unlink()
+        self.assertEqual(self.written(), first)
 
     def test_names_and_text_stay_readable(self) -> None:
         self.written(self.decided((2, "corrected", "Grauwasser")))

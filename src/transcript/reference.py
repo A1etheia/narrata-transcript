@@ -15,7 +15,7 @@ keywords or labels: they may contain names of real people.
 import collections
 import datetime
 import functools
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -34,8 +34,9 @@ from transcript.manifest import Manifest, Segment
 from transcript.session import SessionKey, SessionPaths, reference_raw_name
 from transcript.timecode import seconds_to_ms
 
-REFERENCE_FORMAT_VERSION = 2
-READABLE_FORMAT_VERSIONS = (1, REFERENCE_FORMAT_VERSION)  # 1 has no snapshot id
+REFERENCE_FORMAT_VERSION = 3
+# 1 has no snapshot id; 1 and 2 have no cut at speaker changes (TOOL-96)
+READABLE_FORMAT_VERSIONS = (1, 2, REFERENCE_FORMAT_VERSION)
 STATUSES = ("transcribed", "failed")
 # Names from `asr.backend.FEATURES` as `Capabilities.to_dict` stores them.
 TIME_CAPABILITIES = ("word_timestamps", "segment_timestamps")
@@ -61,7 +62,12 @@ class Word:
 
 @dataclass(frozen=True)
 class Passage:
-    """A stretch of speech as the backend delimited it, e.g. a Whisper segment."""
+    """A stretch of speech as the backend delimited it, e.g. a Whisper segment.
+
+    The diarization may cut a backend passage where the speaker changes
+    (TOOL-96); every part then keeps the backend passage's number in
+    `asr_passage`. An uncut passage has `asr_passage == index`, the default.
+    """
 
     index: int  # 1-based within the segment
     text: str  # as recognised, never corrected
@@ -70,10 +76,15 @@ class Passage:
     words: tuple[Word, ...] = ()
     speaker: str | None = None  # majority of the word labels, see majority_speaker
     signals: Mapping[str, float] = field(default_factory=dict)  # e.g. avg_logprob
+    asr_passage: int = 0  # 1-based number of the backend passage; 0: `index`
 
     def __post_init__(self) -> None:
         if self.index < 1:
             raise ValueError("passage index must be positive")
+        if self.asr_passage < 0:
+            raise ValueError("passage asr_passage must be positive")
+        if self.asr_passage == 0:
+            object.__setattr__(self, "asr_passage", self.index)
         check_span(self.start_ms, self.end_ms, "passage time")
 
 
@@ -115,10 +126,97 @@ class AsrInfo:
 
 
 @dataclass(frozen=True)
+class Moved:
+    """Where a passage of the previous version lies now (TOOL-96)."""
+
+    passage: int  # the new passage it is, or that begins where it began
+    unchanged: bool  # the new passage is the old one, text and times alike
+
+
+@dataclass(frozen=True)
+class Renumbering:
+    """How the passages of the version `from_processed_at` map to this one.
+
+    A new cut at speaker changes renumbers passages; a decision made on the
+    previous version can follow its passage instead of losing it. Only one
+    version back: a passage two cuts old is not followed.
+    """
+
+    from_processed_at: str
+    passages: tuple[Moved, ...]  # the n-th for old passage n
+
+    @classmethod
+    def between(
+        cls, previous: "ReferenceTranscript", passages: Sequence["Passage"]
+    ) -> "Renumbering":
+        """How `previous.passages` map to `passages`, cut from the same backend passages.
+
+        An old passage maps to the new one equal in text and times, else to the
+        last new part of its backend passage starting no later than it did.
+        """
+        groups: dict[int, list[Passage]] = {}
+        for passage in passages:
+            groups.setdefault(passage.asr_passage, []).append(passage)
+        moved = []
+        for old in previous.passages:
+            group = groups[old.asr_passage]
+            same = next((p for p in group if _same_place(p, old)), None)
+            if same is not None:
+                moved.append(Moved(same.index, unchanged=True))
+                continue
+            before = [p for p in group if _starts_by(p, old.start_ms)]
+            moved.append(Moved((before[-1] if before else group[0]).index, False))
+        return cls(previous.processing.processed_at, tuple(moved))
+
+    def find(self, processed_at: str, passage: int) -> Moved | None:
+        """Where old `passage` of version `processed_at` lies now, if known."""
+        if processed_at != self.from_processed_at:
+            return None
+        if not 1 <= passage <= len(self.passages):
+            return None
+        return self.passages[passage - 1]
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "from_processed_at": self.from_processed_at,
+            "passages": [[m.passage, m.unchanged] for m in self.passages],
+        }
+
+    @classmethod
+    def from_json(
+        cls, data: dict[str, Any], path: Path, error: type[DataFileError]
+    ) -> "Renumbering":
+        entries = jsonfile.field(data, "passages", list, path, error=error)
+        if not all(
+            isinstance(e, list)
+            and len(e) == 2
+            and type(e[0]) is int
+            and isinstance(e[1], bool)
+            for e in entries
+        ):
+            raise error(f"{path}: field 'passages' of 'renumbered' invalid")
+        return cls(
+            jsonfile.field(data, "from_processed_at", str, path, error=error),
+            tuple(Moved(e[0], e[1]) for e in entries),
+        )
+
+
+def _same_place(new: "Passage", old: "Passage") -> bool:
+    return (new.text, new.start_ms, new.end_ms) == (old.text, old.start_ms, old.end_ms)
+
+
+def _starts_by(new: "Passage", start_ms: int | None) -> bool:
+    return (
+        new.start_ms is not None and start_ms is not None and new.start_ms <= start_ms
+    )
+
+
+@dataclass(frozen=True)
 class Processing:
     pipeline_version: str
     processed_at: str  # ISO 8601 with offset
     elapsed_ms: int | None = None
+    renumbered: Renumbering | None = None  # since the last cut (TOOL-96)
 
 
 @dataclass(frozen=True)
@@ -143,12 +241,16 @@ class Diarization:
     settings: Mapping[str, Any] = field(default_factory=dict)
     num_speakers: int | None = None  # the hint given, not the number found
     overlaps: tuple[Overlap, ...] = ()
+    # shortest run of one label that cuts a passage (TOOL-96); None: not cut
+    min_turn_ms: int | None = None
 
     def __post_init__(self) -> None:
         if len(set(self.labels)) != len(self.labels):
             raise ValueError("diarization labels repeat")
         if self.num_speakers is not None and self.num_speakers < 1:
             raise ValueError("num_speakers must be positive")
+        if self.min_turn_ms is not None and self.min_turn_ms < 0:
+            raise ValueError("min_turn_ms must not be negative")
 
 
 @dataclass(frozen=True)
@@ -178,9 +280,14 @@ class ReferenceTranscript:
             raise ValueError("error must be set exactly when the status is failed")
         if self.status == "failed" and self.passages:
             raise ValueError("a failed segment has no passages")
+        backend = 0  # backend passage of the previous passage
         for number, passage in enumerate(self.passages, start=1):
             if passage.index != number:
                 raise ValueError(f"passage {number} is out of order")
+            # the parts of one backend passage follow each other, none is skipped
+            if passage.asr_passage not in (backend, backend + 1):
+                raise ValueError(f"passage {number} has asr_passage out of order")
+            backend = passage.asr_passage
         if self.diarization is not None:
             known = set(self.diarization.labels)
             for passage in self.passages:
@@ -332,6 +439,17 @@ def _processing(elapsed_ms: int | None, now: datetime.datetime | None) -> Proces
     )
 
 
+def next_processed_at(previous: str, now: datetime.datetime | None = None) -> str:
+    """A `processed_at` for a new version of the passages, later than `previous`.
+
+    `now`, or a second after `previous` if `now` is not later: stamps have whole
+    seconds, and a clock behind the stored stamp must not go back in time.
+    """
+    moment = now or datetime.datetime.now().astimezone()
+    earliest = datetime.datetime.fromisoformat(previous) + datetime.timedelta(seconds=1)
+    return max(moment, earliest).isoformat(timespec="seconds")
+
+
 def _passage_from(segment: ResultSegment, index: int) -> Passage:
     """One backend segment as a passage; word labels decide its speaker."""
     words = tuple(
@@ -423,6 +541,11 @@ def to_json(reference: ReferenceTranscript) -> dict[str, Any]:
             "pipeline_version": reference.processing.pipeline_version,
             "processed_at": reference.processing.processed_at,
             "elapsed_ms": reference.processing.elapsed_ms,
+            **(
+                {}
+                if reference.processing.renumbered is None
+                else {"renumbered": reference.processing.renumbered.to_json()}
+            ),
         },
         "diarization": (
             None
@@ -438,12 +561,14 @@ def to_json(reference: ReferenceTranscript) -> dict[str, Any]:
                     {"start_ms": overlap.start_ms, "end_ms": overlap.end_ms}
                     for overlap in diarization.overlaps
                 ],
+                "min_turn_ms": diarization.min_turn_ms,
             }
         ),
         "raw_file": reference.raw_file,
         "passages": [
             {
                 "index": passage.index,
+                "asr_passage": passage.asr_passage,
                 "text": passage.text,
                 "start_ms": passage.start_ms,
                 "end_ms": passage.end_ms,
@@ -516,6 +641,7 @@ def from_json(data: dict[str, Any], path: Path) -> ReferenceTranscript:
                 pipeline_version=_field(processing, "pipeline_version", str, path),
                 processed_at=_field(processing, "processed_at", str, path),
                 elapsed_ms=_optional(processing, "elapsed_ms", int, path),
+                renumbered=_renumbered(processing, path),
             ),
             diarization=(
                 None if diarization is None else _diarization(diarization, path)
@@ -527,6 +653,11 @@ def from_json(data: dict[str, Any], path: Path) -> ReferenceTranscript:
         )
     except ValueError as error:
         raise ReferenceError(f"{path}: {error}") from None
+
+
+def _renumbered(processing: dict[str, Any], path: Path) -> Renumbering | None:
+    data = _optional(processing, "renumbered", dict, path)
+    return None if data is None else Renumbering.from_json(data, path, ReferenceError)
 
 
 def _diarization(data: dict[str, Any], path: Path) -> Diarization:
@@ -544,6 +675,8 @@ def _diarization(data: dict[str, Any], path: Path) -> Diarization:
             )
             for entry in _field(data, "overlaps", list, path)
         ),
+        # absent before format 3: the passages were not cut
+        min_turn_ms=_optional(data, "min_turn_ms", int, path),
     )
 
 
@@ -560,6 +693,8 @@ def _passage(data: Any, number: int, path: Path) -> Passage:
             end_ms=_optional(data, "end_ms", int, path),
             speaker=_optional(data, "speaker", str, path),
             signals=signals,
+            # absent before format 3: every passage is a whole backend passage
+            asr_passage=_optional(data, "asr_passage", int, path) or 0,
             words=tuple(
                 Word(
                     text=_field(entry, "text", str, path),

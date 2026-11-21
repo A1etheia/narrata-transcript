@@ -222,6 +222,23 @@ transcript process beispielgruppe/042 --redo transcribe
 
 Wurde das vergessen: `transcript review-export beispielgruppe/042 --force` schreibt ein Sheet mit den offenen Kandidaten, und `transcript speakers beispielgruppe/042 --assign` bietet die nicht angewendeten Labels als offen an.
 
+### Nach dem Teilen am Sprecherwechsel
+
+Seit TOOL-96 teilt die Diarisierung Passagen am Sprecherwechsel. Eine Session, die vorher verarbeitet wurde, meldet `transcript status` mit `cut outdated`. Ein neuer Lauf erkennt nichts neu und lädt kein Modell, er schneidet nur die gespeicherten Passagen neu:
+
+```bash
+transcript process beispielgruppe/042
+```
+
+Danach gilt:
+
+- **Hinweise und Bewertung** rechnet der Lauf selbst neu.
+- **Review-Entscheidungen** folgen ihrer Passage. Auf einer Passage, die der Schnitt nicht verändert, gelten sie unter der neuen Nummer weiter. Auf einer geteilten Passage werden sie als veraltet gemeldet und nicht angewendet; das Sheet zeigt sie als `earlier_decision` beim ersten Teil, der wieder offen ist. Im Pilot galten 26 von 35 Entscheidungen weiter.
+- **Die Sprecherzuordnung** passt nicht mehr zu den neuen Passagen und muss neu bestätigt werden: `transcript speakers beispielgruppe/042 --assign` (im Pilot rund 4 Minuten).
+- **Der Export** bekommt mehr und kürzere Passagen. Der erste Teil einer geteilten Passage behält ihre ID, deshalb fehlt beim Re-Import in Narrata keine schon importierte Passage, und `--replace` ist nicht nötig.
+
+Wie nach `--redo transcribe` gilt: `review.csv` und `speakers/assignment.json` vorher beiseitelegen, sonst schreibt `process` keine frischen Vorlagen.
+
 ### `process` verweigert den Start wegen abweichender Ergebnisse
 
 Das ist der strenge Guard aus Abschnitt 8. Entweder die Ursache in der Konfiguration zurücknehmen oder mit `--redo transcribe` neu erkennen, mit den Folgen von oben.

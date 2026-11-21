@@ -785,8 +785,6 @@ def _transcribe(
         print(f"{key}: {run.keywords_used} of {len(keywords)} keyword(s) passed")
     if run.load_error is not None:
         print(f"error: {run.load_error}", file=sys.stderr)
-    if not _write_hints(key, paths, config, domain, [o.index for o in run.outcomes]):
-        return 2
 
     diarized = True  # False: the diarization could not run at all
     summaries: Sequence[diarization.SegmentSummary] = ()
@@ -799,14 +797,19 @@ def _transcribe(
                 diarizer,
                 num_speakers=num_speakers,
                 retries=config.diarization_retries,
+                min_turn_ms=config.diarization_min_turn_ms,
             )
         except (ValueError, DataFileError, BackendError) as error:
             print(f"error: {error}", file=sys.stderr)
             diarized = False
         else:
             _print_diarization(summaries, paths)
-    # Also after a failed diarization: the new transcripts get ratings.
-    rated = _rate_passages(key, paths, config, [o.index for o in run.outcomes])
+    # Hints and ratings after the diarization: its cut moves passage boundaries.
+    # Also after a failed diarization: the new transcripts get both.
+    indices = [o.index for o in run.outcomes]
+    if not _write_hints(key, paths, config, domain, indices):
+        return 2
+    rated = _rate_passages(key, paths, config, indices)
     if not (diarized and rated):
         return 2
     if diarizer is None:
@@ -1505,7 +1508,9 @@ def _diarize(
     """Only counts and times reach the console, never labels or text (TOOL-66).
 
     Exit 0 when every transcribed segment is diarized, 1 when one failed, 2
-    when the run could not start or the model could not load.
+    when the run could not start or the model could not load. Segments whose
+    hints do not match their transcript, e.g. after a new cut, get new hints,
+    since hints point at passages.
     """
     try:
         key = SessionKey.parse(raw_key)
@@ -1518,14 +1523,20 @@ def _diarize(
             num_speakers=num_speakers,
             force=force,
             retries=config.diarization_retries,
+            min_turn_ms=config.diarization_min_turn_ms,
         )
+        indices = [s.index for s in summaries]
+        outdated = hints.outdated(paths, indices)
+        domain = _domain(paths) if outdated else None
     except (ValueError, ConfigError, DataFileError, BackendError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
 
     print(f"{key}: {len(summaries)} segment(s)")
     _print_diarization(summaries, paths)
-    if not _rate_passages(key, paths, config, [s.index for s in summaries]):
+    if outdated and not _write_hints(key, paths, config, domain, outdated):
+        return 2
+    if not _rate_passages(key, paths, config, indices):
         return 2
     return 1 if _any_failed(summaries) else 0
 
@@ -1549,10 +1560,18 @@ def _print_diarization(
             if summary.outcome == "reused"
             else f"diarized in {summary.elapsed_ms / 1000:.1f} s"
         )
+        cut = ", cut anew" if summary.recut else ""
+        uncut = (
+            f", {summary.uncut} with several speakers left whole (text differs "
+            "from its words)"
+            if summary.uncut
+            else ""
+        )
         print(
             f"  {summary.index}. {how}: {summary.labels} label(s), "
             f"{summary.turns} turn(s), "
-            f"{summary.labelled_words}/{summary.words} words labelled"
+            f"{summary.labelled_words}/{summary.words} words labelled, "
+            f"{summary.passages} passage(s){cut}{uncut}"
         )
     print(f"wrote {paths.asr_dir} and {paths.diarization_dir}")
 

@@ -151,6 +151,23 @@ class ReviewImportTest(_SheetCase):
         self.assertEqual(result.unchanged, 2)  # untouched rows are no error
         self.assertFalse(result.changed)
 
+    def test_an_untouched_sheet_of_an_older_numbering_is_no_error(self) -> None:
+        decisions = self.decide("s01-p0002", "corrected", target_text="Grauwasser")
+        self.sheet.write_bytes(render(review_sheet(self.found, decisions, True)))
+        # a new version with other numbers: s01-p0003 is no candidate any more
+        fewer = dataclasses.replace(
+            self.reference,
+            passages=self.reference.passages[:2],
+            processing=Processing("0.0.1", "2026-11-09T20:00:00+01:00"),
+        )
+        self.rated(fewer)
+        self.found = collect(self.paths, ONLY_FIRST)
+
+        result = self.reimport(decisions)
+
+        self.assertEqual((result.unchanged, result.problems), (3, ()))
+        self.assertFalse(result.changed)
+
     def test_the_formula_mark_of_the_export_is_removed(self) -> None:
         rows = self.export()
         rows[2].update(status="corrected", target_text="'=Grau", note="'s war so")

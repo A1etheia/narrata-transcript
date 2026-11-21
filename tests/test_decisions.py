@@ -6,11 +6,17 @@ from typing import Any
 from test_candidates import ONLY_FIRST, _SessionCase
 from test_uncertainty import passage, transcript, words
 
-from transcript.candidates import SessionCandidates, collect, session_candidates
+from transcript.candidates import (
+    SessionCandidates,
+    collect,
+    load_candidates,
+    session_candidates,
+)
 from transcript.decisions import (
     DECISIONS_FORMAT_VERSION,
     STATUSES,
     DecisionsError,
+    ReviewItem,
     ReviewStatus,
     SessionDecisions,
     decide,
@@ -18,7 +24,7 @@ from transcript.decisions import (
     review_items,
     write_decisions,
 )
-from transcript.reference import Processing
+from transcript.reference import Moved, Processing, Renumbering
 
 MOMENT = datetime.datetime(2026, 11, 8, 10, tzinfo=datetime.timezone.utc)
 NONE = SessionDecisions()
@@ -120,6 +126,70 @@ class DecisionTest(_DecisionCase):
 
         self.assertEqual(state.orphaned, decisions.decisions)
         self.assertEqual(len(state.items), 1)
+
+
+class RenumberedTest(_DecisionCase):
+    """Decisions made before a cut at speaker changes (TOOL-96)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.before = self.reference.processing.processed_at
+        cut = dataclasses.replace(
+            self.reference,
+            processing=Processing(
+                "0.0.1",
+                "2026-11-21T10:00:00+01:00",
+                # made up: old 1 is now 2, unchanged; old 2 was cut, begins at 1
+                renumbered=Renumbering(
+                    self.before, (Moved(2, unchanged=True), Moved(1, unchanged=False))
+                ),
+            ),
+        )
+        self.rated(cut)
+        self.cut = session_candidates(self.paths, ONLY_FIRST)
+
+    def items(self, decisions: SessionDecisions) -> dict[str, ReviewItem]:
+        return {i.candidate.id: i for i in review_items(self.cut, decisions).items}
+
+    def test_an_unchanged_passage_keeps_its_decision_at_its_new_number(self) -> None:
+        decisions = self.decide("s01-p0001", "corrected", target_text="Wort null")
+
+        state = review_items(self.cut, decisions)
+
+        item = {i.candidate.id: i for i in state.items}["s01-p0002"]
+        assert item.decision is not None
+        self.assertEqual(item.decision.target_text, "Wort null")
+        self.assertEqual((state.stale, state.orphaned), ((), ()))
+        self.assertEqual(decisions.decisions[0].passage, 1)  # as made
+
+    def test_a_cut_passage_shows_its_decision_where_it_began(self) -> None:
+        decisions = self.decide("s01-p0002", "confirmed")
+
+        item = self.items(decisions)["s01-p0001"]
+
+        self.assertEqual(item.status, "open")
+        assert item.earlier is not None
+        self.assertEqual(item.earlier.status, "confirmed")
+
+    def test_a_decision_on_the_new_version_comes_first(self) -> None:
+        before = self.decide("s01-p0001", "corrected", target_text="Wort null")
+        after = decide(before, self.cut, "s01-p0002", "kept", now=MOMENT)
+
+        self.assertEqual(self.items(after)["s01-p0002"].status, "kept")
+
+    def test_a_decision_older_than_the_cut_stays_stale(self) -> None:
+        (made,) = self.decide("s01-p0001", "confirmed").decisions
+        older = dataclasses.replace(made, reference_processed_at="2026-01-01T00:00:00")
+
+        state = review_items(self.cut, SessionDecisions((older,)))
+
+        self.assertEqual(state.stale, (older,))
+        self.assertEqual(
+            self.items(SessionDecisions((older,)))["s01-p0001"].earlier, older
+        )
+
+    def test_the_map_survives_the_candidate_file(self) -> None:
+        self.assertEqual(load_candidates(self.paths).rated, self.cut.rated)
 
 
 class DecisionFileTest(_DecisionCase):

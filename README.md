@@ -294,7 +294,14 @@ transcript diarize beispielgruppe/042 --num-speakers 4 # Vorgabe, falls bekannt
 transcript diarize beispielgruppe/042 --force          # neu rechnen statt wiederverwenden
 ```
 
-Pro Segment entsteht `work/<gruppe>/<ordinal>/diarization/segment-NN.json` mit den Turns des Modells. Danach trägt jedes Wort im Referenztranskript das Label des Turns, in dem seine Mitte liegt, jede Passage das Mehrheitslabel; Wörter ohne Turn bleiben ohne Label. Text, Zeiten und Confidence bleiben unverändert. Ein zweiter Lauf verwendet die gespeicherten Turns wieder, solange WAV, Modell-Revision, Einstellungen und `--num-speakers` gleich sind, und lädt dann kein Modell. Die Konsole zeigt nur Zähler und Laufzeiten, nie Labels oder Text.
+Pro Segment entsteht `work/<gruppe>/<ordinal>/diarization/segment-NN.json` mit den Turns des Modells. Danach trägt jedes Wort im Referenztranskript das Label des Turns, in dem seine Mitte liegt; Wörter ohne Turn bleiben ohne Label. Text, Zeiten und Confidence der Wörter bleiben unverändert. Ein zweiter Lauf verwendet die gespeicherten Turns wieder, solange WAV, Modell-Revision, Einstellungen und `--num-speakers` gleich sind, und lädt dann kein Modell. Die Konsole zeigt nur Zähler und Laufzeiten, nie Labels oder Text.
+
+**Passagen am Sprecherwechsel** (TOOL-96, Messung in [`docs/spikes/TOOL-96-sprecherwechsel.md`](docs/spikes/TOOL-96-sprecherwechsel.md)). Whisper fasst oft mehrere Personen in einem Segment zusammen. Die Diarisierung teilt eine solche Passage dort, wo das Wort-Label wechselt, sodass jede Passage nur noch eine Person enthält und das Label dieser Person trägt. Am Pilot sank der Anteil falsch zugeordneter Wörter damit von 17,4 % auf 6,2 % (Referenz A) und von 14,0 % auf 3,6 % (B).
+
+- **Schwelle.** Ein Abschnitt eines Labels, der kürzer als `diarization.min_turn_ms` dauert (Default 500 ms, 0 bis 10000), geht an die Nachbarpassage. So zerlegt ein einzelnes falsches Label keine Passage.
+- **Kein Text wird erfunden.** Geteilt wird nur, wenn die Wörter mit Leerzeichen verbunden genau den erkannten Text der Passage ergeben. Sonst bleibt sie ganz, und die Konsole nennt die Zahl (`… with several speakers left whole`). Die ASR-Rohdatei bleibt unberührt, Details in [`docs/referenzformat.md`](docs/referenzformat.md#sprecher).
+- **Schwelle ändern.** `transcript status` meldet Passagen, die mit einer anderen Schwelle geteilt wurden, als `cut outdated`. `transcript diarize` oder `transcript process` schneidet sie ohne Modell neu, aus den ursprünglichen Whisper-Passagen.
+- **Was danach neu ist.** Ein Lauf, der Passagengrenzen verschiebt, macht alles veraltet, was auf Passagen zeigt: Hinweise und Bewertung rechnet er selbst neu, Review-Entscheidungen zu alten Passagen werden als veraltet gemeldet statt angewendet, und die Sprecherzuordnung muss neu bestätigt werden (`transcript speakers <gruppe>/<ordinal> --assign`). Siehe [`docs/ablauf.md`](docs/ablauf.md#nach-dem-teilen-am-sprecherwechsel).
 
 **Labels gelten pro Segment.** `SPEAKER_00` der ersten Aufnahme ist nicht automatisch dieselbe Person wie `SPEAKER_00` der zweiten. Die Zuordnung zu Personen geschieht von Hand, siehe [Sprecherzuordnung](#sprecherzuordnung).
 
@@ -413,7 +420,7 @@ Die Datei `work/<gruppe>/<ordinal>/review/segment-NN.uncertainty.json` (`format_
 
 ### Kalibrierung
 
-`transcript calibrate` misst die Bewertung an einer Handreferenz: einer Textdatei, die beim Anhören eines Abschnitts eines Segments entsteht. Jede Zeile darf mit einer Sprecherkennung beginnen (`Name:`), Notizen in eckigen Klammern sind keine Sprache, `???` markiert Unverständliches. Was die Spracherkennung dort erkennt, zählt weder als richtig noch als Einfügung (Konvention aus [TOOL-62](docs/spikes/TOOL-62-asr-vergleich.md)).
+`transcript calibrate` misst die Bewertung an einer Handreferenz: einer Textdatei, die beim Anhören eines Abschnitts eines Segments entsteht. Jede Zeile darf mit einer Sprecherkennung beginnen (`Name:`, auch mit Zusätzen in runden Klammern wie `Name (Rolle):`; die Person bestimmt allein der Name), Notizen in eckigen Klammern sind keine Sprache, `???` markiert Unverständliches. Was die Spracherkennung dort erkennt, zählt weder als richtig noch als Einfügung (Konvention aus [TOOL-62](docs/spikes/TOOL-62-asr-vergleich.md)).
 
 ```bash
 transcript calibrate beispielgruppe/042 --segment 1 --reference work/beispielgruppe/042/review/calibration/reference.txt \
@@ -462,6 +469,10 @@ Was beim Anhören eines Kandidaten entschieden wird, steht in einer eigenen Date
 - **Pro Eintrag:** Kandidaten-ID, Segment, Passage, die Fassung des Transkripts, auf die sich die Entscheidung bezieht (`reference_processed_at`), Status, Zeitpunkt, optional `target_text` und `note`. Einen `target_text` gibt es nur bei `corrected`, dort ist er Pflicht. Ein Eintrag pro Kandidat, ein späterer ersetzt den früheren.
 - **Veraltet:** Ist das Segment seitdem neu transkribiert, gilt die Entscheidung nicht mehr, und der Kandidat ist wieder offen. Eine neue Bewertung bei gleichem Transkript ändert nichts, denn die Entscheidung betrifft den Text.
 - **Verwaist:** Ist der Kandidat verschwunden, etwa weil die Passage nach neuer Kalibrierung sicher ist, bleibt die Entscheidung ebenfalls in der Datei stehen.
+- **Nach einem Schnitt am Sprecherwechsel** (TOOL-96) bekommen die Passagen neue Nummern, ohne neu erkannt zu sein. Die Normalform hält dann in `processing.renumbered` fest, wo jede Passage der vorigen Fassung jetzt liegt. Eine Entscheidung auf der vorigen Fassung folgt ihrer Passage:
+  - Ist die Passage unverändert (gleicher Text, gleiche Zeiten), gilt die Entscheidung unter der neuen Nummer weiter.
+  - Wurde sie geteilt, ist die Entscheidung veraltet. Die Review-CSV zeigt sie als `earlier_decision` beim Teil, an dem die Passage begann. Ein Zieltext wird nicht auf die Teile verteilt, das hieße Text erfinden.
+  - Eine Entscheidung auf der neuen Fassung geht vor. Verfolgt wird nur eine Fassung zurück; eine Entscheidung von vor zwei Schnitten bleibt veraltet. Die Datei selbst bleibt, wie sie geschrieben wurde.
 - Veraltete und verwaiste Entscheidungen werden gemeldet, nie gelöscht und nie angewendet. Angewendet wird eine Entscheidung erst in der [Arbeitsfassung](#arbeitsfassung).
 
 Die Datei enthält Zieltexte und Notizen und bleibt deshalb unter `work/`. Die [Review-CSV](#review-csv) liest sie, der [Review-Import](#review-import) schreibt sie.
@@ -502,7 +513,7 @@ Der [Review-Import](#review-import) liest nur `id`, `status`, `target_text`, `no
 
 - **Gelesen:** nur `id`, `status`, `target_text`, `note` und `version`. Reihenfolge und weitere Spalten sind egal, das Trennzeichen (`;` oder `,`) wird an der Kopfzeile erkannt. Zellen werden getrimmt, ein leerer Status gilt als `open`, Groß- und Kleinschreibung des Status zählt nicht. Leere Zeilen, auch `;;;`-Zeilen, werden übersprungen.
 - **Unverändert ist keine Entscheidung:** Stimmen Status, Zieltext und Notiz einer Zeile mit der geltenden Entscheidung überein (ohne Entscheidung: `open` und leer), bleibt alles, wie es ist, samt Zeitpunkt. Eine unverändert zurückgelesene Tabelle ändert nichts. Wer dieselbe Datei zweimal importiert, ändert beim zweiten Mal ebenfalls nichts.
-- **Fehlerhafte Zeilen:** Sie werden gemeldet und ausgelassen. Die übrigen Zeilen werden trotzdem gespeichert, der Befehl endet mit Exit-Code 2. Fehler sind: fehlende oder unbekannte ID, ungültiger Status, `corrected` ohne Zieltext, ein Zieltext bei anderem Status und eine geänderte Zeile, deren `version` nicht mehr die aktuelle Fassung des Transkripts ist. In diesem letzten Fall neu exportieren. Unberührte Zeilen eines älteren Exports sind kein Fehler.
+- **Fehlerhafte Zeilen:** Sie werden gemeldet und ausgelassen. Die übrigen Zeilen werden trotzdem gespeichert, der Befehl endet mit Exit-Code 2. Fehler sind: fehlende oder unbekannte ID, ungültiger Status, `corrected` ohne Zieltext, ein Zieltext bei anderem Status und eine geänderte Zeile, deren `version` nicht mehr die aktuelle Fassung des Transkripts ist. In diesem letzten Fall neu exportieren. Unberührte Zeilen eines älteren Exports sind kein Fehler, auch wenn ihre ID nach einem Schnitt am Sprecherwechsel (TOOL-96) keine oder eine andere Passage bezeichnet. Ob eine solche Zeile unberührt ist, entscheidet die Entscheidung, die auf ihrer eigenen Fassung galt, nicht der heutige Kandidat gleicher ID.
 - **Ganze Tabelle abgelehnt:** wenn sie unlesbar ist, eine der fünf Spalten fehlt oder eine ID zweimal vorkommt. Dann ist unklar, welche Zeile gilt. `decisions.json` bleibt unverändert.
 - **Formelschutz:** Ein führendes `'` vor `=`, `+`, `-` oder `@` in `target_text` und `note` wird entfernt. Ein anderes führendes `'` bleibt stehen.
 - **Konsole:** Fehlermeldungen nennen Datei, Tabellenzeile (Kopfzeile = 1), ID und Feld, nie einen Zellinhalt, etwa `row 7 (s01-p0042): field 'target_text' required for corrected`. Eine Zelle, die nicht wie eine ID aussieht, erscheint als `invalid id`. Die Zusammenfassung zeigt nur Zahlen, etwa `review import: 3 decision(s): 1 confirmed, 2 corrected, 58 unchanged, 1 left out`. `decisions.json` wird nur bei einer Änderung geschrieben, atomar.
@@ -549,6 +560,7 @@ Jede Passage des Referenztranskripts wird ein Block, in Aufnahmereihenfolge:
   - `origin`, `status` (`null` bei `automatic`)
   - `asr_text` (immer der erkannte Text, unverändert), `text`
   - `speaker` mit `label`, `assigned` und `user_id`
+  - `asr_passage` (Nummer der Backend-Passage, aus der der Block am Sprecherwechsel geschnitten wurde, TOOL-96) und `asr_speaker` (Mehrheitslabel dieser ganzen Backend-Passage). Der Export prägt daraus die Passagen-ID.
 - **Sprecher:** Das Label bleibt immer stehen. Eine gültig zugeordnete Person kommt mit `assigned: person` und `user_id` dazu. Alles andere bleibt `open`, `unknown` oder `multiple` ohne `user_id`. Ohne `assignment.json` sind alle Labels `open`, und die Konsole verweist auf `transcript speakers`. Segmente ohne Diarisierung tragen `label: null`.
 - **Nie angewendet:** veraltete und verwaiste Entscheidungen, nicht anwendbare Einträge der Sprecherzuordnung und Segmente ohne Transkript. Sie stehen unter `findings` mit `kind`:
   - `stale_decision` und `orphaned_decision`, mit Segment und Passage;
@@ -557,7 +569,7 @@ Jede Passage des Referenztranskripts wird ein Block, in Aufnahmereihenfolge:
 - **Gleiche Eingaben, gleiche Datei:** Es gibt keinen Zeitstempel. Unter `inputs` stehen Snapshot-Kennung, pro Segment `reference_processed_at` und `labels_version` sowie die SHA-256 von `decisions.json` und `assignment.json` (`null` ohne Datei). Ein erneuter Lauf mit unveränderten Eingaben ergibt byteweise dieselbe Datei.
 - **Exit-Code:** `0` heißt geschrieben ohne Funde, `1` geschrieben mit Funden, `2` Fehler. Offene Blöcke sind kein Fund. Sie werden nur gezählt.
 
-Die Datei `work/<gruppe>/<ordinal>/working/transcript.json` (`format_version: 1`) enthält Text und User-IDs und bleibt unter `work/`. Die Konsole zeigt nur Zahlen sowie Segment-, Passagen- und Eintragsnummern, etwa `working version: 539 block(s): 482 automatic, 41 decided, 16 open`.
+Die Datei `work/<gruppe>/<ordinal>/working/transcript.json` (`format_version: 2`, seit TOOL-96 mit `asr_passage` und `asr_speaker`; eine Datei der Version 1 lehnen Bericht und Export ab, `transcript working` schreibt sie neu) enthält Text und User-IDs und bleibt unter `work/`. Die Konsole zeigt nur Zahlen sowie Segment-, Passagen- und Eintragsnummern, etwa `working version: 539 block(s): 482 automatic, 41 decided, 16 open`.
 
 ## Markierungen
 
@@ -621,7 +633,9 @@ transcript export beispielgruppe/042
 - **Aufnahmen und Version:** Eine Aufnahme sind die aufeinanderfolgenden Segmente aus derselben Datei in `input/`. Bei einer Aufnahme ist `contract_version` `"1.0"`, und `source` nennt Dateiname, Länge und SHA-256 der Aufnahme. Bei mehreren Aufnahmen ist sie `"1.1"` (IOA-1287): `source` nennt die erste, `source.recordings[]` alle in Sitzungsreihenfolge, jede mit `starts_at`, ihrem Beginn auf der Session-Zeitachse. Pausen zwischen den Aufnahmen sind unbekannt, deshalb liegen sie lückenlos hintereinander.
 - **Sitzung:** `session.group` kommt aus `narrata.groups` der Konfiguration, Ordinal, `play_session_id` und Datum aus dem Manifest. Fehlt der Eintrag für die Gruppe, bricht der Export ab.
 - **Sprecher:** Labels gelten pro Segment, im Contract für die Sitzung, daher `s01-SPEAKER_00`. Passagen ohne Label heißen `unlabelled`. In `speakers` steht nur bei einer zugeordneten Person `participant_id` (User-ID) und `display_name` aus dem Wissens-Snapshot; `open`, `unknown`, `multiple` und `unlabelled` sind `null`.
-- **Passagen-ID:** `p-<Sitzungsstart in ms, 8-stellig>-<Slug des Labels>`, etwa `p-00734120-s01-speaker-00`, bei gleichem Start und Label mit `-2`, `-3`. Start und Label stammen aus dem Referenztranskript, das kein Review ändert. Ein Re-Export nach weiterem Review behält deshalb jede ID. Neu transkribieren oder neu diarisieren erzeugt neue Passagen und damit neue IDs.
+- **Passagen-ID:** `p-<Sitzungsstart in ms, 8-stellig>-<Slug des Labels>`, etwa `p-00734120-s01-speaker-00`. Ist die ID schon vergeben, kommt `-2`, `-3` dazu. Jeder Export ergibt dieselben IDs, wie der Contract es verlangt, denn Start und Label stammen aus dem Referenztranskript, das kein Review ändert. Der Export liest dafür keine frühere Datei unter `output/`.
+  - **Geteilte Passagen (TOOL-96):** Der erste Teil einer am Sprecherwechsel geteilten Backend-Passage bekommt seine ID aus Start und Mehrheitslabel der ganzen Backend-Passage (`asr_speaker`). Das ist genau die ID, die die Passage vor dem Schnitt hatte, auch wenn der Teil selbst ein anderes Label trägt. Die übrigen Teile bekommen eine neue ID aus eigenem Start und Label. Erste Teile werden zuerst geprägt, damit kein späterer Teil ihre ID belegt.
+  - **Neue IDs:** Nur neu transkribieren oder neu diarisieren mit dem Modell kann Start oder Mehrheitslabel einer Backend-Passage ändern und damit ihre ID. Narrata lehnt den Import dann ohne `--replace` ab und nennt die fehlenden Keys.
 - **Zeit:** `start`, `end` und `markers[].at` in Sekunden Session-Zeit, höchstens drei Nachkommastellen.
 
 | Arbeitsfassung | Contract |

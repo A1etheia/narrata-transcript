@@ -196,6 +196,7 @@ _SEGMENT_KINDS: tuple[tuple[str, StepState], ...] = (
     ("unreadable", "stale"),
     ("other knowledge or language", "stale"),
     ("rating outdated", "stale"),
+    ("cut outdated", "stale"),
     ("missing", "partial"),
     ("no speaker labels", "partial"),
 )
@@ -209,8 +210,10 @@ def _transcribe(files: _Files) -> _Found:
 
     `process` always diarizes and rates, so a segment without either is
     not done. A transcript that `transcribe` would not reuse with the stored
-    snapshot, its keywords and the configured language, or a rating of
-    another transcript version, is stale. Whether the backend takes keywords
+    snapshot, its keywords and the configured language, a rating of
+    another transcript version, or passages cut with another
+    `diarization.min_turn_ms` (TOOL-96) are stale; `process` cuts them again
+    without the model. Whether the backend takes keywords
     comes from the stored result; a change of model is the preflight's check.
     """
     paths = files.paths
@@ -262,6 +265,8 @@ def _transcribe(files: _Files) -> _Found:
             found["rating outdated"].append(index)
         if reference.diarization is None:
             found["no speaker labels"].append(index)
+        elif reference.diarization.min_turn_ms != files.config.diarization_min_turn_ms:
+            found["cut outdated"].append(index)
     detail = "; ".join(
         [f"{transcribed} of {len(segments)} segment(s) transcribed"]
         + [
