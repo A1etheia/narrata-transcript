@@ -85,4 +85,22 @@ Wortebene, gleich für alle Schnitte: A 5,4 % (n = 424), B 3,4 % (n = 320). Die 
 ## Folgen
 
 - **Diarisierung (TOOL-97):** angelegt nach der ersten, fehlerhaften Fassung dieses Berichts. Nach der Korrektur ist es nur noch bedingt nötig. Chunk 5 misst den neuen Export mit dem Skript der Projektverantwortlichen. Liegt der Abstand zu Plaud an A oder B über 5 Punkten, bleibt TOOL-97 offen. Sonst wird es mit Verweis auf diesen Bericht geschlossen.
-- **Frühere Spikes:** Die absoluten WER- und WDER-Werte an A und B aus TOOL-92 und TOOL-93 sind durch den Parserfehler verzerrt (siehe oben). [kein Ticket: Berichte eingefroren, Entscheidungen beruhten auf relativen Vergleichen derselben Referenz]
+- **Frühere Spikes:** Die absoluten WER- und WDER-Werte an A und B aus TOOL-92 und TOOL-93 sind durch den Parserfehler verzerrt (siehe oben). [kein Ticket: Berichte eingefroren, das No-Go aus TOOL-93 hält nach der Neuwertung unten]
+
+### Neuwertung TOOL-93
+
+`asr.py score` auf den gespeicherten Läufen aller 16 Varianten aus TOOL-93, je drei Seeds, mit dem korrigierten Parser. Kein Modelllauf, nur der Vergleich mit den Handreferenzen ist neu.
+
+| Variante | WER A vorher → nachher | WER B vorher → nachher | gegen `base` (A / B) |
+| --- | --- | --- | --- |
+| `base` | 24,0 % → **21,3 %** | 36,1 % → **29,8 %** (25,6–35,4) | |
+| `base+vad-t35` | → 20,5 % | → 35,1 % | −0,8 / +5,3 |
+| `base+beam10` | → 21,4 % | → 32,7 % | +0,1 / +2,9 |
+| `base+logprob-lax` | → 21,3 % | → 29,6 % | 0 / −0,2 |
+| `nohw` | 28,3 % → 26,0 % | 35,0 % → 28,1 % | +4,7 / −1,7 |
+| `nohw+de-turbo` | → 25,2 % | → 31,5 % | +3,9 / +1,7 |
+| `nohw+large-v3` | → 28,2 % | → 31,1 % | +6,9 / +1,3 |
+
+- **Das No-Go hält.** Keine Variante liegt an A und B mindestens 3 Punkte unter `base`. Die Reihenfolge bleibt: `base` an A vorn, `nohw` an B vorn und an A klar schlechter. `pchw`, `cond-prev` und `crisper` bleiben weit zurück.
+- **Absolut** sinkt die WER an A um 2–3 Punkte und an B um rund 6 Punkte, vor allem bei den Auslassungen: An B fallen sie für `base` von 84–92 auf 42–45.
+- **Nicht neu gewertet:** Die TOOL-93-Läufe sind nicht diarisiert, eine WDER gibt es dort nicht. Die Fehler je Sprecher hinter der Aufnahme-Empfehlung und die WDER an A aus TOOL-92 (15,3 %) sind nicht neu gemessen. Die Wortebene hier (5,4 %) legt nahe, dass auch diese zu hoch war.
