@@ -5,9 +5,10 @@ Stand 2026-11-21. Bericht zu [TOOL-96](../plans/TOOL-96-speaker-turns.md), Werkz
 ## Ergebnis vorab
 
 - **Das Teilen senkt den Sprecherfehler deutlich.** Mit 500 ms sinkt er an A von 17,4 % auf 6,2 % und an B von 14,0 % auf 3,6 %. Nach dem Schnitt trägt jede Passage im Wesentlichen das Label ihrer Wörter und liegt damit nahe an der Fehlerrate der Wortlabels (A 5,4 %, B 3,4 %). Der größte Teil des heutigen Fehlers kommt also vom Mehrheitslabel pro Whisper-Segment, nicht von der Diarisierung.
-- **Abstand zu Plaud voraussichtlich unter 5 Punkten.** Plaud liegt bei 2,8 % / 0,0 %, der Abstand wäre damit 3,4 bzw. 3,6 Punkte. Die Methoden unterscheiden sich (siehe unten), die Entscheidung fällt deshalb erst in Chunk 6 mit dem Skript der Projektverantwortlichen am neuen Export. Bis dahin bleibt TOOL-97 (Diarisierung) offen und bedingt.
+- **Abstand zu Plaud unter 5 Punkten.** Plaud liegt bei 2,8 % / 0,0 %, der Abstand beträgt nach der Neuverarbeitung 3,4 bzw. 3,6 Punkte. Ein Folge-Ticket für die Diarisierung entsteht nicht, TOOL-97 wird geschlossen (siehe „Nachher“ und „Folgen“).
 - **Strukturell bringt der Schnitt viel.** Mit 500 ms enthalten 8,7 % statt 48,5 % der Passagen Wörter mit mehr als einem Label, und nur 2,8 % statt 26,7 % der beschrifteten Wörter stehen unter einem fremden Label. Review-Kandidaten sinken von 87,3 % auf 65,7 % der Passagen. IT/OT-Einstufung (IOA-1302) und Lesefassung (IOA-1318) bekommen damit den Sprecherwechsel als Grenze.
 - **Schwelle: 500 ms.** Bis 1000 ms ist der Fehler an A und B gleich. 500 ms hält die gemischten Passagen unter 10 % und die Zahl der Passagen unter der von Plaud.
+- **Neuverarbeitung bestätigt die Messung** (siehe „Nachher“). Die Pilotsitzung hat jetzt 2.166 Passagen. 26 von 35 Review-Entscheidungen gelten weiter. Der Re-Import in Narrata läuft ohne `--replace` und entfernt keine Passage.
 
 ## Material und Methode
 
@@ -82,9 +83,76 @@ Wortebene, gleich für alle Schnitte: A 5,4 % (n = 424), B 3,4 % (n = 320). Die 
 - **Hören:** Der Median steigt von 3,6 s (0 ms) auf 4,4 s. Lange Passagen sind beim Hören hilfreicher (TOOL-58). Hörblöcke aus mehreren Passagen hängen an der Review-Entscheidung in TOOL-60.
 - **Wörter oder Millisekunden:** Die Wortschwellen liegen zwischen den ms-Zeilen und bringen keinen Vorteil. Eine Dauer ist von der Sprechgeschwindigkeit unabhängig.
 
+## Nachher: Neuverarbeitung der Pilotsitzung
+
+Stand 2026-11-21. `transcript process` hat die Pilotsitzung mit 500 ms neu geschnitten. Die Diarisierung lief nicht neu, die gespeicherte Rohdatei wurde wiederverwendet. Danach wurden Hinweise und Bewertung neu berechnet, die Sprecher neu zugeordnet und Arbeitsfassung, Export, TXT, DOCX und Bericht neu geschrieben. Der alte Export ist als Vergleichsstand gesichert.
+
+### Sprecherfehler
+
+| | vorher, Repo-Methode | vorher, Skript der Projektverantwortlichen | nachher, Repo-Methode | Plaud | Abstand nachher |
+| --- | --- | --- | --- | --- | --- |
+| A | 17,4 % | 17,6 % | **6,2 %** | 2,8 % | **3,4 Punkte** |
+| B | 14,0 % | 14,0 % | **3,6 %** | 0,0 % | **3,6 Punkte** |
+
+- **Wie vorhergesagt:** Die Repo-Methode (`turns.py`, Passagenebene) am gespeicherten Stand trifft die Zeile 500 ms der Ausgangsmessung genau, ebenso Passagenzahl, Längen, gemischte Passagen, Kandidaten und Hinweise.
+- **Neue Schwellenzeilen nicht aussagekräftig:** `turns.py` schneidet die Schwellenreihe jetzt auf den schon geteilten Passagen noch einmal. Nach dem Schnitt sagen diese Zeilen deshalb nichts Neues.
+- **Nachher nur mit der Repo-Methode gemessen:** Das Skript der Projektverantwortlichen stand für die Messung nachher nicht mehr zur Verfügung. Laut Plan sollte nur es gegen Plaud gelten. Am ungeteilten Stand weichen beide Methoden aber höchstens 0,2 Punkte voneinander ab (A 17,4 % gegen 17,6 %, B 14,0 % gegen 14,0 %). Der Abstand zur 5-Punkte-Grenze beträgt 1,4 Punkte, das Siebenfache dieser Abweichung. Die Repo-Methode reicht deshalb für die Entscheidung.
+
+### Ganze Sitzung
+
+| | vorher | nachher |
+| --- | --- | --- |
+| Passagen | 997 | 2.166 |
+| pro Stunde Audio (5:26 h) | 183 | 399 (Plaud rund 520) |
+| Länge P10 / Median / P90 (s) | 0,8 / 13,2 / 40,3 | 0,8 / 4,4 / 21,6 |
+| Passagen mit mehr als einem Label | 48,5 % | 8,7 % |
+| beschriftete Wörter unter fremdem Label | 26,7 % | 2,8 % |
+| Review-Kandidaten | 870 (87,3 %) | 1.424 (65,7 %) |
+| markierte Zeit | 96,6 % | 79,0 % |
+| Hinweise | 403 | 397 |
+| im Export `unreviewed` / `open` / `corrected` / `confirmed` | 127 / 835 / 26 / 9 | 742 / 1.398 / 18 / 8 |
+
+- **Mehr Kandidaten, weniger markierte Zeit:** Die Zahl der Kandidaten steigt, weil es mehr Passagen gibt. Ihr Anteil und die markierte Hörzeit sinken.
+- **Sichere Passagen:** Im Export sind 742 statt 127 Passagen sicher, vor allem kurze Teile, die vorher mit einer unsicheren Passage zusammen markiert waren.
+- **Hinweise:** 6 Glossar-Treffer über mehrere Wörter fallen an einem Schnitt in zwei Passagen (403 → 397).
+
+### Review-Entscheidungen
+
+Aus dem Pilot-Review lagen 35 Entscheidungen vor (23 `corrected`, 9 `confirmed`, 3 `unintelligible`). Nach dem ursprünglichen Plan wären alle veraltet gewesen, die 23 Korrekturen also aus dem Export verschwunden. Seit Chunk 5 folgt eine Entscheidung ihrer Passage (`processing.renumbered`):
+
+| | Entscheidungen | davon `corrected` |
+| --- | --- | --- |
+| Passage unverändert, Entscheidung gilt unter neuer Nummer | 26 | 15 (dazu 8 `confirmed`, 3 `unintelligible`) |
+| Passage geteilt, Entscheidung veraltet, im Sheet beim ersten Teil | 9 | 8 (dazu 1 `confirmed`) |
+
+- **Probelauf und echter Lauf stimmen überein:** Beide ergeben 26 / 9. Der Export enthält 18 `corrected` (15 Korrekturen und 3 unverständliche) und 8 `confirmed`.
+- **Die 9 veralteten** kommen beim nächsten Review wieder vor. Ob und wie dieses Review stattfindet, entscheidet TOOL-60. Eine Korrektur auf die Teile zu verteilen hieße, Text zu erfinden.
+- **Altes Review-Sheet:** Der erste `process`-Lauf hielt beim Review an. Er las die alte `review.csv` erneut ein, deren IDs nach dem Schnitt keine oder andere Passagen bezeichneten. Behoben: Eine Zeile eines älteren Exports wird an der Entscheidung ihrer eigenen Fassung gemessen. Alle 870 Zeilen gelten jetzt als unberührt.
+
+### Sprecherzuordnung
+
+Die Zuordnung musste neu bestätigt werden, weil sich mit den Passagen der Fingerabdruck der Labels ändert. Der Dialog dauerte rund 2 Minuten. Danach sind alle 7 Labels Personen; vorher war eines als `multiple` markiert.
+
+### Narrata
+
+| Schritt | Ergebnis |
+| --- | --- |
+| `transcript:validate` | entspricht dem Contract |
+| Import des alten Exports (Stand TOOL-58) | 997 angelegt |
+| **Import des neuen Exports ohne `--replace`** | **1.169 angelegt, 994 aktualisiert, 3 unverändert, 0 entfernt** |
+| derselbe Export noch einmal | nichts geändert |
+
+- **Alle 997 IDs bleiben:** Der erste Teil einer geteilten Passage trägt ihre ID weiter (Chunk 4). Narrata braucht keine Änderung.
+- **Lokale Datenbank:** Der Pilot-Import aus TOOL-58 war dort nicht mehr vorhanden. Der Stand vorher wurde deshalb aus dem gesicherten Export wiederhergestellt.
+- **Befund für Narrata:** Die Prüfung aus IOA-1280 lehnt einen Import nur ab, wenn Keys fehlen. Ob an einer aktualisierten Passage Links oder Archiv-Provenienz hängen, prüft sie nicht. Eine Passage, deren Text sich durch den Schnitt halbiert, behält ihre Links ungefragt. In der lokalen Datenbank gab es keine solchen Links, gemessen ist es also nicht.
+
 ## Folgen
 
-- **Diarisierung (TOOL-97):** angelegt nach der ersten, fehlerhaften Fassung dieses Berichts. Nach der Korrektur ist es nur noch bedingt nötig. Chunk 6 misst den neuen Export mit dem Skript der Projektverantwortlichen. Liegt der Abstand zu Plaud an A oder B über 5 Punkten, bleibt TOOL-97 offen. Sonst wird es mit Verweis auf diesen Bericht geschlossen.
+- **Diarisierung (TOOL-97): kein Folge-Ticket, TOOL-97 wird geschlossen.** Es war nach der ersten, fehlerhaften Fassung dieses Berichts angelegt worden.
+  - Nach dem Schnitt liegt der Sprecherfehler an A 3,4 und an B 3,6 Punkte über Plaud, also unter der 5-Punkte-Grenze des Tickets. Gemessen ist das mit der Repo-Methode, Begründung unter „Sprecherfehler“ oben.
+  - Der verbliebene Fehler liegt nahe an dem der Wortlabels (A 5,4 %, B 3,4 %). Mehr ginge nur über bessere Wortlabels, also über die Diarisierung selbst oder die Aufnahme am Tisch.
+  - An A enthalten 11 von 19 Passagen weiter Wörter mehrerer Hand-Sprecher. Das ist kein Grund für ein eigenes Ticket, solange die Fehlerrate unter der Grenze bleibt. Falls IT/OT (IOA-1302) daran scheitert, ist das der Anlass, die Diarisierung neu aufzugreifen.
+- **Links an geteilten Passagen (Narrata):** siehe Befund oben. [kein Ticket: Entscheidung in TOOL-60, ob ein IOA-Ticket nötig ist]
 - **Frühere Spikes:** Die absoluten WER- und WDER-Werte an A und B aus TOOL-92 und TOOL-93 sind durch den Parserfehler verzerrt (siehe oben). [kein Ticket: Berichte eingefroren, das No-Go aus TOOL-93 hält nach der Neuwertung unten]
 
 ### Neuwertung TOOL-93

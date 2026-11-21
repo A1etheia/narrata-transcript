@@ -127,10 +127,16 @@ Danach enthält eine Passage nur noch eine sprechende Person. Heute ist jedes Wh
   - Diarisierungs-Entscheidung nach der 5-Punkte-Regel, gemessen mit dem Skript der Projektverantwortlichen.
 - Verify: `scripts/check`; `transcript:validate` und `transcript:import` in ios-archiv ohne `--replace` erfolgreich.
 - AC: Alle Akzeptanzkriterien des Tickets sind belegt. Die Diarisierungs-Entscheidung ist getroffen: Folge-Ticket angelegt oder Ausbleiben begründet.
+- Nachtrag:
+  - **Messung nur mit der Repo-Methode:** Das Skript der Projektverantwortlichen stand für die Messung nachher nicht mehr zur Verfügung. Am ungeteilten Stand weichen beide Methoden höchstens 0,2 Punkte ab (A 17,4 % gegen 17,6 %, B 14,0 % gegen 14,0 %). Nachher liegt der Abstand zu Plaud bei 3,4 bzw. 3,6 Punkten, 1,4 Punkte unter der Grenze. Die 5-Punkte-Regel wurde deshalb mit der Repo-Methode angewendet: kein Folge-Ticket, TOOL-97 wird geschlossen.
+  - **Alter Export beschädigt:** `output/<s>/transcript.json` begann mit vier fremden Bytes. Gesichert wurde er ohne sie, sonst byte-gleich, als `transcript.pre-tool-96.json`.
+  - **Altes Review-Sheet:** Der erste `process`-Lauf hielt beim Review an, weil er die alte `review.csv` gegen die neu nummerierten Kandidaten las. Behoben in `review_import`: Eine Zeile eines älteren Exports wird an der Entscheidung ihrer eigenen Fassung gemessen.
+  - **Sprecherzuordnung** in rund 2 Minuten neu bestätigt. Eine Zuordnung vor dem Schnitt gilt danach nicht mehr.
+  - **Narrata:** In der lokalen Datenbank fehlte der Import aus TOOL-58. Er wurde aus dem gesicherten Export wiederhergestellt (997 angelegt). Danach brachte der neue Export ohne `--replace` 1.169 angelegt, 994 aktualisiert, 3 unverändert und 0 entfernt, ein zweiter Import änderte nichts. Den Import mit nativem PHP muss `DB_HOST=127.0.0.1` auf das MySQL im Container richten; `--via-sail` sieht Dateien außerhalb des Narrata-Repos nicht.
 
 ## Folge-Tickets
 - Hörblöcke im Review (Nachbarpassagen beim Hören zusammenfassen): TOOL-60, Entscheidung über Review-Kanal und Review-Umfang
-- Diarisierung selbst (Sprecherzahl aus TOOL-79, pyannote-Einstellungen), angelegt nach einer Ausgangsmessung mit Parserfehler, nach der Korrektur nur bedingt nötig; Chunk 6 entscheidet nach der 5-Punkte-Regel, ob es bleibt oder geschlossen wird: TOOL-97
+- Diarisierung selbst (Sprecherzahl aus TOOL-79, pyannote-Einstellungen), angelegt nach einer Ausgangsmessung mit Parserfehler, nach der Korrektur nur bedingt nötig; nach der 5-Punkte-Regel nicht nötig (Abstand 3,4 / 3,6 Punkte), wird geschlossen: TOOL-97
 - Narrata-Guard IOA-1280 prüft abhängige Links und Provenienz nicht: [kein Ticket: Befund im Bericht, Entscheidung in TOOL-60, ob ein IOA-Ticket nötig ist]
 
 ## Chunk-Tabelle
