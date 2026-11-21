@@ -26,7 +26,7 @@ from typing import cast
 from transcript.candidates import SessionCandidates
 from transcript.decisions import (
     STATUSES,
-    ReviewItem,
+    ReviewDecision,
     ReviewStatus,
     SessionDecisions,
     decide,
@@ -85,6 +85,7 @@ def import_rows(
     """`decisions` with every valid, changed row of the sheet decided."""
     items = {item.candidate.id: item for item in review_items(found, decisions).items}
     version = found.processed_at
+    made_on = {(d.id, d.reference_processed_at): d for d in decisions.decisions}
     result = decisions
     imported: Counter[ReviewStatus] = Counter()
     unchanged = 0
@@ -94,20 +95,29 @@ def import_rows(
         try:
             if not candidate:
                 raise ValueError("field 'id' missing")
-            item = items.get(candidate)
-            if item is None:
+            if not _ID.fullmatch(candidate):
+                raise ValueError("no such candidate")
+            # a row of an older export numbers the passages of its own version,
+            # which a cut may have renumbered since: it is untouched if it shows
+            # the decision made on that version, whatever the id means today
+            older = cells["version"] != version.get(int(candidate[1:3]))
+            item = None if older else items.get(candidate)
+            if not older and item is None:
                 raise ValueError("no such candidate")
             wanted = (
                 _status(cells["status"]),
                 _unmarked(cells["target_text"]),
                 _unmarked(cells["note"]),
             )
-            if wanted == _in_force(item):
+            in_force = (
+                made_on.get((candidate, cells["version"]))
+                if item is None
+                else item.decision
+            )
+            if wanted == _state(in_force):
                 unchanged += 1
                 continue
-            # only a change needs the version: an untouched row of an older
-            # export is no error after the segment was transcribed again
-            if cells["version"] != version[item.candidate.segment]:
+            if older:
                 raise ValueError(
                     "field 'version' is not the current transcript; export again"
                 )
@@ -132,8 +142,10 @@ def _unmarked(cell: str) -> str | None:
     return cell or None
 
 
-def _in_force(item: ReviewItem) -> tuple[ReviewStatus, str | None, str | None]:
-    decision = item.decision
+def _state(
+    decision: ReviewDecision | None,
+) -> tuple[ReviewStatus, str | None, str | None]:
+    """What a row shows for `decision`; an undecided candidate is open."""
     if decision is None:
         return "open", None, None
     return decision.status, decision.target_text, decision.note
