@@ -31,7 +31,7 @@ Ursache der drei Hotword-Effekte an realen Aufnahmen belegen: Wortverlust bei ku
 - **Diagnose aus der Rohform:** Pro 30-s-Fenster werden Temperatur, Kompressionsrate, `avg_logprob`, Segmentzahl und Lücken zwischen VAD-Sprache und erkannten Segmenten aus `segment-NN.raw.json` gezählt. So lässt sich zeigen, ob verlorene Wörter in Fallback-Fenstern oder in übersprungenen Bereichen liegen.
 - **Prüfstand:**
   - Pilotsitzung: Segment 1 mit Referenz A und B, je 3 Seeds.
-  - Ganze Aufnahme: alle Segmente der Pilotsitzung und Segment 1 der zweiten Sitzung, beide ohne Referenz, Vergleich pro 5 min. Das deckt AC 2 ab.
+  - Ganze Aufnahme: Segment 1 der Pilotsitzung über die vollen 5:00:00, das sind die 60 Abschnitte aus dem Befund, und Segment 1 der zweiten Sitzung, beide ohne Referenz, Vergleich pro 5 min. Das deckt AC 2 ab. Die übrigen Segmente prüft der Abnahmelauf in Chunk 4.
 - **Auswahlregel (vorab vereinbart):** Unter den Varianten, die in keinem 5-min-Abschnitt deutlich weniger Wörter haben als `nohw` (Schwelle: 20 % und mindestens 30 Wörter weniger) und an A und B höchstens so viele Fehler übersehen wie `base` (0 / 7), gewinnt die mit der niedrigsten mittleren WER an A und B. Unterschiede unter 3 Punkten gelten wie in TOOL-93 als Rauschen. Bei Gleichstand gewinnt die geringere Seed-Spanne an B, dann die einfachere Einstellung.
 - **Pipeline danach:**
   - `asr.hotwords: true|false` kommt immer dazu (Default `true`). Bei `false` gilt `keyword_biasing: false` wie bei einem Modell ohne Hotwords.
