@@ -22,7 +22,6 @@ import json
 import math
 import statistics
 import sys
-import wave
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -265,37 +264,35 @@ class Audio:
 
 
 def read_audio(wav: Path, start_ms: int, end_ms: int) -> Audio:
-    with wave.open(str(wav), "rb") as source:
-        if (source.getframerate(), source.getnchannels(), source.getsampwidth()) != (
-            RATE,
-            1,
-            2,
-        ):
-            raise SpikeError("segment WAV is not 16 kHz mono 16 bit")
-        start_ms = max(0, start_ms)
-        source.setpos(min(start_ms * RATE // 1000, source.getnframes()))
-        data = source.readframes((end_ms - start_ms) * RATE // 1000)
-    samples = np.frombuffer(data, dtype="<i2").astype(np.float32)
-    samples *= 1 / 32768  # in place: the whole segment is read for the VAD
+    start_ms = max(0, start_ms)
+    samples = asr._read_wav(
+        wav, start_ms * RATE // 1000, (end_ms - start_ms) * RATE // 1000
+    )
     return Audio(start_ms, samples)
 
 
 def vad_speech(paths: SessionPaths, name: str) -> Ranges:
     """The speech ranges the VAD of variant `name` keeps in segment 1.
 
-    Computed once per set of options and cached as numbers.
+    Computed once per set of options on the WAV the variant's roots link, and
+    cached as numbers: next to the filtered copy, or for the raw WAV where
+    TOOL-101 put it.
     """
-    settings = asr.variant(name).asr
+    spec = asr.variant(name)
+    settings = spec.asr
     if settings.get("vad_filter") is False:
         raise SpikeError(f"{name}: runs without VAD")
     options = {**VAD_OPTIONS, **settings.get("vad_parameters", {})}
+    wav = asr.chain_wav(paths, spec.chain)
     record = paths.work_dir / "experiments" / "asr" / "vad.json"
+    if spec.chain != denoise.Chain():
+        record = wav.with_name("vad.json")
     frames = denoise._manifest_frames(paths)
     stored = asr._read_json(record)
     if stored.get("frames") != frames or stored.get("options") != options:
         from faster_whisper.vad import VadOptions, get_speech_timestamps
 
-        audio = read_audio(paths.segment_wav(SEGMENT), 0, asr._end_ms(paths) + 1)
+        audio = read_audio(wav, 0, asr._end_ms(paths) + 1)
         chunks = get_speech_timestamps(audio.samples, VadOptions(**options))
         stored = {
             "frames": frames,
@@ -646,7 +643,8 @@ def measure(
         seed: silence(reference, context) for seed, reference in references.items()
     }
     print_segment(quiet, context.speech.total, vad, asr._end_ms(paths))
-    wav = paths.segment_wav(SEGMENT)
+    # the level of what Whisper heard: the filtered copy for a filtered variant
+    wav = asr.chain_wav(paths, asr.variant(name).chain)
     for clip in clips:
         hand = calibration.read_hand_reference(
             paths.review_dir / "calibration" / clip.file

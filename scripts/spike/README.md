@@ -210,3 +210,39 @@ Das Skript schreibt nichts. Die Konsole bekommt Zähler, Anteile, Fehlerraten un
   - *R2, Alternative an der Lücke:* Die Basis bleibt. Was ein anderer Seed an einer Stelle mehr hat, gilt als Alternative. Gezählt wird, wie viele Auslassungen der Basis ein richtiges Wort bekommen, wie viele Alternativ-Wörter falsch sind und wie viel Zeit die Stellen einnehmen. Bieten zwei Seeds dasselbe Wort an, zählt es bei den Alternativ-Wörtern doppelt und bei den Auslassungen einmal. Drei Zeilen je Basis: jede Alternative, nur Blöcke ab 20 Wörtern, nur Blöcke, die jeder andere Seed an der Stelle anbietet.
   - *R3, Abweichung als Review-Hinweis:* Eine `confident`-Passage der Basis bekommt einen Hinweis, wenn ein anderer Seed dort um mindestens 1, 2 oder 3 Wörter abweicht. Gezählt wird wie in TOOL-35: Fehler und Auslassungen in `confident`-Passagen, wie viele davon in Passagen mit Hinweis liegen, Passagen mit Hinweis ohne Fehler und die zusätzlich markierte Zeit.
   - *Markierte Zeit* ist hier die Zeit der Passagen, die nicht `confident` sind, geteilt durch die Zeit aller Passagen. Überlappende Passagen zählen einmal.
+
+# Pegel-Spike (TOOL-103)
+
+Misst, ob ein Ausgleich der Lautstärke vor der Erkennung die Auslassungen verringert. Die Kandidaten sind Basen in `asr.py`, mit allen Hotwords wie `base`. `denoise.py` bleibt unverändert und liefert Kette und Filter. Plan: [`TOOL-103`](../../docs/plans/TOOL-103-level-normalization.md), Bericht: [`docs/spikes/TOOL-103-pegelausgleich.md`](../../docs/spikes/TOOL-103-pegelausgleich.md).
+
+## Datenschutz
+
+Wie beim ASR-Spike: Gefiltertes Audio und Wurzeln liegen nur unter `work/<gruppe>/<ordinal>/experiments/asr/`. Die Konsole bekommt Zähler, Anteile, Pegel und Zeiten, nie Text, Namen oder Sprecher-Labels. Alle Filter sind lokales ffmpeg.
+
+## Ablauf
+
+```bash
+K="dyn dynx comp loud spn"
+.venv/bin/python scripts/spike/asr.py prepare $S $K --seeds 3
+.venv/bin/python scripts/spike/asr.py run $S $K --seeds 3
+.venv/bin/python scripts/spike/asr.py score $S base $K --seeds 3 [--clip NAME=DATEI@H:MM:SS-H:MM:SS]…
+.venv/bin/python scripts/spike/omissions.py $S --variant dyn [--clip …]
+```
+
+- **`prepare`** filtert einmal je Kette nach `experiments/asr/audio/<kette>/` und schreibt dort `filter.json`:
+  - *Versatz:* die Hüllkurve gegen das Roh-WAV an drei Stellen (10 %, 50 %, 90 % des Segments, je 60 s, Auflösung 5 ms). Über 10 ms bricht `prepare` ab, weil Wortzeiten und Diarisierung sonst nicht mehr passen.
+  - *Verstärkung:* je Sekunde an denselben Stellen, Median, P10 und P90 in dB. Ein Ausgleich zeigt sich als breite Spanne, eine feste Verstärkung als keine.
+  - *Vollausschlag:* Anteil der Samples am Anschlag über die ganze Datei.
+- **`loud`** läuft zweistufig: Ein erster Durchgang misst, der zweite bekommt die Messwerte (`measured_*`, `offset`, `linear=true`). Sie stehen unter `loudnorm` in `filter.json`, dazu `linear_expected`: ob ffmpeg nach seiner Regel mit fester Verstärkung normalisiert oder dynamisch regelt.
+- **`omissions.py --variant`** rechnet für eine gefilterte Variante VAD und Pegel auf dem gefilterten WAV. Die VAD liegt als `vad.json` neben dem WAV. Die Diarisierung bleibt die der Sitzung.
+
+## Kandidaten
+
+| Name | Kette |
+| --- | --- |
+| `dyn` | `dynaudnorm=f=500:g=31:m=5` (mild) |
+| `dynx` | `dynaudnorm=f=200:g=11:m=30` (stark) |
+| `comp` | `acompressor=threshold=0.05:ratio=4:attack=5:release=200:makeup=4,alimiter=limit=0.95:level=false` |
+| `loud` | `loudnorm=I=-16:TP=-1.5:LRA=11`, zweistufig |
+| `spn` | `speechnorm=e=12.5:r=0.0001:l=1` |
+| `<name>-hp` | `highpass=f=80` vor der Kette |

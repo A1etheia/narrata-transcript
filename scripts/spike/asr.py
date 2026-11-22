@@ -9,7 +9,10 @@ per seed.
     asr.py decode <group>/<ordinal> <variant>... [--seeds N] [--against V]
 
 A variant is a hotword base (`base`, `pchw`, `nohw`, `nohw-hp`, `kw<N>`,
-`neutral9`, `neutral`) followed by modifiers joined with `+`, e.g.
+`neutral9`, `neutral`) or a level-normalising base with all hotwords (TOOL-103:
+`dyn`, `dynx`, `comp`, `loud`, `spn`, each also as `<name>-hp` behind a high-pass;
+`prepare` records offset, gain range and clipping of the filtered WAV in
+`filter.json`), followed by modifiers joined with `+`, e.g.
 `nohw+vad-t35+beam10`. `+fill` appends everyday words to the list until the
 token budget is full. `+guard` keeps the pipeline's guard, which passes no list
 under 110 tokens; without it every variant gets its list as given, so
@@ -48,6 +51,7 @@ import subprocess
 import sys
 import threading
 import time
+import wave
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -55,6 +59,7 @@ from pathlib import Path
 from typing import Protocol
 
 import denoise
+import numpy as np
 import yaml
 from denoise import RATE, SEGMENT, Chain, SpikeError, _pct, _per_hour, _seconds
 
@@ -221,6 +226,37 @@ BASES = {
     "neutral9": Variant(neutral=NEUTRAL_SHORT),
     "neutral": Variant(neutral=len(NEUTRAL_WORDS)),
 }
+# TOOL-103: level normalisation before the recognition, hotwords as in `base`.
+# `loudnorm` runs in two passes: `_two_pass` adds what the first pass measured.
+LOUDNORM = "loudnorm="
+LOUDNORM_TARGET = {"I": -16.0, "TP": -1.5, "LRA": 11.0}
+# loudnorm option -> the key of the first pass's statistics that fills it
+LOUDNORM_MEASURED = {
+    "measured_I": "input_i",
+    "measured_LRA": "input_lra",
+    "measured_TP": "input_tp",
+    "measured_thresh": "input_thresh",
+    "offset": "target_offset",
+}
+LEVELLERS = {
+    "dyn": "dynaudnorm=f=500:g=31:m=5",  # mild: slow, at most 14 dB
+    "dynx": "dynaudnorm=f=200:g=11:m=30",  # strong: fast, up to 30 dB
+    "comp": (
+        "acompressor=threshold=0.05:ratio=4:attack=5:release=200:makeup=4,"
+        "alimiter=limit=0.95:level=false"
+    ),
+    "loud": LOUDNORM + ":".join(f"{k}={v:g}" for k, v in LOUDNORM_TARGET.items()),
+    "spn": "speechnorm=e=12.5:r=0.0001:l=1",  # "strong and fast" of the ffmpeg docs
+}
+for _name, _leveller in LEVELLERS.items():
+    BASES[_name] = Variant(chain=Chain(before=_leveller))
+    BASES[f"{_name}-hp"] = Variant(chain=Chain(before=f"{denoise._HP},{_leveller}"))
+# what `prepare` checks on a filtered WAV against the raw one (TOOL-103)
+CHECK_PLACES = (0.1, 0.5, 0.9)  # where in the segment
+CHECK_MS = 60_000
+ENVELOPE_MS = 5  # resolution of the offset
+MAX_OFFSET_MS = 10  # beyond this, word times and diarization no longer fit
+AUDIBLE = 1e-3  # a second of raw audio below this RMS has no gain to speak of
 KEYWORD_LIMIT_PREFIX = "kw"  # kw<N>, parsed by `variant`
 # fills a short list with NEUTRAL_WORDS up to the token budget (TOOL-81)
 FILL = "fill"
@@ -380,35 +416,136 @@ def _link_audio(
     """The raw WAV, or one filtered copy per chain that every root links."""
     target = shadow.segment_wav(SEGMENT)
     frames = denoise._manifest_frames(paths)
-    if chain == Chain():
-        source = paths.segment_wav(SEGMENT)
-    else:
-        store = paths.work_dir / "experiments" / "asr" / "audio" / chain.describe()
-        source = store / "segment.wav"
+    source = chain_wav(paths, chain)
+    if chain != Chain():
+        store = source.parent
         record = store / "filter.json"
         if not denoise._reusable(record, source, chain, frames):
             store.mkdir(parents=True, exist_ok=True)
+            raw = paths.segment_wav(SEGMENT)
             started = time.monotonic()
-            denoise._filter(paths.segment_wav(SEGMENT), source, chain, frames, store)
+            applied, measured = _two_pass(raw, chain)
+            denoise._filter(raw, source, applied, frames, store)
             elapsed = time.monotonic() - started
-            record.write_text(
-                json.dumps(
-                    {
-                        "chain": chain.describe(),
-                        "frames": frames,
-                        "filter_seconds": round(elapsed, 1),
-                        "tools": denoise._tool_versions(chain),
-                    },
-                    indent=2,
-                ),
-                encoding="utf-8",
+            check = filter_check(raw, source, frames)
+            if max(abs(ms) for ms in check["offset_ms"]) > MAX_OFFSET_MS:
+                source.unlink()
+                raise SpikeError(f"{label}: filtered audio is shifted against the raw")
+            found = {
+                "chain": chain.describe(),
+                "frames": frames,
+                "filter_seconds": round(elapsed, 1),
+                "tools": denoise._tool_versions(chain),
+                "check": check,
+            }
+            if measured:
+                found["loudnorm"] = measured
+            record.write_text(json.dumps(found, indent=2), encoding="utf-8")
+            gain = check["gain_db"]
+            print(
+                f"{label}: {chain.describe()} in {elapsed:.0f} s, offset "
+                f"{check['offset_ms']} ms, gain {gain['median']} dB "
+                f"({gain['p10']} to {gain['p90']}), at full scale "
+                f"{check['full_scale_share']:.4%}"
             )
-            print(f"{label}: {chain.describe()} in {elapsed:.0f} s")
         shutil.copy2(record, shadow.root / "filter.json")
     if target.is_file() and os.path.samefile(source, target):
         return
     target.unlink(missing_ok=True)
     os.link(source, target)  # never written by the pipeline
+
+
+def chain_wav(paths: SessionPaths, chain: Chain) -> Path:
+    """Segment 1 as the roots of `chain` link it: raw, or the one filtered copy."""
+    if chain == Chain():
+        return paths.segment_wav(SEGMENT)
+    store = paths.work_dir / "experiments" / "asr" / "audio" / chain.describe()
+    return store / "segment.wav"
+
+
+def _two_pass(raw: Path, chain: Chain) -> tuple[Chain, dict[str, object]]:
+    """`chain` with what a first `loudnorm` pass measured, and those values.
+
+    The store and its record keep the name of the chain as given, so a filtered
+    WAV is reused without measuring again.
+    """
+    parts = (chain.before or "").split(",")
+    at = next((n for n, p in enumerate(parts) if p.startswith(LOUDNORM)), None)
+    if at is None:
+        return chain, {}
+    command = ["ffmpeg", "-nostdin", "-hide_banner", "-v", "info", "-i", str(raw)]
+    command += ["-af", ",".join(parts[: at + 1]) + ":print_format=json"]
+    command += ["-f", "null", "-"]
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    start, end = result.stderr.rfind("{"), result.stderr.rfind("}")
+    if result.returncode or start < 0 or end < start:
+        raise SpikeError("loudnorm: the measuring pass failed")
+    stats = json.loads(result.stderr[start : end + 1])
+    measured: dict[str, object] = {
+        key: float(stats[key]) for key in LOUDNORM_MEASURED.values()
+    }
+    # af_loudnorm.c: a fixed gain if it keeps the true peak and the range fits
+    target = LOUDNORM_TARGET
+    peak = measured["input_tp"] + target["I"] - measured["input_i"]
+    keeps_peak = peak <= target["TP"]
+    range_fits = measured["input_lra"] <= target["LRA"]
+    measured["linear_expected"] = keeps_peak and range_fits
+    options = [f"{o}={stats[key]}" for o, key in LOUDNORM_MEASURED.items()]
+    parts[at] = ":".join([parts[at], *options, "linear=true"])
+    return dataclasses.replace(chain, before=",".join(parts)), measured
+
+
+def _read_wav(wav: Path, start: int, count: int) -> np.ndarray:
+    """`count` samples of a segment WAV from frame `start` on, as floats in -1..1."""
+    with wave.open(str(wav), "rb") as source:
+        if (source.getframerate(), source.getnchannels(), source.getsampwidth()) != (
+            RATE,
+            1,
+            2,
+        ):
+            raise SpikeError("segment WAV is not 16 kHz mono 16 bit")
+        source.setpos(min(start, source.getnframes()))
+        data = source.readframes(count)
+    samples = np.frombuffer(data, dtype="<i2").astype(np.float32)
+    samples *= 1 / 32768  # in place: omissions.py reads the whole segment
+    return samples
+
+
+def filter_check(raw: Path, filtered: Path, frames: int) -> dict[str, object]:
+    """What a filter did, from numbers alone (TOOL-103).
+
+    At `CHECK_PLACES`: the offset of the envelope against the raw WAV (positive:
+    the filtered audio is late) and the gain of each second the raw WAV is
+    audible in. A leveller shows as a wide gain range, a fixed gain as none. Over
+    the whole file: the share of samples at full scale.
+    """
+    step = RATE * ENVELOPE_MS // 1000
+    count = min(CHECK_MS * RATE // 1000, frames) // RATE * RATE
+    offsets: list[int] = []
+    gains: list[float] = []
+    for place in CHECK_PLACES:
+        start = min(int(frames * place), frames - count)
+        before, after = (_read_wav(wav, start, count) for wav in (raw, filtered))
+        a, b = (np.abs(x).reshape(-1, step).mean(axis=1) for x in (before, after))
+        lag = int(np.argmax(np.correlate(b - b.mean(), a - a.mean(), mode="full")))
+        offsets.append((lag - (len(a) - 1)) * ENVELOPE_MS)
+        was, now = (
+            np.sqrt((x.reshape(-1, RATE) ** 2).mean(axis=1)) for x in (before, after)
+        )
+        heard = was > AUDIBLE
+        gains += (20 * np.log10(np.maximum(now[heard], 1e-9) / was[heard])).tolist()
+    full = 0
+    with wave.open(str(filtered), "rb") as source:
+        while data := source.readframes(RATE * 600):
+            full += int((np.abs(np.frombuffer(data, dtype="<i2")) >= 32767).sum())
+    return {
+        "offset_ms": offsets,
+        "gain_db": {
+            name: round(float(np.percentile(gains, q)), 1) if gains else None
+            for name, q in (("median", 50), ("p10", 10), ("p90", 90))
+        },
+        "full_scale_share": full / frames,
+    }
 
 
 # --- run ----------------------------------------------------------------------------
