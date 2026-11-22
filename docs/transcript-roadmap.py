@@ -122,7 +122,7 @@ P = [
     ]),
     ("Phase 8 — Sprecher-Wiedererkennung",
      "M8 — Konzept für Stimmprofile mit Einwilligung pro Spielrunde, Go/No-Go. Reflexionspunkt, kein Umsetzungsblock.", [
-        ("TOOL-87", "Konzept: Sprecher über Sessions hinweg wiedererkennen", 1.0, "nur Konzept, Umsetzung als Folge-Tickets (TOOL und IOA); Stimmprofil = biometrisches Datum (Art. 9 DSGVO), Opt-in pro Mitgliedschaft im Narrata-Profil; Profile nur lokal, nur aus bestätigten Zuordnungen, Vorschläge nie ohne Bestätigung; Go/No-Go nach `effort_minutes` aus TOOL-59 mit TOOL-86; Kandidaten auf Anwesende eingrenzen (TOOL-79); aus TOOL-86: automatische Vorschläge über Stimmprofile; aus TOOL-60: Hauptnutzen wäre die Gewichtung pro Person ohne Handarbeit, die Sprecherfehler liegen nach TOOL-96 schon nahe an Plaud"),
+        ("TOOL-87", "Konzept: Sprecher über Sessions hinweg wiedererkennen", 1.0, "erledigt: `docs/pilot/TOOL-87-stimmprofile.md`; Ergebnis No-Go, keine Umsetzungstickets; Stimmprofil wäre ein biometrisches Datum (Art. 9 DSGVO) mit Opt-in pro Mitgliedschaft, Neuprüfung erst beim Kriterium aus der Notiz"),
     ]),
 ]
 
@@ -176,8 +176,9 @@ def main() -> None:
                            end=cal[math.ceil(cum) - 1] if open_ else None))
 
     cond_days = sum(r["days"] for r in rows if r["key"] in CONDITIONAL)
-    last = max(p["end"] for p in phases if p["end"] is not None)
-    weeks = (last - FROM).days // 7 + 1
+    ends = [p["end"] for p in phases if p["end"] is not None]
+    last = max(ends) if ends else None
+    weeks = (last - FROM).days // 7 + 1 if last else 0
     pauses = ", ".join(f"{de(a)}–{de(b)}" for a, b in PAUSES)
 
     o = []
@@ -187,7 +188,7 @@ def main() -> None:
     o.append("- **Eine Person, ein Zeitbudget.** TOOL- und IOA-Tickets konkurrieren um dieselben Tage; der Plan ist deshalb eine *lineare* Folge. Echte Parallelität gibt es nur dort, wo ASR-Läufe oder Modell-Downloads im Hintergrund laufen — dann wird am Narrata-Ticket derselben Phase gearbeitet.")
     o.append(f"- **Kapazität: {len(WORKDAYS)} Entwicklungstage pro Woche**, Start {de(FROM)}, Pause {pauses}. Das ist der Umrechnungsfaktor für die Kalenderspalte, nicht Teil des Plans — ändert sich die Kapazität, verschieben sich nur die Daten, nicht die Reihenfolge.")
     o.append("- **Aufwände sind Entwicklungstage in 0,5er-Schritten**, grob geschätzt aus den Ticket-Beschreibungen. Sie dienen der Reihenfolge und den Meilenstein-Abständen; keine Zusage.")
-    o.append(f"- **Offener Umfang: {total:g} Entwicklungstage** ≈ {weeks} Wochen → letzter Meilenstein {de(last)}; erledigt {done_days:g} Tage." + (f" Davon {cond_days:g} Tage bedingt ({', '.join(sorted(CONDITIONAL))})." if CONDITIONAL else ""))
+    o.append(f"- **Offener Umfang: {total:g} Entwicklungstage** ≈ {weeks} Wochen → letzter Meilenstein {de(last) if last else 'keiner offen'}; erledigt {done_days:g} Tage." + (f" Davon {cond_days:g} Tage bedingt ({', '.join(sorted(CONDITIONAL))})." if CONDITIONAL else ""))
     o.append("- **Neu terminiert am 17.11.2026, Qualität zuerst, fortgeschrieben am 21.11.2026:** Erledigte Tickets belegen keine Tage mehr und tragen kein Datum; die offenen Tickets beginnen am ersten Arbeitstag ab heute, angeführt von der Erkennungsqualität (TOOL-93, TOOL-96) vor dem Pilot-Review (TOOL-60). Nach dem Backlog-Review vom 21.11.2026 folgt die Pipeline-Nacharbeit aus TOOL-60 (TOOL-81, 99, 90, 84, 79) vor den Reflexionspunkten TOOL-85 und TOOL-87. Die Narrata-Nacharbeit aus Epic IOA-1297 (Korrektur, IT/OT, Lesefassung) steht nicht in dieser Folge und konkurriert um dieselben Tage.")
     o.append("- Nicht eingeplant: die Epics selbst, zurückgestellte Tickets (TOOL-82 bis IOA-1326, Label `transcript-v0.2`), verworfene Tickets (TOOL-14 nach TOOL-60; TOOL-88 nach dem Backlog-Review, Review wandert nach Narrata;TOOL-21–32, 34; TOOL-3, 7; TOOL-11, 33 nach TOOL-62; TOOL-78 nach TOOL-59; Epic TOOL-65 mit TOOL-70–75, IT/OT nach Narrata verlegt in Epic IOA-1297), in andere aufgenommene Tickets (TOOL-77 in TOOL-57).\n")
     o.append("## Leitlinien der Reihenfolge\n")

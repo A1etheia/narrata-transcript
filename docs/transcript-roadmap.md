@@ -7,7 +7,7 @@ Stand 2026-11-22, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 - **Eine Person, ein Zeitbudget.** TOOL- und IOA-Tickets konkurrieren um dieselben Tage; der Plan ist deshalb eine *lineare* Folge. Echte Parallelität gibt es nur dort, wo ASR-Läufe oder Modell-Downloads im Hintergrund laufen — dann wird am Narrata-Ticket derselben Phase gearbeitet.
 - **Kapazität: 3 Entwicklungstage pro Woche**, Start 23.11.2026, Pause 21.12.2026–03.01.2027. Das ist der Umrechnungsfaktor für die Kalenderspalte, nicht Teil des Plans — ändert sich die Kapazität, verschieben sich nur die Daten, nicht die Reihenfolge.
 - **Aufwände sind Entwicklungstage in 0,5er-Schritten**, grob geschätzt aus den Ticket-Beschreibungen. Sie dienen der Reihenfolge und den Meilenstein-Abständen; keine Zusage.
-- **Offener Umfang: 1 Entwicklungstage** ≈ 1 Wochen → letzter Meilenstein 23.11.2026; erledigt 73.5 Tage.
+- **Offener Umfang: 0 Entwicklungstage** ≈ 0 Wochen → letzter Meilenstein keiner offen; erledigt 74.5 Tage.
 - **Neu terminiert am 17.11.2026, Qualität zuerst, fortgeschrieben am 21.11.2026:** Erledigte Tickets belegen keine Tage mehr und tragen kein Datum; die offenen Tickets beginnen am ersten Arbeitstag ab heute, angeführt von der Erkennungsqualität (TOOL-93, TOOL-96) vor dem Pilot-Review (TOOL-60). Nach dem Backlog-Review vom 21.11.2026 folgt die Pipeline-Nacharbeit aus TOOL-60 (TOOL-81, 99, 90, 84, 79) vor den Reflexionspunkten TOOL-85 und TOOL-87. Die Narrata-Nacharbeit aus Epic IOA-1297 (Korrektur, IT/OT, Lesefassung) steht nicht in dieser Folge und konkurriert um dieselben Tage.
 - Nicht eingeplant: die Epics selbst, zurückgestellte Tickets (TOOL-82 bis IOA-1326, Label `transcript-v0.2`), verworfene Tickets (TOOL-14 nach TOOL-60; TOOL-88 nach dem Backlog-Review, Review wandert nach Narrata;TOOL-21–32, 34; TOOL-3, 7; TOOL-11, 33 nach TOOL-62; TOOL-78 nach TOOL-59; Epic TOOL-65 mit TOOL-70–75, IT/OT nach Narrata verlegt in Epic IOA-1297), in andere aufgenommene Tickets (TOOL-77 in TOOL-57).
 
@@ -32,7 +32,7 @@ Stand 2026-11-22, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 | M5 | Transkript per Chat/MCP befragbar, in Narrata durchsuchbar, lesbar, verlinkt | Phase 5 | erledigt | 8 |
 | M6 | Erste Welt-Archiv-Einträge mit Transkript-Provenienz; IT/OT-Statistik und Abendvergleich sichtbar | Phase 6 | erledigt | 5 |
 | M7 | Entscheidung, ob und wie andere Narrata-Nutzer ihre Aufnahmen transkribieren können | Phase 7 | erledigt | 0.5 |
-| M8 | Konzept für Stimmprofile mit Einwilligung pro Spielrunde, Go/No-Go | Phase 8 | 23.11.2026 – 23.11.2026 | 1 |
+| M8 | Konzept für Stimmprofile mit Einwilligung pro Spielrunde, Go/No-Go | Phase 8 | erledigt | 1 |
 
 ## Reflexionspunkte
 
@@ -186,7 +186,7 @@ Start/Ende der offenen Tickets sind in Jira als Start date / Due date gespiegelt
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| TOOL-87 | Konzept: Sprecher über Sessions hinweg wiedererkennen | 1 | 23.11.2026 | 23.11.2026 | nur Konzept, Umsetzung als Folge-Tickets (TOOL und IOA); Stimmprofil = biometrisches Datum (Art. 9 DSGVO), Opt-in pro Mitgliedschaft im Narrata-Profil; Profile nur lokal, nur aus bestätigten Zuordnungen, Vorschläge nie ohne Bestätigung; Go/No-Go nach `effort_minutes` aus TOOL-59 mit TOOL-86; Kandidaten auf Anwesende eingrenzen (TOOL-79); aus TOOL-86: automatische Vorschläge über Stimmprofile; aus TOOL-60: Hauptnutzen wäre die Gewichtung pro Person ohne Handarbeit, die Sprecherfehler liegen nach TOOL-96 schon nahe an Plaud |
+| TOOL-87 | Konzept: Sprecher über Sessions hinweg wiedererkennen | 1 | — | — | erledigt: `docs/pilot/TOOL-87-stimmprofile.md`; Ergebnis No-Go, keine Umsetzungstickets; Stimmprofil wäre ein biometrisches Datum (Art. 9 DSGVO) mit Opt-in pro Mitgliedschaft, Neuprüfung erst beim Kriterium aus der Notiz |
 
 ## Pflege
 
