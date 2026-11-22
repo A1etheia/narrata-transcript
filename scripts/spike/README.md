@@ -157,14 +157,14 @@ Das Skript schreibt nur `work/<gruppe>/<ordinal>/experiments/asr/vad.json`, die 
 ```
 
 - **Voraussetzung:** Die Wurzeln `<variante>.seed1..N` sind mit `asr.py run` transkribiert, und Segment 1 der Sitzung selbst ist diarisiert. Ohne GPU. Die VAD rechnet einmal rund 20 s auf der CPU, danach kommt sie aus `vad.json`.
-- **Wortzeiten:** Die Ausrichtung ist dieselbe wie in `calibration.measure`, das Skript bricht ab, wenn seine Auslassungen davon abweichen. Ein erkanntes Wort bekommt die Mitte seiner Wortzeit. Eine Folge ausgelassener Wörter wird gleichmäßig zwischen dem Ende des Wortes davor und dem Anfang des Wortes danach verteilt.
+- **Wortzeiten:** Die Ausrichtung ist dieselbe wie in `calibration.measure`, das Skript bricht ab, wenn seine Auslassungen davon abweichen. Jedes Referenzwort bekommt eine Zeit, die für alle Seeds gilt: den Median der Zeiten aus den Seeds, die es erkannt haben (Wortanfang plus halbe Wortlänge, die Länge auf 1 s begrenzt). Nur Wörter, die in allen Seeds fehlen, werden gleichmäßig zwischen ihren Nachbarn verteilt. Die Zeit der Nachbarwörter im selben Lauf taugt dafür nicht: Whisper dehnt das Wort vor übersprungener Sprache über die Lücke.
 - **VAD:** Silero mit den Optionen der Pipeline (`threshold 0.5`, `min_silence_duration_ms 2000`, `speech_pad_ms 400`). Das Skript bricht ab, wenn die Summe der Abschnitte mehr als 1 s von `duration_after_vad` eines Laufs abweicht.
 - **Ausgabe:** Markdown-Tabellen.
   - *Segment:* von der VAD behaltene Zeit; je Seed die Zeit, in der die Diarisierung Sprache hört und Whisper kein Wort hat (Pausen zwischen Wörtern bis 1 s gelten als gedeckt), und die Stellen ab 2 s.
   - *Je Referenz, Merkmale:* je Klasse die Auslassungen und die Referenzwörter je Seed, ihr Anteil an allen Auslassungen bzw. Referenzwörtern als Mittel und Spanne und die Auslassungen je Wort der Klasse.
   - *Je Referenz, Sprecher:* Wörter, Auslassungen und der Pegel (RMS über die Turns des zugeordneten Labels im Clip) relativ zum lautesten Sprecher, dazu der Pegel außerhalb aller Turns.
   - *Je Referenz, Stabilität:* wie viele Referenzwörter in 3, 2 oder 1 der Seeds fehlen.
-  - *Je Referenz, Verortung:* Zahl und Breite der Lücken, in die Auslassungen gelegt wurden, und der Anteil der Clip-Zeit mit Sprache ohne Wörter.
+  - *Je Referenz, Verortung:* je Seed die Folgen von Auslassungen, die längste Folge und der Anteil der Clip-Zeit mit Sprache ohne Wörter; dazu, wie viele Wörter kein Seed erkannt hat und wie weit die Wortzeiten der Seeds auseinanderliegen.
 
 ## Merkmale
 

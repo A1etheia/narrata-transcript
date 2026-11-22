@@ -26,6 +26,7 @@ Bekannt ist, dass Whisper an den Handreferenzen 30–131 Wörter je Clip ausläs
   - Treffer und Ersetzungen bekommen die Mitte ihres erkannten Wortes.
   - Eine Folge ausgelassener Wörter wird gleichmäßig zwischen dem Ende des linken und dem Anfang des rechten Nachbarwortes verteilt, am Cliprand bis zur Clipgrenze.
   - Der Bericht nennt die Breite dieser Lücken (Median, Anteil über 5 s), weil ein verlorener Block von 70–100 Wörtern nur grob verortet ist.
+  - *Geändert in Chunk 2:* Die Verortung zwischen den Nachbarwörtern desselben Laufs trägt nicht. An C fehlt in zwei Seeds ein Block von 54 Wörtern, und Whisper dehnt dort das Wort davor über die Lücke, sodass der Block an der falschen Stelle landet. Jedes Referenzwort bekommt deshalb eine Zeit für alle Seeds: den Median aus den Seeds, die es erkannt haben. Nur Wörter, die in allen Seeds fehlen, werden zwischen ihren Nachbarn verteilt. Statt der Lückenbreite nennt der Bericht, wie viele Wörter das betrifft und wie weit die Wortzeiten der Seeds auseinanderliegen.
 - **Gleiche Ausrichtung wie `calibration.measure`:** derselbe `SequenceMatcher`-Aufruf über dieselben Clip-Tokens. Das Skript bricht ab, wenn seine Auslassungen nicht mit `calibration.align(...).deletions` übereinstimmen.
 - **Schwellen stehen vorab fest**, damit bei 30–131 Auslassungen je Clip nichts an die Daten angepasst wird:
 

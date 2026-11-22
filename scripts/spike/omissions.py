@@ -4,8 +4,8 @@
 
 Reads the stored runs of `asr.py` (one root per seed), the session's diarization
 of segment 1 and the hand references under `review/calibration/`. Every
-reference word gets a time: a recognised word its own, an omitted one a place
-between its recognised neighbours. Per clip it prints Markdown tables that set
+reference word gets one time for all seeds: the median over the seeds that
+heard it, or a place between its neighbours if none did. Per clip it prints Markdown tables that set
 the omissions against all reference words: overlap, turn length, speaker and
 level, decoding windows with temperature fallback, audio the VAD removed,
 stability over the seeds and speech without words. The only file it writes is
@@ -17,6 +17,7 @@ text, no names and no speaker labels; speakers appear as ranks by word count.
 
 import argparse
 import bisect
+import itertools
 import json
 import math
 import statistics
@@ -47,9 +48,7 @@ LONG_TURN_MS = 10_000
 QUIET_DB = 6.0  # a turn this far below the loudest speaker is quiet
 BRIDGE_WORDS_MS = 1_000  # a pause between words up to this is not missing speech
 LONG_SILENT_MS = 2_000  # speech without words: stretches counted over the segment
-WIDE_GAP_MS = (
-    5_000  # an omission placed in a gap wider than this is only roughly placed
-)
+MAX_WORD_MS = 1_000  # a recognised word counts as at most this long
 LEVEL_MARGIN_MS = 30_000  # audio read around a clip for the level of its turns
 MIN_LEVEL_MS = 1_000  # a label needs this much audio in the clip to count as loudest
 VAD_TOLERANCE_S = 1.0
@@ -141,56 +140,66 @@ class Ranges:
 # --- word times ---------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class Placed:
-    """A time for every token of the hand reference, against one run."""
-
-    times: tuple[float, ...]  # ms on the segment's timeline
-    deleted: tuple[bool, ...]
-    # per run of omitted tokens: how many, and the gap they were spread over
-    gaps: tuple[tuple[int, int], ...]
-
-
-def place(
+def heard(
     reference: ReferenceTranscript, hand: calibration.HandReference, clip: HandClip
-) -> Placed:
-    """Align as `calibration.measure` does and give each reference token a time.
+) -> tuple[float | None, ...]:
+    """Per token of the hand reference the time one run heard it at, None if omitted.
 
-    A matched or substituted token takes the middle of its recognised word. A run
-    of omitted tokens is spread evenly between the end of the recognised word
-    before it and the start of the one after it, or the clip's edge.
+    Aligned as `calibration.measure` does. A matched or substituted token takes
+    the start of its recognised word plus half its length, the length capped:
+    Whisper stretches the word before skipped speech over the gap.
     """
     texts, origins, _ = calibration._clip_tokens(reference, clip.start_ms, clip.end_ms)
     passages = {passage.index: passage for passage in reference.passages}
-    spans = []
-    for origin in origins:
-        word = passages[origin.passage].words[origin.word]
-        spans.append((word.start_ms, max(word.end_ms or word.start_ms, word.start_ms)))
-    times = [0.0] * len(hand.tokens)
-    deleted = [False] * len(hand.tokens)
-    gaps: list[tuple[int, int]] = []
+    times: list[float | None] = [None] * len(hand.tokens)
     matcher = SequenceMatcher(a=hand.tokens, b=texts, autojunk=False)
     for _, ref_start, ref_end, hyp_start, hyp_end in matcher.get_opcodes():
-        paired = min(ref_end - ref_start, hyp_end - hyp_start)
-        for n in range(paired):
-            start, end = spans[hyp_start + n]
-            times[ref_start + n] = (start + end) / 2
-        missing = ref_end - ref_start - paired
-        if not missing:
-            continue
-        before = hyp_start + paired - 1
-        left = spans[before][1] if before >= 0 else clip.start_ms
-        right = spans[hyp_end][0] if hyp_end < len(spans) else clip.end_ms
-        right = max(left, right)  # word times may run into each other
-        gaps.append((missing, right - left))
-        for n in range(missing):
-            position = ref_start + paired + n
-            times[position] = left + (right - left) * (n + 1) / (missing + 1)
-            deleted[position] = True
+        for n in range(min(ref_end - ref_start, hyp_end - hyp_start)):
+            origin = origins[hyp_start + n]
+            word = passages[origin.passage].words[origin.word]
+            length = max((word.end_ms or word.start_ms) - word.start_ms, 0)
+            times[ref_start + n] = word.start_ms + min(length, MAX_WORD_MS) / 2
     expected = [position for position, _ in calibration.align(hand, texts).deletions]
-    if [n for n, gone in enumerate(deleted) if gone] != expected:
+    if [n for n, ms in enumerate(times) if ms is None] != expected:
         raise SpikeError(f"{clip.name}: omissions differ from calibration.align")
-    return Placed(tuple(times), tuple(deleted), tuple(gaps))
+    return tuple(times)
+
+
+@dataclass(frozen=True)
+class Timeline:
+    """One time per token of the hand reference, shared by all seeds."""
+
+    times: tuple[float, ...]  # ms on the segment's timeline
+    guessed: tuple[bool, ...]  # no seed heard the token: placed between neighbours
+    spreads: tuple[float, ...]  # per token several seeds heard: latest minus earliest
+
+
+def timeline(runs: Sequence[Sequence[float | None]], clip: HandClip) -> Timeline:
+    """The median of the times the seeds heard a token at.
+
+    A run of tokens no seed heard is spread evenly between its timed neighbours,
+    or the clip's edge.
+    """
+    found = [[ms for ms in at if ms is not None] for at in zip(*runs, strict=True)]
+    times = [statistics.median(at) if at else None for at in found]
+    position = 0
+    while position < len(times):
+        if times[position] is not None:
+            position += 1
+            continue
+        end = position
+        while end < len(times) and times[end] is None:
+            end += 1
+        left = times[position - 1] if position else clip.start_ms
+        right = max(left, times[end] if end < len(times) else clip.end_ms)
+        for n in range(position, end):
+            times[n] = left + (right - left) * (n - position + 1) / (end - position + 1)
+        position = end
+    return Timeline(
+        tuple(times),
+        tuple(not at for at in found),
+        tuple(max(at) - min(at) for at in found if len(at) > 1),
+    )
 
 
 # --- diarization and level ----------------------------------------------------------
@@ -329,7 +338,6 @@ class ClipResult:
     seed: int
     deleted: tuple[bool, ...]
     classes: Mapping[str, tuple[str, ...]]  # feature -> class per reference token
-    gaps: tuple[tuple[int, int], ...]
     levels: Mapping[str, float | None]  # hand speaker -> dB against the loudest
     silent_share: float  # of the clip's time
 
@@ -381,7 +389,8 @@ def clip_turns(clip: HandClip, context: Context, audio: Audio) -> ClipTurns:
 
 def analyse(
     seed: int,
-    reference: ReferenceTranscript,
+    deleted: Sequence[bool],
+    times: Sequence[float],
     windows: Sequence[asr.DecodeWindow],
     quiet: Ranges,
     clip: HandClip,
@@ -389,18 +398,17 @@ def analyse(
     context: Context,
     turns: ClipTurns,
 ) -> ClipResult:
-    placed = place(reference, hand, clip)
     window_starts = [window.start_ms for window in windows]
     runs = _hand_turns(hand.speakers)
     classes: dict[str, list[str]] = {feature: [] for feature in FEATURES}
     pairs: Counter[tuple[str, str]] = Counter()
-    for position, ms in enumerate(placed.times):
+    for position, ms in enumerate(times):
         turn = context.turns.ranges.index(ms)
         if turn is None:
             length = level = NO_TURN
         else:
             length, level = turns.lengths[turn], turns.levels[turn]
-            if not placed.deleted[position]:
+            if not deleted[position]:
                 pairs[(hand.speakers[position], context.turns.labels[turn])] += 1
         window = bisect.bisect_right(window_starts, ms) - 1
         fallback = window >= 0 and windows[window].fallback
@@ -426,9 +434,8 @@ def analyse(
     label_of = {speaker: label for label, speaker in mapping.items()}
     return ClipResult(
         seed=seed,
-        deleted=placed.deleted,
+        deleted=tuple(deleted),
         classes={feature: tuple(values) for feature, values in classes.items()},
-        gaps=placed.gaps,
         levels={
             speaker: turns.labels.get(label_of.get(speaker, ""))
             for speaker in set(hand.speakers)
@@ -475,6 +482,7 @@ def print_clip(
     clip: HandClip,
     hand: calibration.HandReference,
     results: Sequence[ClipResult],
+    placed: Timeline,
     floor: float | None,
 ) -> None:
     words = [len(hand.tokens)] * len(results)
@@ -544,21 +552,28 @@ def print_clip(
     print()
 
     print(
-        "| Seed | Lücken mit Auslassungen | Median der Lückenbreite (s) | "
-        f"Auslassungen in Lücken über {WIDE_GAP_MS // 1000} s | größte Folge (Wörter) | "
-        "Clip-Zeit mit Sprache ohne Wörter |"
+        "| Seed | Folgen von Auslassungen | längste Folge (Wörter) | Clip-Zeit mit Sprache ohne Wörter |"
     )
-    print("| --- | --- | --- | --- | --- | --- |")
+    print("| --- | --- | --- | --- |")
     for r in results:
-        widths = [width for _, width in r.gaps]
-        wide = sum(count for count, width in r.gaps if width > WIDE_GAP_MS)
-        median = asr._decimal(statistics.median(widths) / 1000) if widths else "–"
+        runs = [
+            len(list(group)) for gone, group in itertools.groupby(r.deleted) if gone
+        ]
         print(
-            f"| {r.seed} | {len(r.gaps)} | {median} | "
-            f"{wide} von {sum(r.deleted)} | "
-            f"{max((count for count, _ in r.gaps), default=0)} | "
+            f"| {r.seed} | {len(runs)} | {max(runs, default=0)} | "
             f"{_pct(r.silent_share)} |"
         )
+    print()
+
+    spreads = sorted(placed.spreads)
+    print(
+        f"Verortung: {sum(placed.guessed)} Referenzwörter hat kein Seed erkannt, sie "
+        f"liegen zwischen ihren Nachbarn. Bei {len(spreads)} Wörtern mit Zeiten aus "
+        "mehreren Seeds liegen die Zeiten im Median "
+        f"{asr._decimal(statistics.median(spreads) / 1000 if spreads else 0)} s "
+        "auseinander, bei den 10 % mit dem größten Abstand mindestens "
+        f"{asr._decimal(spreads[len(spreads) * 9 // 10] / 1000 if spreads else 0)} s."
+    )
     print()
 
 
@@ -640,13 +655,23 @@ def measure(
             wav, clip.start_ms - LEVEL_MARGIN_MS, clip.end_ms + LEVEL_MARGIN_MS
         )
         turns = clip_turns(clip, context, audio)
+        runs = {seed: heard(r, hand, clip) for seed, r in references.items()}
+        placed = timeline(list(runs.values()), clip)
         results = [
             analyse(
-                seed, reference, windows[seed], quiet[seed], clip, hand, context, turns
+                seed,
+                [ms is None for ms in at],
+                placed.times,
+                windows[seed],
+                quiet[seed],
+                clip,
+                hand,
+                context,
+                turns,
             )
-            for seed, reference in references.items()
+            for seed, at in runs.items()
         ]
-        print_clip(clip, hand, results, turns.floor)
+        print_clip(clip, hand, results, placed, turns.floor)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
