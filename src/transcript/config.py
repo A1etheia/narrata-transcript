@@ -112,6 +112,9 @@ class UncertaintyThresholds:
     similar_level: Level = "needs_review"  # what a `similar` hint raises to
     # the same for a `similar` hint found by sound alone; most are false alarms
     similar_sound_level: Level = "confident"
+    # the same for a `similar` hint by spelling whose nearest tier is `archive`;
+    # 2 of 18 were right on the pilot session (TOOL-60)
+    similar_archive_level: Level = "confident"
 
     # (lower, upper): the first may not exceed the second
     ORDERED: ClassVar[tuple[tuple[str, str], ...]] = (
@@ -146,6 +149,7 @@ _UNCERTAINTY_SPEC: dict[str, _Spec] = {
     "crosstalk_ms": ("whole", 1, 60000),
     "similar_level": ("choice", LEVELS, None),
     "similar_sound_level": ("choice", LEVELS, None),
+    "similar_archive_level": ("choice", LEVELS, None),
 }
 _REVIEW_KEYS = {"similar", "uncertainty"}
 

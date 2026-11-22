@@ -35,7 +35,7 @@ from transcript.reference import (
 )
 from transcript.session import SessionPaths
 
-UNCERTAINTY_FORMAT_VERSION = 1
+UNCERTAINTY_FORMAT_VERSION = 2
 
 
 class UncertaintyError(DataFileError):
@@ -289,14 +289,18 @@ class _Rater:
                     Reason("known_variant", "needs_review", None, None, words)
                 )
             else:
-                level = (
-                    self.limits.similar_sound_level
-                    if hint.method == "sound"
-                    else self.limits.similar_level
-                )
+                level = self._similar_level(hint)
                 if level != "confident":
                     reasons.append(Reason("similar", level, hint.score, None, words))
         return reasons
+
+    def _similar_level(self, hint: Hint) -> Level:
+        """Sound first, then the archive tier, then every other spelling hit."""
+        if hint.method == "sound":
+            return self.limits.similar_sound_level
+        if hint.nearest_relevance == "archive":
+            return self.limits.similar_archive_level
+        return self.limits.similar_level
 
     def _missing_times(self, passage: Passage) -> list[Reason]:
         """Times the backend can deliver but did not, for the passage or its words."""

@@ -390,6 +390,7 @@ class LoadConfigTest(unittest.TestCase):
             + "  similar:\n    min_ratio: 0.9\n    min_length: 5\n"
             + "  uncertainty:\n    word_low: 0.4\n    gap_ms: 2000\n"
             + "    avg_logprob: -2\n    similar_level: confident\n"
+            + "    similar_archive_level: uncertain\n"
         )
 
         self.assertEqual(config.review_similar.min_ratio, 0.9)
@@ -401,6 +402,7 @@ class LoadConfigTest(unittest.TestCase):
         self.assertEqual(thresholds.avg_logprob, -2.0)
         self.assertIsInstance(thresholds.avg_logprob, float)
         self.assertEqual(thresholds.similar_level, "confident")
+        self.assertEqual(thresholds.similar_archive_level, "uncertain")
         self.assertEqual(thresholds.word_very_low, 0.2)
 
     def test_review_thresholds_are_validated(self) -> None:
@@ -430,6 +432,10 @@ class LoadConfigTest(unittest.TestCase):
             (
                 "review:\n  uncertainty:\n    similar_level: maybe",
                 "review.uncertainty.similar_level",
+            ),
+            (
+                "review:\n  uncertainty:\n    similar_archive_level: maybe",
+                "review.uncertainty.similar_archive_level",
             ),
             (
                 "review:\n  uncertainty:\n    word_low: 0.1\n    word_very_low: 0.3",
