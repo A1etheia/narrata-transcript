@@ -179,3 +179,29 @@ Das Skript schreibt nur `work/<gruppe>/<ordinal>/experiments/asr/vad.json`, die 
 | von der VAD entfernt | Wortzeit außerhalb aller Sprachabschnitte |
 | Sprache ohne Wörter | Wortzeit in einer Stelle ab 1 s, an der ein Turn läuft und Whisper kein Wort hat |
 | erklärt | Überlappung, Beitrag unter 2 s, leiser Beitrag oder Fallback-Fenster |
+
+# Seed-Spike (TOOL-102)
+
+Misst, was ein zweiter und dritter Whisper-Lauf mit anderem Seed an ausgelassenen Wörtern zurückbringt. `seeds.py` liest die Läufe von `asr.py` (eine Wurzel je Seed) und die Handreferenzen. Plan: [`TOOL-102`](../../docs/plans/TOOL-102-seed-union.md), Bericht: [`docs/spikes/TOOL-102-seed-vereinigung.md`](../../docs/spikes/TOOL-102-seed-vereinigung.md).
+
+## Datenschutz
+
+Das Skript schreibt nichts. Die Konsole bekommt Zähler, Anteile, Fehlerraten und Zeiten, nie Text, Tokens, Namen oder Sprecher-Labels.
+
+## Ablauf
+
+```bash
+.venv/bin/python scripts/spike/seeds.py $S [--variant base] [--seeds 3] [--clip NAME=DATEI@H:MM:SS-H:MM:SS]… [--suggest] [--config PATH]
+```
+
+- **Voraussetzung:** Die Wurzeln `<variante>.seed1..N` sind mit `asr.py run` transkribiert. Ohne Modell, ohne GPU, wenige Sekunden.
+- **Segmentvergleich, ohne Handreferenz:** Die Tokenfolgen der Seeds werden paarweise ausgerichtet, abschnittsweise je 5 Minuten. Ein Wort zählt dort, wo es beginnt.
+  - *Wörter und Wiederholungsanteil* je Seed.
+  - *Je Seed-Paar und Richtung:* Wörter, die an derselben Stelle anders lauten; Wörter, die dem einen Seed fehlen und im anderen stehen; Blöcke ab 20 Wörtern in Folge.
+  - *Stellen mit Blockverlust* je Seed, zeitlich zusammengefasst, und wie viele davon gegen alle anderen Seeds bestehen. Fehlt ein Block nur gegen einen Seed, kann auch dieser Seed etwas erfunden haben.
+  - *Raster:* Anteil der 30-s-Fenster, in denen ein Seed-Paar um mindestens 5 Wörter abweicht.
+- **`--suggest`** schlägt drei sich nicht überlappende 3-min-Fenster mit der größten Abweichung für eine neue Handreferenz vor, außerhalb der angegebenen Clips. Ausgegeben werden nur Zeiten und Zähler.
+- **Orakel je Referenz**, jeder Seed einmal als Basis:
+  - *Rückgewinn:* Für jede Auslassung der Basis, ob ein anderer Seed das Wort richtig hat, nur als Ersetzung, oder ob es in allen fehlt. Die WER des Orakels setzt nur die richtigen Wörter ein und nichts Falsches.
+  - *Naive Vereinigung:* Die anderen Läufe werden gegen die Basis ausgerichtet. Was sie an einer Stelle mehr haben, kommt dazu, und die vereinigte Folge wird mit `calibration.align` gegen die Handreferenz gemessen. Die Tabelle zeigt, wie viele Auslassungen wegfallen und wie viele Einfügungen und Ersetzungen dazukommen.
+  - Der Gewinn steht in Punkten WER gegenüber der Basis, negativ heißt schlechter.
