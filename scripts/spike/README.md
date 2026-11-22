@@ -141,3 +141,41 @@ Das Skript schreibt nichts. Es liest die gespeicherten Transkripte unter `work/<
   - *Sprecherfehler an A und B:* WDER wie in TOOL-20 auf Passagenebene (jedes Wort trägt das Label seiner Passage, wie im Export) und einmal auf Wortebene (Wortlabel der Diarisierung, gleich für alle Schnitte). Dazu der Anteil der Passagen mit Wörtern mehrerer Hand-Sprecher.
   - *Ganze Sitzung:* Passagen gesamt und pro Stunde, Länge P10/Median/P90, gemischte Passagen (mehr als ein Wortlabel), Anteil der Wörter unter fremdem Label, Review-Kandidaten und markierte Zeit, Zahl der Hinweise. Hinweise und Bewertung werden für jede Variante neu berechnet (`segment_hints`, `segment_assessment`), mit den Schwellen der Config.
   - Zuletzt die Zahl der Passagen mit mehr als einem Label, die nicht geteilt werden, weil ihre Wortfolge nicht genau den Text ergibt.
+
+# Auslassungs-Spike (TOOL-101)
+
+Misst, unter welchen Bedingungen Whisper Wörter auslässt. `omissions.py` liest die Läufe von `asr.py` (eine Wurzel je Seed), die Diarisierung der Sitzung und die Handreferenzen. Plan: [`TOOL-101`](../../docs/plans/TOOL-101-omission-location.md), Bericht: [`docs/spikes/TOOL-101-auslassungen-verorten.md`](../../docs/spikes/TOOL-101-auslassungen-verorten.md).
+
+## Datenschutz
+
+Das Skript schreibt nur `work/<gruppe>/<ordinal>/experiments/asr/vad.json`, die Sprachabschnitte der VAD als Zahlen. Die Konsole bekommt Zähler, Anteile, Pegel und Zeiten, nie Text, Namen oder Sprecher-Labels. Sprecher erscheinen als Rang nach Wortzahl.
+
+## Ablauf
+
+```bash
+.venv/bin/python scripts/spike/omissions.py $S [--variant base] [--seeds 3] [--clip NAME=DATEI@H:MM:SS-H:MM:SS]… [--config PATH]
+```
+
+- **Voraussetzung:** Die Wurzeln `<variante>.seed1..N` sind mit `asr.py run` transkribiert, und Segment 1 der Sitzung selbst ist diarisiert. Ohne GPU. Die VAD rechnet einmal rund 20 s auf der CPU, danach kommt sie aus `vad.json`.
+- **Wortzeiten:** Die Ausrichtung ist dieselbe wie in `calibration.measure`, das Skript bricht ab, wenn seine Auslassungen davon abweichen. Ein erkanntes Wort bekommt die Mitte seiner Wortzeit. Eine Folge ausgelassener Wörter wird gleichmäßig zwischen dem Ende des Wortes davor und dem Anfang des Wortes danach verteilt.
+- **VAD:** Silero mit den Optionen der Pipeline (`threshold 0.5`, `min_silence_duration_ms 2000`, `speech_pad_ms 400`). Das Skript bricht ab, wenn die Summe der Abschnitte mehr als 1 s von `duration_after_vad` eines Laufs abweicht.
+- **Ausgabe:** Markdown-Tabellen.
+  - *Segment:* von der VAD behaltene Zeit; je Seed die Zeit, in der die Diarisierung Sprache hört und Whisper kein Wort hat (Pausen zwischen Wörtern bis 1 s gelten als gedeckt), und die Stellen ab 2 s.
+  - *Je Referenz, Merkmale:* je Klasse die Auslassungen und die Referenzwörter je Seed, ihr Anteil an allen Auslassungen bzw. Referenzwörtern als Mittel und Spanne und die Auslassungen je Wort der Klasse.
+  - *Je Referenz, Sprecher:* Wörter, Auslassungen und der Pegel (RMS über die Turns des zugeordneten Labels im Clip) relativ zum lautesten Sprecher, dazu der Pegel außerhalb aller Turns.
+  - *Je Referenz, Stabilität:* wie viele Referenzwörter in 3, 2 oder 1 der Seeds fehlen.
+  - *Je Referenz, Verortung:* Zahl und Breite der Lücken, in die Auslassungen gelegt wurden, und der Anteil der Clip-Zeit mit Sprache ohne Wörter.
+
+## Merkmale
+
+| Merkmal | Regel |
+| --- | --- |
+| Überlappung | Wortzeit in einem Bereich, in dem sich zwei Turns überlappen |
+| Beitragslänge (Diarisierung) | exklusiver Turn an der Wortzeit, gleiche Labels mit höchstens 500 ms Abstand verbunden: unter 2 s, 2–10 s, über 10 s |
+| Beitrag laut Handreferenz | Wörter in Folge vom selben Sprecher: 1–3, 4–10, über 10 |
+| Pegel des Beitrags | RMS des Turns mindestens 6 dB unter dem lautesten Sprecher des Clips |
+| Fallback-Fenster | 30-s-Fenster des Laufs an der Wortzeit mit `temperature > 0` |
+| dünnes Fenster | Fenster mit weniger als 0,5 Wörtern pro Sekunde (TOOL-81) |
+| von der VAD entfernt | Wortzeit außerhalb aller Sprachabschnitte |
+| Sprache ohne Wörter | Wortzeit in einer Stelle ab 1 s, an der ein Turn läuft und Whisper kein Wort hat |
+| erklärt | Überlappung, Beitrag unter 2 s, leiser Beitrag oder Fallback-Fenster |
