@@ -53,6 +53,17 @@ Ein `similar`-Hinweis, der über die Schreibung gefunden wurde und dessen nächs
 - AC: AK 3 des Tickets.
 - Commit: `docs(review): record the archive threshold on the pilot session (TOOL-99)`
 
+## Ergebnis
+Neulauf von `transcript assess` an der Pilotsitzung am 22.11.2026, ohne neue Hinweise und mit den Defaults (`similar_archive_level: confident`):
+
+| | vorher | nachher |
+| --- | --- | --- |
+| Review-Kandidaten | 1.424 (65,7 % von 2.166 Passagen) | 1.416 (65,4 %) |
+| pro Stunde Audio | 262 | 260,4 |
+| Passagen je Stufe | — | 750 `confident`, 1.116 `needs_review`, 300 `uncertain` |
+
+8 Passagen werden `confident`, weniger als die rund 15 aus TOOL-83. Die übrigen Passagen mit Archiv-Schreibtreffern haben noch einen anderen Grund. Die Hinweise selbst sind unverändert.
+
 ## Folge-Tickets
 - [kein Ticket: bisher kein Bedarf] `status` könnte gespeicherte Schwellen mit `review.uncertainty` vergleichen und eine Bewertung mit anderen Schwellen als veraltet melden. Heute merkt das nur, wer `transcript assess` selbst startet. Ein Ticket lohnt erst, wenn Schwellen wieder öfter ohne Formatsprung geändert werden.
 
