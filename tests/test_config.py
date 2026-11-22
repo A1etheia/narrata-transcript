@@ -80,6 +80,7 @@ class LoadConfigTest(unittest.TestCase):
             asr_compute_type="int8_float16",
             asr_beam_size=3,
             asr_retries=0,
+            asr_hotwords=False,
             diarization_model="/models/pyannote",
             diarization_device="cpu",
             diarization_retries=5,
@@ -170,11 +171,18 @@ class LoadConfigTest(unittest.TestCase):
             ("beam_size: 0", "asr.beam_size"),
             ("beam_size: 2.5", "asr.beam_size"),
             ("beam_size: true", "asr.beam_size"),
+            ("hotwords: 1", "asr.hotwords"),
+            ("hotwords: 'false'", "asr.hotwords"),
+            ("hotwords: null", "asr.hotwords"),
         ):
             with self.subTest(text=text):
                 self.assert_rejected(
                     MINIMAL + f"asr:\n  {text}\n", f"invalid value for {key}"
                 )
+
+    def test_hotwords_default_to_on_and_can_be_switched_off(self) -> None:
+        self.assertTrue(self.load(MINIMAL).asr_hotwords)
+        self.assertFalse(self.load(MINIMAL + "asr:\n  hotwords: false\n").asr_hotwords)
 
     def test_retries_default_to_two_and_are_read(self) -> None:
         defaults = self.load(MINIMAL)

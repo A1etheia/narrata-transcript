@@ -313,22 +313,6 @@ class TranscribeSessionTest(unittest.TestCase):
         self.assertEqual(self.statuses(same), ["reused"] * 3)
         self.assertEqual(self.statuses(other), ["transcribed"] * 3)
 
-    def test_a_result_without_hints_transcribes_again_once_there_are_some(
-        self,
-    ) -> None:
-        self.run_session(session_backend(biasing=True), knowledge_snapshot_id="a" * 64)
-
-        run = self.run_session(
-            session_backend(biasing=True),
-            keywords=("Beispielfigur",),
-            knowledge_snapshot_id="a" * 64,
-        )
-
-        self.assertEqual(self.statuses(run), ["transcribed"] * 3)
-        self.assertEqual(
-            load_reference(self.paths, 1).asr.keywords_used, ("Beispielfigur",)
-        )
-
     def test_keywords_the_backend_cut_still_reuse(self) -> None:
         keywords = ("Beispielfigur", "Beispielort", "Nebelau")
         self.run_session(session_backend(biasing=True, cut=2), keywords=keywords)
@@ -336,6 +320,25 @@ class TranscribeSessionTest(unittest.TestCase):
         run = self.run_session(session_backend(biasing=True, cut=2), keywords=keywords)
 
         self.assertEqual(self.statuses(run), ["reused"] * 3)
+
+    def test_a_held_back_list_reuses_until_a_new_snapshot(self) -> None:
+        """TOOL-81: a short list reaches no hotwords, and that result stays valid."""
+        short = ("Beispielfigur", "Beispielort")
+
+        def run(keywords: tuple[str, ...], snapshot: str):
+            return self.run_session(
+                session_backend(biasing=True, cut=0),
+                keywords=keywords,
+                knowledge_snapshot_id=snapshot * 64,
+            )
+
+        run(short, "a")
+        same = run(short, "a")
+        new_snapshot = run((*short, "Nebelau", "Drachenhort"), "b")
+
+        self.assertEqual(self.statuses(same), ["reused"] * 3)
+        self.assertEqual(self.statuses(new_snapshot), ["transcribed"] * 3)
+        self.assertEqual(load_reference(self.paths, 1).asr.keywords_used, ())
 
     def test_a_backend_without_biasing_reuses_despite_keywords(self) -> None:
         self.run_session(session_backend())

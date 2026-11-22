@@ -45,8 +45,14 @@ from transcript import (
 )
 from transcript import manifest as manifest_module
 from transcript.__main__ import main
-from transcript.asr import AudioInputError, BackendUnavailableError, ResourceError
+from transcript.asr import (
+    AudioInputError,
+    BackendUnavailableError,
+    HotwordCheck,
+    ResourceError,
+)
 from transcript.asr.fake import FakeBackend
+from transcript.asr.whisper import HOTWORD_MIN_TOKENS
 from transcript.audio_tools import AudioToolError, AudioTools, ToolInfo
 from transcript.config import (
     DEFAULT_KEYWORD_BUDGET,
@@ -837,6 +843,15 @@ class SnapshotCommandTest(unittest.TestCase):
         self.assertEqual(self.snapshot("--refresh")[0], 0)
 
 
+def write_snapshot(paths: SessionPaths, **entry: object) -> None:
+    """A stored context with one glossary entry, frozen as the snapshot."""
+    data = context()
+    data["glossary"] = [glossary_entry(**entry)]
+    paths.narrata_context.parent.mkdir(parents=True, exist_ok=True)
+    paths.narrata_context.write_bytes(encoded(data))
+    knowledge.build_snapshot(paths, DEFAULT_KEYWORD_BUDGET)
+
+
 class TranscribeCommandTest(unittest.TestCase):
     def setUp(self) -> None:
         directory = tempfile.TemporaryDirectory()
@@ -989,8 +1004,7 @@ class TranscribeCommandTest(unittest.TestCase):
             load_reference(self.paths, 1).asr.keywords_used, (PLACE, ALIAS)
         )
         self.assertIn("beispielgruppe/042: 2 of 2 keyword(s) passed", stdout)
-        for name in (PLACE, ALIAS, VARIANT):
-            self.assertNotIn(name, stdout + stderr)
+        self.assert_no_terms(stdout + stderr)
 
         self.backend = session_backend(biasing=True)
         _, stdout, _ = self.transcribe("--no-diarize")
@@ -1094,12 +1108,77 @@ class TranscribeCommandTest(unittest.TestCase):
         stored = uncertainty.load_assessment(self.paths, 1)
         self.assertIn("speaker", stored.ratings[0].missing)
 
+    def write_keyword_snapshot(self) -> None:
+        write_snapshot(self.paths)
+
+    def assert_no_terms(self, output: str) -> None:
+        for name in (PLACE, ALIAS, VARIANT):
+            self.assertNotIn(name, output)
+
+    def hold_back(self) -> None:
+        """A biasing backend that, like Whisper, passes none of a short list."""
+        self.backend = session_backend(biasing=True, cut=0)
+        self.backend.hotword_check = HotwordCheck(
+            (PLACE, ALIAS), tokens=5, min_tokens=HOTWORD_MIN_TOKENS
+        )
+
+    def keywords(self) -> tuple[int, str, str]:
+        return run("keywords", str(KEY), "--config", str(self.config))
+
+    def test_a_list_under_the_threshold_is_reported_once_in_counts(self) -> None:
+        self.write_keyword_snapshot()
+        self.hold_back()
+
+        code, stdout, stderr = self.transcribe("--no-diarize")
+
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(stderr.count("hotwords off"), 1)
+        self.assertIn(
+            "warning: beispielgruppe/042: hotwords off: 2 of 2 keyword(s) fit, "
+            "5 hotword token(s), under the 110",
+            stderr,
+        )
+        self.assertIn("add terms to the knowledge snapshot", stderr)
+        self.assertIn("beispielgruppe/042: 0 of 2 keyword(s) passed", stdout)
+        self.assert_no_terms(stdout + stderr)
+
+        self.hold_back()
+        _, stdout, _ = self.transcribe("--no-diarize")
+        self.assertIn("0 transcribed, 3 reused", stdout)
+
+    def test_keywords_shows_the_check_before_a_run_without_a_model(self) -> None:
+        self.write_keyword_snapshot()
+        self.backend = session_backend(biasing=True)
+
+        code, stdout, stderr = self.keywords()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("beispielgruppe/042: 2 keyword(s) from snapshot", stdout)
+        self.assertIn("beispielgruppe/042: 2 of 2 keyword(s) fit", stdout)
+        self.assertEqual(self.backend.load_calls, 0)
+
+        self.hold_back()
+        code, stdout, stderr = self.keywords()
+        self.assertEqual(code, 1)
+        self.assertIn("hotwords off: 2 of 2 keyword(s) fit", stderr)
+        self.assertEqual(self.backend.load_calls, 0)
+        self.assert_no_terms(stdout + stderr)
+
+    def test_keywords_without_a_snapshot_or_with_hotwords_off(self) -> None:
+        code, stdout, _ = self.keywords()
+        self.assertEqual(code, 0)
+        self.assertIn("no knowledge snapshot", stdout)
+
+        self.write_keyword_snapshot()
+        self.config.write_text(
+            self.config.read_text("utf-8") + "  hotwords: false\n", encoding="utf-8"
+        )
+        code, stdout, _ = self.keywords()
+        self.assertEqual(code, 1)
+        self.assertIn("keywords not passed: asr.hotwords is false", stdout)
+
     def test_a_backend_without_biasing_says_so_once(self) -> None:
-        data = context()
-        data["glossary"] = [glossary_entry()]
-        self.paths.narrata_context.parent.mkdir(parents=True, exist_ok=True)
-        self.paths.narrata_context.write_bytes(encoded(data))
-        knowledge.build_snapshot(self.paths, DEFAULT_KEYWORD_BUDGET)
+        self.write_keyword_snapshot()
 
         code, stdout, stderr = self.transcribe("--no-diarize")
 
@@ -1107,8 +1186,7 @@ class TranscribeCommandTest(unittest.TestCase):
         self.assertEqual(stdout.count("keywords not passed"), 1)
         self.assertNotIn("keyword(s) passed", stdout)
         self.assertEqual(load_reference(self.paths, 1).asr.keywords_used, ())
-        for name in (PLACE, ALIAS, VARIANT):
-            self.assertNotIn(name, stdout + stderr)
+        self.assert_no_terms(stdout + stderr)
 
     def test_unreadable_snapshot_stops_before_the_asr(self) -> None:
         self.paths.knowledge_snapshot.parent.mkdir(parents=True, exist_ok=True)
@@ -1482,11 +1560,7 @@ class DiarizeCommandTest(unittest.TestCase):
         self.assertIn("review sheet not found; run transcript review-export", stderr)
 
     def with_snapshot(self, **entry: object) -> None:
-        data = context()
-        data["glossary"] = [glossary_entry(**entry)]
-        self.paths.narrata_context.parent.mkdir(parents=True, exist_ok=True)
-        self.paths.narrata_context.write_bytes(encoded(data))
-        knowledge.build_snapshot(self.paths, DEFAULT_KEYWORD_BUDGET)
+        write_snapshot(self.paths, **entry)
 
     def test_review_import_suggests_the_misheard_name_without_printing_it(
         self,

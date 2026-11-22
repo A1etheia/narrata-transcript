@@ -34,6 +34,25 @@ FEATURES = (
 )
 
 
+@dataclass(frozen=True)
+class HotwordCheck:
+    """What becomes of a keyword list as hotwords (TOOL-81); counts reach the
+    console, terms never do."""
+
+    fitted: tuple[str, ...]  # the leading keywords within the backend's budget
+    tokens: int  # hotword tokens of `fitted`
+    min_tokens: int  # the threshold when checked; a shorter list is held back
+
+    @property
+    def passed(self) -> bool:
+        return self.tokens >= self.min_tokens
+
+    @property
+    def used(self) -> tuple[str, ...]:
+        """The hotwords the backend gets: `fitted`, or none below the threshold."""
+        return self.fitted if self.passed else ()
+
+
 class BackendError(Exception):
     """A backend failed; `retryable` says whether the same call may succeed later."""
 

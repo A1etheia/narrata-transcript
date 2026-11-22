@@ -516,6 +516,9 @@ def _cli_with_variant(options: str, argv: Sequence[str]) -> int:
     spec = json.loads(options)
     seed = spec["seed"]
     whisper.FIXED_SETTINGS.update(merge(whisper.FIXED_SETTINGS, spec["asr"]))
+    # The variants measure short lists, so the pipeline's TOOL-81 guard stays off,
+    # and its settings key stays out so earlier roots are still reused.
+    whisper.HOTWORD_MIN_TOKENS = 0
     if not spec["hotwords"]:
         whisper.takes_hotwords = lambda model: False
     changed = spec["keywords"]
@@ -540,6 +543,7 @@ def _cli_with_variant(options: str, argv: Sequence[str]) -> int:
     def prepare(self):
         runtime, model_path, identity = original_prepare(self)
         settings = {**identity.settings, **extra}
+        settings.pop("hotword_min_tokens", None)
         return runtime, model_path, BackendIdentity(identity.info, settings)
 
     def transcribe(self, request):

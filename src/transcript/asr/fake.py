@@ -1,6 +1,6 @@
 """A backend without a model, for tests of the steps that call a backend."""
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from transcript.asr.backend import (
@@ -9,6 +9,7 @@ from transcript.asr.backend import (
     BackendResult,
     BackendRuntimeError,
     Capabilities,
+    HotwordCheck,
     ResultSegment,
     TranscriptionRequest,
 )
@@ -44,6 +45,8 @@ class FakeBackend:
         self.requests: list[TranscriptionRequest] = []
         self.load_calls = 0
         self.close_calls = 0
+        # what `check_hotwords` answers with `keyword_biasing`; None: all pass
+        self.hotword_check: HotwordCheck | None = None
 
     @property
     def loaded(self) -> bool:
@@ -51,6 +54,14 @@ class FakeBackend:
 
     def identity(self) -> BackendIdentity:
         return BackendIdentity(self.info, self.settings)
+
+    def check_hotwords(self, keywords: Sequence[str]) -> HotwordCheck | None:
+        """Like `WhisperBackend.check_hotwords`, one token per keyword."""
+        if not self.capabilities.keyword_biasing:
+            return None
+        return self.hotword_check or HotwordCheck(
+            tuple(keywords), len(keywords), min_tokens=0
+        )
 
     def load(self) -> None:
         self.load_calls += 1
