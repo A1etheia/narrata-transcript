@@ -48,7 +48,7 @@ In `config/config.yaml` (alle Schlüssel: README [Konfiguration](../README.md#ko
 - `asr.model` (Default `large-v3-turbo`, auch ein lokales Modellverzeichnis) und `asr.device` (`auto`, `cuda`, `cpu`). Meist bleiben die Defaults.
 - `narrata.url` und unter `narrata.groups` die Narrata-Gruppen-ID je Gruppen-Slug, z. B. `beispielgruppe: 12`. Beides braucht der Kontextabruf, die Gruppe auch der Export.
 
-In `.env` steht `NARRATA_TOKEN`, der Login-Token einer aktiven Spielleitung der Gruppe. Er läuft nach 24 h ab und muss vor dem Kontextabruf frisch sein. Die Datei `.env` wird nie committet.
+In `.env` steht je Runde ein Pipeline-Token, für `beispielgruppe` als `NARRATA_TOKEN_BEISPIELGRUPPE` (README [Narrata-Kontext](../README.md#narrata-kontext)). Die aktive Spielleitung erzeugt ihn in Narrata unter Profil → Aktive Sitzungen → *Pipeline-Token erstellen*. Er gilt 90 Tage und nur für den Kontextabruf dieser Runde. Die Datei `.env` wird nie committet.
 
 `transcript config` zeigt die wirksamen Werte, `transcript doctor` prüft Werkzeuge, Konfiguration und Modelle (README [Preflight](../README.md#preflight)).
 
@@ -102,7 +102,7 @@ Der erste Lauf holt den Transkriptionskontext (Teilnehmende, Spielfiguren, Gloss
 - **Wissen aktualisieren**, etwa nach neuen Glossar-Einträgen in Narrata:
 
   ```bash
-  transcript context beispielgruppe/042                  # Kontext neu holen, Token frisch
+  transcript context beispielgruppe/042                  # Kontext neu holen
   transcript process beispielgruppe/042 --redo snapshot  # Snapshot neu bauen, alles Spätere neu
   ```
 
@@ -181,7 +181,7 @@ Unter `output/beispielgruppe/042/`:
 | `transcript.txt`, `transcript.docx` | lesbare Fassung zum Archivieren |
 | `report.md`, `report.json` | Abschlussbericht: Vollständigkeit, Review- und Zuordnungsaufwand, Lücken, Laufzeit; ohne Text und Namen |
 
-Nach Narrata geht nur `transcript.json`: über den Upload-Endpoint der aktiven Spielleitung (`POST /api/play-sessions/{id}/transcript`) oder in `ios-archiv` mit `scripts/artisan transcript:validate <datei>` und `scripts/artisan transcript:import <datei>`. Ein erneuter Import nach weiterem Review aktualisiert die Passagen. Dieselbe Datei zweimal ändert nichts. Die Hörfehler-Vorschläge aus dem Review (`work/…/review/asr-variant-suggestions.json`) übernimmt `scripts/artisan transcript:import-asr-variants <datei>` einzeln nach Rückfrage.
+Nach Narrata geht nur `transcript.json`: über den Upload-Endpoint der aktiven Spielleitung (`POST /api/play-sessions/{id}/transcript`, mit dem Login-Token, denn der Pipeline-Token gilt dort nicht) oder in `ios-archiv` mit `scripts/artisan transcript:validate <datei>` und `scripts/artisan transcript:import <datei>`. Ein erneuter Import nach weiterem Review aktualisiert die Passagen. Dieselbe Datei zweimal ändert nichts. Die Hörfehler-Vorschläge aus dem Review (`work/…/review/asr-variant-suggestions.json`) übernimmt `scripts/artisan transcript:import-asr-variants <datei>` einzeln nach Rückfrage.
 
 ## 10. Artefakte einer Session
 
@@ -245,7 +245,7 @@ Das ist der strenge Guard aus Abschnitt 8. Entweder die Ursache in der Konfigura
 
 ### Kontextabruf scheitert mit 401 oder 404
 
-`401`: Token fehlt oder ist abgelaufen (24 h), neu in `.env` eintragen. `404`: Gruppe, Sitzung oder aktive Spielleitung unbekannt; `narrata.groups` und das Ordinal prüfen.
+`401`: Der Pipeline-Token ist abgelaufen (90 Tage) oder widerrufen. In Narrata einen neuen erzeugen und in `.env` ersetzen. `404`: Falsche Runde (Token einer anderen Gruppe, `narrata.groups` falsch), unbekanntes Ordinal, oder die Spielleitung, die den Token erzeugt hat, ist nicht mehr aktiv. Dann erzeugt die jetzige Spielleitung einen neuen Token.
 
 ### Diarisierung bricht mit Speichermangel ab
 

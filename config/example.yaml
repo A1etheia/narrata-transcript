@@ -55,7 +55,7 @@ diarization:
   min_turn_ms: 500
 
 # Abruf des Transkriptionskontexts aus Narrata (transcript context).
-# Der Token gehört nicht hierher, sondern als NARRATA_TOKEN in .env.
+# Der Token gehört nicht hierher, sondern je Runde als NARRATA_TOKEN_<SLUG> in .env.
 narrata:
   # Basis-URL des Narrata-Hosts; https, http nur für localhost.
   url: null
