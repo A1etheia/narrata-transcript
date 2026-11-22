@@ -1,7 +1,9 @@
 """The V0.1 backend: Whisper via faster-whisper, from the local model cache only.
 
 Settings follow the TOOL-62 decision (docs/spikes/TOOL-62-asr-vergleich.md): VAD,
-word timestamps, beam search, no conditioning on previous text. The model is never
+word timestamps, beam search, no conditioning on previous text. Hotwords follow
+TOOL-81 (docs/spikes/TOOL-81-hotwords.md): a list under HOTWORD_MIN_TOKENS is not
+passed, because a short prompt makes turbo drop speech. The model is never
 downloaded here; `load` fails with a hint when it is not cached.
 
 Messages never repeat a runtime message, which may quote hotwords.
@@ -24,6 +26,7 @@ from transcript.asr.backend import (
     BackendRuntimeError,
     BackendUnavailableError,
     Capabilities,
+    HotwordCheck,
     ResultSegment,
     ResultWord,
     TranscriptionRequest,
@@ -45,6 +48,9 @@ CAPABILITIES = Capabilities(
 )
 # faster-whisper keeps at most max_length // 2 - 1 hotword tokens (448 // 2 - 1).
 HOTWORD_TOKENS = 223
+# The shortest list TOOL-81 measured without systematic word loss, on both
+# recordings; 51 tokens lost speech, nothing in between was measured.
+HOTWORD_MIN_TOKENS = 110
 FIXED_SETTINGS = {
     "vad_filter": True,
     "word_timestamps": True,  # TOOL-76 assigns speakers per word
@@ -59,9 +65,19 @@ LIBRARY_HINT = f"install the GPU libraries with {_PIP_INSTALL}"
 # What CTranslate2 4.8 loads lazily on the GPU, at the first segment, and the pip
 # package that ships it; its wheel names no cuDNN library.
 CUDA_LIBRARIES = {"libcublas.so.12": "nvidia.cublas"}
-# tests replace both
+
+
+def _tokenizer_from_file(path: Path) -> Any:
+    """The tokenizer faster-whisper builds from the same file, without the model."""
+    import tokenizers
+
+    return tokenizers.Tokenizer.from_file(str(path))
+
+
+# tests replace all three
 _load_library: Callable[..., object] = ctypes.CDLL
 _find_spec = importlib.util.find_spec
+_load_tokenizer: Callable[[Path], Any] = _tokenizer_from_file
 
 
 def preload_cuda_libraries() -> str | None:
@@ -110,10 +126,11 @@ class WhisperBackend:
         device: str = Config.asr_device,
         compute_type: str | None = Config.asr_compute_type,
         beam_size: int = Config.asr_beam_size,
+        hotwords: bool = Config.asr_hotwords,
     ) -> None:
         self._model_name = model
         self.capabilities = dataclasses.replace(
-            CAPABILITIES, keyword_biasing=takes_hotwords(model)
+            CAPABILITIES, keyword_biasing=hotwords and takes_hotwords(model)
         )
         self._requested_device = device
         self._requested_compute_type = compute_type
@@ -129,12 +146,25 @@ class WhisperBackend:
             device=config.asr_device,
             compute_type=config.asr_compute_type,
             beam_size=config.asr_beam_size,
+            hotwords=config.asr_hotwords,
         )
 
     def identity(self) -> BackendIdentity:
         """Revision from the model cache, device and settings; no model is built."""
         _, _, identity = self._prepare()
         return identity
+
+    def check_hotwords(self, keywords: Sequence[str]) -> HotwordCheck | None:
+        """What `transcribe` makes of `keywords`, with the tokenizer from the model
+        cache; no model is built. None when this backend passes no hotwords."""
+        if not self.capabilities.keyword_biasing:
+            return None
+        _, model_path, _ = self._prepare()
+        try:
+            tokenizer = _load_tokenizer(model_path / "tokenizer.json")
+        except Exception as error:
+            raise self._error(error, "cannot read the tokenizer") from error
+        return check_hotwords(keywords, _token_counter(tokenizer))
 
     def load(self) -> None:
         faster_whisper, model_path, identity = self._prepare()
@@ -190,7 +220,10 @@ class WhisperBackend:
             or _DEFAULT_COMPUTE_TYPES[device],
             "beam_size": self._beam_size,
             **FIXED_SETTINGS,
+            "hotwords": self.capabilities.keyword_biasing,
         }
+        if self.capabilities.keyword_biasing:
+            settings["hotword_min_tokens"] = HOTWORD_MIN_TOKENS
         return faster_whisper, model_path, BackendIdentity(info, settings)
 
     def transcribe(self, request: TranscriptionRequest) -> BackendResult:
@@ -198,11 +231,8 @@ class WhisperBackend:
             raise BackendRuntimeError(f"{BACKEND_ID}: not loaded")
         used: tuple[str, ...] = ()
         if self.capabilities.keyword_biasing:
-            tokenizer = self._model.hf_tokenizer
-            used = fit_hotwords(
-                request.keywords,
-                lambda text: len(tokenizer.encode(text, add_special_tokens=False).ids),
-            )
+            counter = _token_counter(self._model.hf_tokenizer)
+            used = check_hotwords(request.keywords, counter).used
         try:
             segments, info = self._model.transcribe(
                 str(request.audio),
@@ -259,20 +289,36 @@ def takes_hotwords(model: str) -> bool:
 def fit_hotwords(
     keywords: Sequence[str], count_tokens: Callable[[str], int]
 ) -> tuple[str, ...]:
-    """The leading keywords whose joined hotword prompt fits in HOTWORD_TOKENS.
+    """The leading keywords whose joined hotword prompt fits in HOTWORD_TOKENS."""
+    return check_hotwords(keywords, count_tokens).fitted
+
+
+def check_hotwords(
+    keywords: Sequence[str], count_tokens: Callable[[str], int]
+) -> HotwordCheck:
+    """Fit `keywords` into the budget and hold back a list under the threshold.
 
     Order is priority: the first keyword that does not fit ends the list, so the
-    runtime never cuts a term in half and `keywords_used` stays exact.
+    runtime never cuts a term in half and `keywords_used` stays exact. TOOL-81:
+    under about 110 tokens turbo falls back to sampling in half of the windows
+    and drops speech; without hotwords it loses none.
     """
-    used: list[str] = []
+    fitted: list[str] = []
+    tokens = 0
     for keyword in keywords:
         if not keyword.strip():
             continue
         # faster-whisper encodes the prompt as " " + hotwords.
-        if count_tokens(" " + " ".join([*used, keyword])) > HOTWORD_TOKENS:
+        count = count_tokens(" " + " ".join([*fitted, keyword]))
+        if count > HOTWORD_TOKENS:
             break
-        used.append(keyword)
-    return tuple(used)
+        fitted.append(keyword)
+        tokens = count
+    return HotwordCheck(tuple(fitted), tokens, min_tokens=HOTWORD_MIN_TOKENS)
+
+
+def _token_counter(tokenizer: Any) -> Callable[[str], int]:
+    return lambda text: len(tokenizer.encode(text, add_special_tokens=False).ids)
 
 
 def _segment(segment: Any) -> ResultSegment:

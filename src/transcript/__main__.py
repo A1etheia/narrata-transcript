@@ -1,5 +1,5 @@
 """Command-line entry point: `config`, `doctor`, `extract`, `context`, `snapshot`,
-`manifest`, `transcribe`, `diarize`, `assess`, `calibrate`, `review-export`,
+`manifest`, `transcribe`, `keywords`, `diarize`, `assess`, `calibrate`, `review-export`,
 `review-import`, `speakers`, `working`, `report`, `export`, `txt`, `docx`, and
 `process`, which runs them in order."""
 
@@ -45,7 +45,7 @@ from transcript import (
     variant_suggestions,
     working,
 )
-from transcript.asr import BackendError
+from transcript.asr import BackendError, HotwordCheck
 from transcript.asr.whisper import WhisperBackend
 from transcript.config import (
     DEFAULT_CONFIG,
@@ -168,6 +168,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=_positive_int,
         help="number of people audible, for the diarization (default: model decides)",
     )
+    keywords_command = commands.add_parser(
+        "keywords",
+        help="Check whether a session's snapshot keywords reach Whisper as "
+        "hotwords, in counts only; loads no model.",
+    )
+    keywords_command.add_argument("session", help="session key <group>/<ordinal>")
     diarize_command = commands.add_parser(
         "diarize", help="Label the words of a session's transcripts with speakers."
     )
@@ -335,6 +341,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         snapshot_command,
         manifest_command,
         transcribe_command,
+        keywords_command,
         diarize_command,
         assess_command,
         calibrate_command,
@@ -363,6 +370,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _doctor(args.session, args.config)
     if args.command == "status":
         return _status(args.session, args.config)
+    if args.command == "keywords":
+        return _keywords(args.session, args.config)
     # pipeline steps log progress and failed attempts, to the console and the file
     with _log_to_stderr(), _session_log(args):
         if args.command == "extract":
@@ -739,19 +748,10 @@ def _transcribe(
             diarizer.identity()  # a missing pyannote fails now, not after the ASR
         print(f"{key}: {len(session_manifest.segments)} segment(s)")
         domain = _domain(paths)
-        keywords = domain.transcription_keywords() if domain else ()
-        snapshot_id = domain.origin.snapshot_id if domain else None
-        if snapshot_id is not None:
-            print(
-                f"{key}: {len(keywords)} keyword(s) "
-                f"from snapshot {snapshot_id[:_SHORT_ID]}"
-            )
+        keywords, snapshot_id = _snapshot_keywords(key, domain)
         backend = WhisperBackend.from_config(config)
         biasing = backend.capabilities.keyword_biasing
-        if keywords and not biasing:
-            print(
-                f"{key}: keywords not passed: model {config.asr_model} takes no hotwords"
-            )
+        _print_hotwords(key, config, backend, keywords)
         run = transcribe_session(
             paths,
             session_manifest,
@@ -1474,6 +1474,74 @@ def _rate_passages(
     print(f"{key}: review candidates: {len(found.candidates)}{rate}")
     print(f"wrote {paths.review_dir}")
     return True
+
+
+def _keywords(raw_key: str, config_path: Path) -> int:
+    """The hotword check of `transcribe` before a run, in counts only (TOOL-81).
+
+    Reads the snapshot and the tokenizer from the model cache; no model is built.
+    Exit 0 when the keywords reach Whisper or there are none, 1 when they are held
+    back or not passed, 2 when the check could not run.
+    """
+    try:
+        key = SessionKey.parse(raw_key)
+        config = _load_config(config_path)
+        domain = _domain(config.session_paths(key))
+        keywords, snapshot_id = _snapshot_keywords(key, domain)
+        if snapshot_id is None:
+            print(f"{key}: no knowledge snapshot, no keywords")
+            return 0
+        check = _print_hotwords(
+            key, config, WhisperBackend.from_config(config), keywords
+        )
+    except (ValueError, ConfigError, DataFileError, BackendError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    return 0 if not keywords or (check is not None and check.passed) else 1
+
+
+def _snapshot_keywords(
+    key: SessionKey, domain: DomainContext | None
+) -> tuple[tuple[str, ...], str | None]:
+    """The keywords and id of the stored snapshot, with their count on the console."""
+    if domain is None:
+        return (), None
+    keywords = tuple(domain.transcription_keywords())
+    snapshot_id = domain.origin.snapshot_id
+    print(f"{key}: {len(keywords)} keyword(s) from snapshot {snapshot_id[:_SHORT_ID]}")
+    return keywords, snapshot_id
+
+
+def _print_hotwords(
+    key: SessionKey,
+    config: Config,
+    backend: WhisperBackend,
+    keywords: Sequence[str],
+) -> HotwordCheck | None:
+    """Whether `keywords` reach Whisper and, if not, why; counts only, no terms."""
+    if not keywords:
+        return None
+    check = backend.check_hotwords(keywords)
+    if check is None:
+        why = (
+            f"model {config.asr_model} takes no hotwords"
+            if config.asr_hotwords
+            else "asr.hotwords is false"
+        )
+        print(f"{key}: keywords not passed: {why}")
+        return None
+    fitted = f"{len(check.fitted)} of {len(keywords)} keyword(s) fit"
+    if check.passed:
+        print(f"{key}: {fitted}, {check.tokens} hotword token(s)")
+    else:
+        print(
+            f"warning: {key}: hotwords off: {fitted}, {check.tokens} hotword "
+            f"token(s), under the {check.min_tokens} that keep Whisper from "
+            "dropping speech (TOOL-81); add terms to the knowledge snapshot, "
+            "a new snapshot is transcribed again",
+            file=sys.stderr,
+        )
+    return check
 
 
 def _domain(paths: SessionPaths) -> DomainContext | None:

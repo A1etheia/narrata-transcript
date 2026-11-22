@@ -1,12 +1,25 @@
-"""ASR quality spike (TOOL-93): Whisper variants on segment 1, one root per seed.
+"""ASR quality spike (TOOL-93, TOOL-81): Whisper variants on segment 1, one root
+per seed.
 
     asr.py prepare <group>/<ordinal> <variant>... [--seeds N]
     asr.py run <group>/<ordinal> <variant>... [--seeds N] [--diarize]
     asr.py score <group>/<ordinal> <variant>... [--seeds N] [--clip ...]
     asr.py windows <group>/<ordinal> <variant> [--seed N]
+    asr.py sections <group>/<ordinal> <variant>... [--seeds N] [--against V]
+    asr.py decode <group>/<ordinal> <variant>... [--seeds N] [--against V]
 
-A variant is a hotword base (`base`, `pchw`, `nohw`, `nohw-hp`) followed by
-modifiers joined with `+`, e.g. `nohw+vad-t35+beam10`. `prepare` makes
+A variant is a hotword base (`base`, `pchw`, `nohw`, `nohw-hp`, `kw<N>`,
+`neutral9`, `neutral`) followed by modifiers joined with `+`, e.g.
+`nohw+vad-t35+beam10`. `+fill` appends everyday words to the list until the
+token budget is full. `+guard` keeps the pipeline's guard, which passes no list
+under 110 tokens; without it every variant gets its list as given, so
+`base+guard` is the pipeline as shipped. `kw<N>` passes the first N snapshot
+keywords; `neutral9` and `neutral` pass fixed everyday words instead of the
+snapshot's, 9 or as many as fit the token budget (TOOL-81). Two ways change the keywords: `pchw` builds the
+root's snapshot again with other budgets, so it gets its own snapshot id; `kw<N>`
+and `neutral*` keep the snapshot and change the list in the transcribe child,
+recorded in `asr.settings`. A list from other budgets takes the first way, any
+other list the second. `prepare` makes
 `work/<s>/experiments/asr/<variant>.seed<n>/` its own `paths.root`, as
 `denoise.py` does: copies of manifest, `audio.json` and `narrata/`, a config with
 `paths.root` and `asr.model`, and a hard link to the raw or filtered WAV. `pchw`
@@ -16,7 +29,10 @@ a fixed CTranslate2 seed, the variant's hotword switch and Whisper settings, all
 recorded in `asr.settings`; it skips the diarization unless `--diarize` is given
 and writes peak RAM and VRAM to `<root>/run.json`. `score` prints Markdown tables
 per seed and as mean and range per variant. `windows` proposes calm 3-minute
-windows for a new hand reference from counts only.
+windows for a new hand reference from counts only. `sections` counts the words per
+5 minutes against seed 1 of `--against` (default `nohw`) and names the sections
+with clearly fewer words. `decode` counts Whisper's 30-second decoding windows
+from the raw form: temperature fallback, segments per window, compression.
 
 Privacy (TOOL-66): every file stays under `work/`; the console gets no text, no
 names and no speaker labels of people.
@@ -36,6 +52,7 @@ from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Protocol
 
 import denoise
 import yaml
@@ -47,7 +64,7 @@ from transcript.hints import stored_hints
 from transcript.jsonfile import DataFileError
 from transcript.reference import ReferenceTranscript, load_reference
 from transcript.session import SessionKey, SessionPaths
-from transcript.timecode import format_clock
+from transcript.timecode import format_clock, frames_to_ms, seconds_to_ms
 from transcript.uncertainty import segment_assessment
 
 TURBO = "large-v3-turbo"
@@ -57,6 +74,16 @@ WINDOW_MS = 180_000  # length of a proposed hand-reference window
 WINDOW_STEP_MS = 60_000
 WINDOW_PROPOSALS = 3
 VRAM_POLL_S = 1.0
+# TOOL-81: a 5-minute section has clearly fewer words than the comparison run
+# when it lacks at least this share and this many of the comparison's words
+SECTION_MS = 300_000
+DEFICIT_SHARE = 0.2
+DEFICIT_WORDS = 30
+DEFAULT_AGAINST = "nohw"
+# decoding windows: faster-whisper's `seek` counts 10 ms frames; a window that
+# consumes audio but yields fewer words per second than this skipped speech
+SEEK_FRAMES_PER_S = 100
+SPARSE_WORDS_PER_S = 0.5
 
 
 @dataclass(frozen=True)
@@ -64,6 +91,10 @@ class Variant:
     model: str = TURBO
     hotwords: bool = True
     pc_only: bool = False  # hotwords from `pc` entries only (budget 0 per type)
+    keyword_limit: int | None = None  # kw<N>: the first N snapshot keywords
+    neutral: int | None = None  # this many NEUTRAL_WORDS instead of the snapshot's
+    fill: bool = False  # NEUTRAL_WORDS after the list, cut at the token budget
+    guard: bool = False  # keep the pipeline's TOOL-81 guard against short lists
     chain: Chain = field(default_factory=Chain)
     # added to the fixed Whisper settings; a dict value merges with the base's
     asr: Mapping[str, object] = field(default_factory=dict)
@@ -71,12 +102,131 @@ class Variant:
     config: Mapping[str, object] = field(default_factory=dict)
 
 
+# Everyday German words with no tie to a game or a group: a prompt of the same
+# form as hotwords but without domain content (TOOL-81). More than fit the token
+# budget, so `neutral` is cut there like a full snapshot list.
+NEUTRAL_WORDS = [
+    "Tisch",
+    "Stuhl",
+    "Fenster",
+    "Tür",
+    "Wasser",
+    "Brot",
+    "Apfel",
+    "Garten",
+    "Straße",
+    "Wetter",
+    "Regen",
+    "Sonne",
+    "Wolke",
+    "Morgen",
+    "Abend",
+    "Woche",
+    "Monat",
+    "Jahr",
+    "Stunde",
+    "Minute",
+    "Küche",
+    "Zimmer",
+    "Treppe",
+    "Keller",
+    "Dach",
+    "Wand",
+    "Lampe",
+    "Teller",
+    "Tasse",
+    "Gabel",
+    "Löffel",
+    "Messer",
+    "Kanne",
+    "Schrank",
+    "Regal",
+    "Bett",
+    "Decke",
+    "Kissen",
+    "Teppich",
+    "Vorhang",
+    "Schlüssel",
+    "Tasche",
+    "Jacke",
+    "Mantel",
+    "Schuh",
+    "Hose",
+    "Hemd",
+    "Mütze",
+    "Schal",
+    "Handschuh",
+    "Zeitung",
+    "Brief",
+    "Karte",
+    "Heft",
+    "Stift",
+    "Papier",
+    "Buch",
+    "Seite",
+    "Bild",
+    "Uhr",
+    "Kalender",
+    "Telefon",
+    "Radio",
+    "Auto",
+    "Fahrrad",
+    "Bus",
+    "Bahn",
+    "Bahnhof",
+    "Brücke",
+    "Fluss",
+    "Wiese",
+    "Feld",
+    "Baum",
+    "Blume",
+    "Gras",
+    "Vogel",
+    "Hund",
+    "Katze",
+    "Pferd",
+    "Kuh",
+    "Schaf",
+    "Bäcker",
+    "Markt",
+    "Laden",
+    "Kasse",
+    "Preis",
+    "Rechnung",
+    "Arbeit",
+    "Pause",
+    "Urlaub",
+    "Reise",
+    "Koffer",
+    "Ausflug",
+    "Spaziergang",
+    "Frühstück",
+    "Mittag",
+    "Suppe",
+    "Kartoffel",
+    "Möhre",
+    "Zwiebel",
+    "Käse",
+    "Butter",
+    "Milch",
+    "Zucker",
+    "Salz",
+]
+NEUTRAL_SHORT = 9  # as many as the `pc` hotwords of the pilot snapshot
 BASES = {
     "base": Variant(),
     "pchw": Variant(pc_only=True),
     "nohw": Variant(hotwords=False),
     "nohw-hp": Variant(hotwords=False, chain=Chain(before=denoise._HP)),
+    "neutral9": Variant(neutral=NEUTRAL_SHORT),
+    "neutral": Variant(neutral=len(NEUTRAL_WORDS)),
 }
+KEYWORD_LIMIT_PREFIX = "kw"  # kw<N>, parsed by `variant`
+# fills a short list with NEUTRAL_WORDS up to the token budget (TOOL-81)
+FILL = "fill"
+# keeps the pipeline's guard: a list under HOTWORD_MIN_TOKENS reaches no Whisper;
+# without it the variants measure the list as given (TOOL-81, acceptance)
+GUARD = "guard"
 # one factor each; stage 3 adds models
 MODIFIERS: dict[str, Mapping[str, object]] = {
     "novad": {"vad_filter": False},
@@ -87,6 +237,8 @@ MODIFIERS: dict[str, Mapping[str, object]] = {
     "nospeech-off": {"no_speech_threshold": None},
     "logprob-lax": {"log_prob_threshold": -1.5},
     "cond-prev": {"condition_on_previous_text": True},
+    # no temperature fallback: the seed acts only while sampling (TOOL-81)
+    "temp0": {"temperature": 0.0},
     # changes nothing but the root: checks that a seed reproduces a run
     "twin": {},
 }
@@ -111,16 +263,19 @@ CONFIG_KEYS = frozenset({"beam_size"})
 def variant(name: str) -> Variant:
     """`<base>[+<modifier>…]`; each modifier at most once, at most one model."""
     head, *mods = name.split("+")
-    if head not in BASES:
-        raise SpikeError(f"{name}: unknown base {head!r}, one of {sorted(BASES)}")
     if len(set(mods)) != len(mods):
         raise SpikeError(f"{name}: a modifier repeats")
-    base = BASES[head]
+    base = _base(name, head)
     asr: dict[str, object] = {}
     config: dict[str, object] = {}
     model = base.model
+    fill = guard = False
     for mod in mods:
-        if mod in MODELS:
+        if mod == FILL:
+            fill = True
+        elif mod == GUARD:
+            guard = True
+        elif mod in MODELS:
             if model != base.model:
                 raise SpikeError(f"{name}: more than one model")
             model = MODELS[mod]
@@ -132,9 +287,31 @@ def variant(name: str) -> Variant:
                 asr, {k: v for k, v in MODIFIERS[mod].items() if k not in CONFIG_KEYS}
             )
         else:
-            known = sorted([*MODIFIERS, *MODELS])
+            known = sorted([*MODIFIERS, *MODELS, FILL, GUARD])
             raise SpikeError(f"{name}: unknown modifier {mod!r}, one of {known}")
-    return dataclasses.replace(base, model=model, asr=asr, config=config)
+    return dataclasses.replace(
+        base, model=model, asr=asr, config=config, fill=fill, guard=guard
+    )
+
+
+def _base(name: str, head: str) -> Variant:
+    if head in BASES:
+        return BASES[head]
+    count = head.removeprefix(KEYWORD_LIMIT_PREFIX)
+    if head.startswith(KEYWORD_LIMIT_PREFIX) and count.isdigit() and int(count) > 0:
+        return Variant(keyword_limit=int(count))
+    known = [*sorted(BASES), f"{KEYWORD_LIMIT_PREFIX}<N>"]
+    raise SpikeError(f"{name}: unknown base {head!r}, one of {known}")
+
+
+def keyword_settings(spec: Variant) -> dict[str, int | bool]:
+    """What a variant changes in the keyword list, as it goes into `asr.settings`.
+
+    Empty for the TOOL-93 bases, so their transcripts stay reusable.
+    """
+    found = {"keyword_limit": spec.keyword_limit, "neutral": spec.neutral}
+    changed = {key: value for key, value in found.items() if value is not None}
+    return {**changed, FILL: True} if spec.fill else changed
 
 
 def merge(base: Mapping[str, object], extra: Mapping[str, object]) -> dict[str, object]:
@@ -247,7 +424,13 @@ def run(paths: SessionPaths, name: str, seed: int, diarize: bool) -> int:
         raise SpikeError(f"{name}#{seed}: run prepare first")
     spec = variant(name)
     print(f"{name}#{seed}: transcribe", flush=True)
-    options = {"seed": seed, "hotwords": spec.hotwords, "asr": dict(spec.asr)}
+    options = {
+        "seed": seed,
+        "hotwords": spec.hotwords,
+        "keywords": keyword_settings(spec),
+        "asr": dict(spec.asr),
+        "guard": spec.guard,
+    }
     command = [sys.executable, str(Path(__file__).resolve()), _WITH_VARIANT]
     command += [json.dumps(options), "transcribe", str(paths.key)]
     command += ["--segment", str(SEGMENT), "--config", str(config)]
@@ -326,23 +509,47 @@ def _vram_used() -> int | None:
 
 
 def _cli_with_variant(options: str, argv: Sequence[str]) -> int:
-    """The transcript CLI with a seed, a hotword switch and added Whisper settings.
+    """The transcript CLI with a seed, a hotword switch, a changed keyword list and
+    added Whisper settings.
 
-    `seed` and `hotwords` go into `asr.settings`, so resume tells the runs apart;
-    only the Whisper settings reach `transcribe`.
+    `seed`, `hotwords` and the keyword change go into `asr.settings`, so resume
+    tells the runs apart; only the Whisper settings reach `transcribe`. The keyword
+    list changes where the CLI reads it from the snapshot, so its counts, resume
+    and `keywords_used` all see the list Whisper got.
     """
     import ctranslate2
 
     from transcript.__main__ import main as cli
     from transcript.asr import whisper
     from transcript.asr.backend import BackendIdentity
+    from transcript.domain import DomainContext
 
     spec = json.loads(options)
     seed = spec["seed"]
     whisper.FIXED_SETTINGS.update(merge(whisper.FIXED_SETTINGS, spec["asr"]))
+    # The variants measure short lists, so the pipeline's TOOL-81 guard stays off
+    # and its settings key stays out, which keeps earlier roots reusable; `+guard`
+    # runs the pipeline as shipped and records the threshold.
+    guard = spec["guard"]
+    if not guard:
+        whisper.HOTWORD_MIN_TOKENS = 0
     if not spec["hotwords"]:
         whisper.takes_hotwords = lambda model: False
-    extra = {"seed": seed, "hotwords": spec["hotwords"]}
+    changed = spec["keywords"]
+    snapshot_keywords = DomainContext.transcription_keywords
+
+    def keywords(self):
+        if "neutral" in changed:
+            found = tuple(NEUTRAL_WORDS[: changed["neutral"]])
+        else:
+            found = snapshot_keywords(self)[: changed.get("keyword_limit")]
+        if not changed.get(FILL):
+            return found
+        # `fit_hotwords` cuts the filled list at the token budget
+        return found + tuple(word for word in NEUTRAL_WORDS if word not in found)
+
+    DomainContext.transcription_keywords = keywords
+    extra = {"seed": seed, "hotwords": spec["hotwords"], **changed}
 
     backend = whisper.WhisperBackend
     original_prepare, original_transcribe = backend._prepare, backend.transcribe
@@ -350,6 +557,8 @@ def _cli_with_variant(options: str, argv: Sequence[str]) -> int:
     def prepare(self):
         runtime, model_path, identity = original_prepare(self)
         settings = {**identity.settings, **extra}
+        if not guard:
+            settings.pop("hotword_min_tokens", None)
         return runtime, model_path, BackendIdentity(identity.info, settings)
 
     def transcribe(self, request):
@@ -450,25 +659,7 @@ def score(
     root = shadow_root(paths, name, seed)
     shadow = SessionPaths(paths.key, root)
     thresholds = load_config(root / "config.yaml").review_uncertainty
-    reference = load_reference(shadow, SEGMENT)
-    if reference.status != "transcribed":
-        raise SpikeError(f"{label}: segment {SEGMENT} is not transcribed")
-    spec = variant(name)
-    settings = reference.asr.settings
-    wanted = {
-        "seed": seed,
-        "hotwords": spec.hotwords,
-        "model": spec.model,
-        **spec.config,
-    }
-    if any(settings.get(k) != v for k, v in wanted.items()):
-        raise SpikeError(f"{label}: transcript lacks the variant's seed or model")
-    for key, value in spec.asr.items():
-        stored = settings.get(key)
-        if isinstance(value, Mapping):
-            stored = {k: (stored or {}).get(k) for k in value}
-        if stored != value:
-            raise SpikeError(f"{label}: transcript lacks the variant's {key}")
+    reference = transcribed(paths, name, seed)
     stored_run = diarization.load_run(shadow, SEGMENT)
 
     wer: dict[str, Counter[str]] = {}
@@ -509,7 +700,7 @@ def score(
     return Score(
         root=label,
         name=name,
-        model=spec.model,
+        model=variant(name).model,
         model_version=reference.asr.model_version,
         snapshot=reference.asr.knowledge_snapshot_id,
         keywords=len(reference.asr.keywords_used),
@@ -532,7 +723,42 @@ def score(
     )
 
 
-def check_provenance(scores: Sequence[Score]) -> None:
+def transcribed(paths: SessionPaths, name: str, seed: int) -> ReferenceTranscript:
+    """Segment 1 of the root, made with the variant's seed, model and settings."""
+    label = f"{name}#{seed}"
+    reference = load_reference(
+        SessionPaths(paths.key, shadow_root(paths, name, seed)), SEGMENT
+    )
+    if reference.status != "transcribed":
+        raise SpikeError(f"{label}: segment {SEGMENT} is not transcribed")
+    spec = variant(name)
+    settings = reference.asr.settings
+    wanted = {
+        "seed": seed,
+        "hotwords": spec.hotwords,
+        "model": spec.model,
+        **spec.config,
+        **keyword_settings(spec),
+    }
+    if any(settings.get(k) != v for k, v in wanted.items()):
+        raise SpikeError(f"{label}: transcript lacks the variant's seed or model")
+    for key, value in spec.asr.items():
+        stored = settings.get(key)
+        if isinstance(value, Mapping):
+            stored = {k: (stored or {}).get(k) for k in value}
+        if stored != value:
+            raise SpikeError(f"{label}: transcript lacks the variant's {key}")
+    return reference
+
+
+class _Provenance(Protocol):
+    name: str
+    model: str
+    model_version: str | None
+    snapshot: str | None
+
+
+def check_provenance(scores: Sequence[_Provenance]) -> None:
     """Within a variant, model revision and snapshot must agree; print both."""
     for name in dict.fromkeys(s.name for s in scores):
         found = {(s.model_version, s.snapshot) for s in scores if s.name == name}
@@ -690,7 +916,11 @@ def print_tables(
 
 
 def _gib(mib: float | None) -> str:
-    return "n/a" if mib is None else f"{mib / 1024:.1f}".replace(".", ",")
+    return "n/a" if mib is None else _decimal(mib / 1024)
+
+
+def _decimal(value: float) -> str:
+    return f"{value:.1f}".replace(".", ",")
 
 
 # --- windows ------------------------------------------------------------------------
@@ -724,7 +954,7 @@ def windows(paths: SessionPaths, name: str, seed: int) -> list[Window]:
         for w in p.words
         if w.start_ms is not None
     ]
-    end = denoise._manifest_frames(paths) * 1000 // RATE
+    end = _end_ms(paths)
     found = []
     for start in range(0, end - WINDOW_MS + 1, WINDOW_STEP_MS):
         inside = [t for t in timed if start <= t[0] < start + WINDOW_MS]
@@ -757,6 +987,11 @@ def windows(paths: SessionPaths, name: str, seed: int) -> list[Window]:
     return chosen
 
 
+def _end_ms(paths: SessionPaths) -> int:
+    """The end of segment 1 on its own timeline."""
+    return frames_to_ms(denoise._manifest_frames(paths), RATE)
+
+
 def print_windows(found: Sequence[Window]) -> None:
     minutes = WINDOW_MS / 60_000
     print("| Fenster | Wörter/min | Sprecher (≥10 Wörter) | ohne Label | markiert |")
@@ -769,6 +1004,209 @@ def print_windows(found: Sequence[Window]) -> None:
         )
 
 
+# --- sections -----------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Sections:
+    root: str  # `<variant>#<seed>`
+    name: str
+    model: str
+    model_version: str | None
+    snapshot: str | None
+    counts: tuple[int, ...]  # words starting in each 5-minute section
+    untimed: int  # words with neither their own nor their passage's start
+
+
+def sections(
+    paths: SessionPaths,
+    name: str,
+    seed: int,
+    reference: ReferenceTranscript | None = None,
+) -> Sections:
+    """Words per 5 minutes of segment 1; a word counts where it starts.
+
+    `reference` is the root's transcript when the caller has already loaded it.
+    """
+    reference = reference or transcribed(paths, name, seed)
+    counts = [0] * -(-_end_ms(paths) // SECTION_MS)
+    untimed = 0
+    for passage in reference.passages:
+        for word in passage.words:
+            start = word.start_ms if word.start_ms is not None else passage.start_ms
+            if start is None:
+                untimed += 1
+            else:
+                counts[min(start // SECTION_MS, len(counts) - 1)] += 1
+    return Sections(
+        root=f"{name}#{seed}",
+        name=name,
+        model=variant(name).model,
+        model_version=reference.asr.model_version,
+        snapshot=reference.asr.knowledge_snapshot_id,
+        counts=tuple(counts),
+        untimed=untimed,
+    )
+
+
+def deficits(run: Sections, against: Sections) -> list[int]:
+    """The sections where `run` clearly has fewer words than `against`."""
+    return [
+        index
+        # both from the same manifest, so of the same length
+        for index, (own, theirs) in enumerate(
+            zip(run.counts, against.counts, strict=True)
+        )
+        if theirs - own >= DEFICIT_WORDS and own <= (1 - DEFICIT_SHARE) * theirs
+    ]
+
+
+def print_sections(runs: Sequence[Sections], against: Sections) -> None:
+    check_provenance([*runs, against])
+    print(
+        f"Vergleich: {against.root}, Abschnitte à {SECTION_MS // 60_000} min, Defizit "
+        f"ab {DEFICIT_SHARE:.0%} und {DEFICIT_WORDS} Wörtern weniger"
+    )
+    print()
+    print(
+        "| Lauf | Wörter | ohne Zeit | Abschnitte | mit Defizit | fehlende Wörter "
+        "darin | größtes Defizit |"
+    )
+    print("| --- | --- | --- | --- | --- | --- | --- |")
+    found = {run.root: deficits(run, against) for run in runs}
+    for run in runs:
+        gaps = [against.counts[i] - run.counts[i] for i in found[run.root]]
+        shares = [1 - run.counts[i] / against.counts[i] for i in found[run.root]]
+        largest = _pct(max(shares)) if shares else "–"
+        print(
+            f"| {run.root} | {sum(run.counts)} | {run.untimed} | {len(run.counts)} | "
+            f"{len(gaps)} | {sum(gaps)} | {largest} |"
+        )
+    if not any(found.values()):
+        return
+    print()
+    print(f"| Lauf | Abschnitt | Wörter | {against.root} |")
+    print("| --- | --- | --- | --- |")
+    for run in runs:
+        for index in found[run.root]:
+            start = index * SECTION_MS
+            print(
+                f"| {run.root} | {format_clock(start)}–"
+                f"{format_clock(start + SECTION_MS)} | {run.counts[index]} | "
+                f"{against.counts[index]} |"
+            )
+
+
+# --- decode -------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DecodeWindow:
+    """One 30-second decoding window, from the raw form; counts only."""
+
+    start_ms: int  # where its first segment starts, on the segment's timeline
+    temperature: float  # the highest of its segments: > 0 means fallback
+    segment_lengths: tuple[float, ...]  # seconds
+    words: int
+    # audio the decoder moved on by; a window that yields no segment at all adds
+    # its audio to the window before, which then turns sparse
+    consumed_s: float
+    compression: float  # the highest compression ratio of its segments
+
+    @property
+    def fallback(self) -> bool:
+        return self.temperature > 0
+
+    @property
+    def sparse(self) -> bool:
+        return self.words < SPARSE_WORDS_PER_S * self.consumed_s
+
+    @property
+    def section(self) -> int:
+        return self.start_ms // SECTION_MS
+
+
+def decode_windows(paths: SessionPaths, name: str, seed: int) -> list[DecodeWindow]:
+    """The windows of segment 1 in decoding order. Text and tokens stay unread.
+
+    The caller checks the transcript the raw form belongs to (`transcribed`).
+    """
+    shadow = SessionPaths(paths.key, shadow_root(paths, name, seed))
+    raw = _read_json(shadow.reference_raw(SEGMENT)).get("raw", {})  # write_reference
+    if not raw.get("segments"):
+        raise SpikeError(f"{name}#{seed}: no raw segments for segment {SEGMENT}")
+    grouped: dict[int, list[Mapping[str, object]]] = {}
+    for segment in raw["segments"]:
+        grouped.setdefault(int(segment["seek"]), []).append(segment)
+    seeks = sorted(grouped)
+    end = (raw["info"]["duration_after_vad"] or 0) * SEEK_FRAMES_PER_S
+    found = []
+    for seek, after in zip(seeks, [*seeks[1:], max(end, seeks[-1])], strict=True):
+        window = grouped[seek]
+        found.append(
+            DecodeWindow(
+                start_ms=seconds_to_ms(min(float(s["start"]) for s in window)),
+                temperature=max(float(s["temperature"] or 0) for s in window),
+                segment_lengths=tuple(
+                    float(s["end"]) - float(s["start"]) for s in window
+                ),
+                words=sum(len(s["words"] or ()) for s in window),
+                consumed_s=(after - seek) / SEEK_FRAMES_PER_S,
+                compression=max(float(s["compression_ratio"]) for s in window),
+            )
+        )
+    return found
+
+
+def print_decode(
+    paths: SessionPaths,
+    jobs: Sequence[tuple[str, int]],
+    against: Sections | None,
+) -> None:
+    """Per run: fallback, segments per window and skipped audio; with `against`,
+    the fallback share inside and outside the sections with a word deficit."""
+    headers = [
+        "Lauf",
+        "Fenster",
+        "mit Fallback",
+        "Wörter in Fallback-Fenstern",
+        "Segmente je Fenster",
+        "Segmentlänge Median (s)",
+        "dünne Fenster",
+        "Kompression über der Schwelle",
+        *(["Fallback im Defizit / sonst"] if against else []),
+    ]
+    print("| " + " | ".join(headers) + " |")
+    print("|" + " --- |" * len(headers))
+    for name, seed in jobs:
+        reference = transcribed(paths, name, seed)
+        limit = load_config(
+            shadow_root(paths, name, seed) / "config.yaml"
+        ).review_uncertainty.compression_ratio  # as the assessment flags passages
+        found = decode_windows(paths, name, seed)
+        fallback = [w for w in found if w.fallback]
+        lengths = sorted(n for w in found for n in w.segment_lengths)
+        cells = [
+            str(len(found)),
+            f"{len(fallback)} ({_pct(len(fallback) / len(found))})",
+            _pct(sum(w.words for w in fallback) / (sum(w.words for w in found) or 1)),
+            _decimal(len(lengths) / len(found)),
+            _decimal(lengths[len(lengths) // 2]),
+            str(sum(w.sparse for w in found)),
+            str(sum(w.compression >= limit for w in found)),
+        ]
+        if against is not None:
+            short = set(deficits(sections(paths, name, seed, reference), against))
+            inside = [w for w in found if w.section in short]
+            outside = [w for w in found if w.section not in short]
+            cells.append(f"{_fallback_share(inside)} / {_fallback_share(outside)}")
+        print(f"| {name}#{seed} | " + " | ".join(cells) + " |")
+
+
+def _fallback_share(found: Sequence[DecodeWindow]) -> str:
+    return _pct(sum(w.fallback for w in found) / len(found)) if found else "–"
+
+
 # --- main ---------------------------------------------------------------------------
 
 
@@ -777,7 +1215,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if argv[:1] == [_WITH_VARIANT]:
         return _cli_with_variant(argv[1], argv[2:])
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    parser.add_argument("command", choices=("prepare", "run", "score", "windows"))
+    parser.add_argument(
+        "command",
+        choices=("prepare", "run", "score", "windows", "sections", "decode"),
+    )
     parser.add_argument("session", help="session key <group>/<ordinal>")
     parser.add_argument("variants", nargs="+", type=_variant_arg)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
@@ -785,6 +1226,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=1, help="windows: the root to read")
     parser.add_argument("--diarize", action="store_true", help="run: also diarize")
     parser.add_argument("--baseline", default="base")
+    parser.add_argument(
+        "--against",
+        type=_variant_arg,
+        help=f"sections, decode: seed 1 of this variant to compare with "
+        f"(sections: default {DEFAULT_AGAINST})",
+    )
     parser.add_argument(
         "--clip",
         action="append",
@@ -807,6 +1254,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             clips = args.clip or denoise.CLIPS
             scores = [score(paths, v, n, clips) for v, n in jobs]
             print_tables(scores, clips, args.baseline, denoise._manifest_frames(paths))
+        elif args.command == "sections":
+            runs = [sections(paths, v, n) for v, n in jobs]
+            name = args.against or DEFAULT_AGAINST
+            listed = [s for s in runs if s.root == f"{name}#1"]
+            print_sections(runs, listed[0] if listed else sections(paths, name, 1))
+        elif args.command == "decode":
+            against = sections(paths, args.against, 1) if args.against else None
+            print_decode(paths, jobs, against)
         else:
             if len(args.variants) != 1:
                 raise SpikeError("windows reads exactly one variant")

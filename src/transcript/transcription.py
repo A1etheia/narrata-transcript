@@ -312,13 +312,12 @@ def _same_keywords(used: Sequence[str], keywords: Sequence[str]) -> bool:
     """Whether a result that took `used` effect was made with these `keywords`.
 
     A backend may cut the list but keeps its order, so `used` must be an ordered
-    subsequence of `keywords`, and empty only when `keywords` is. A result made
-    without hints is thus transcribed again once there are some. When not even
-    the first keyword fits, `used` stays empty and every run transcribes again.
+    subsequence of `keywords`. It may also pass none, when not even the first
+    keyword fits or the list is too short to help (TOOL-81). New knowledge comes
+    with a new snapshot, which the caller compares.
     """
     remaining = iter(keywords)
-    in_order = all(term in remaining for term in used)
-    return in_order and bool(used) == bool(keywords)
+    return all(term in remaining for term in used)
 
 
 def _outcome(

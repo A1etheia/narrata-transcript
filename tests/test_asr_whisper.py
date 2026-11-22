@@ -24,8 +24,11 @@ from transcript.asr import (
 )
 from transcript.asr.whisper import (
     CUDA_LIBRARIES,
+    HOTWORD_MIN_TOKENS,
     HOTWORD_TOKENS,
     WhisperBackend,
+    _token_counter,
+    check_hotwords,
     fit_hotwords,
     preload_cuda_libraries,
     takes_hotwords,
@@ -91,12 +94,19 @@ def model_dir(path: Path) -> Path:
     return path
 
 
+# invented terms, one token each, just long enough to reach Whisper
+LONG_LIST = tuple(f"Begriff{n}" for n in range(HOTWORD_MIN_TOKENS))
+
+
 class Tokenizer:
     """One token per whitespace-separated word."""
 
     def encode(self, text: str, add_special_tokens: bool = True) -> Any:
         assert not add_special_tokens
         return types.SimpleNamespace(ids=text.split())
+
+
+count_tokens = _token_counter(Tokenizer())
 
 
 class FakeRuntime:
@@ -116,6 +126,7 @@ class FakeRuntime:
         self.missing_libraries: set[str] = set()  # names that load by no path
         self.unloadable: set[str] = set()  # exact arguments that fail
         self.libraries_loaded: list[tuple[str, int]] = []
+        self.tokenizers_loaded: list[Path] = []
         self.downloads: list[tuple[str, bool]] = []
         self.models: list[Any] = []
 
@@ -180,8 +191,13 @@ class FakeRuntime:
             ),
             mock.patch("transcript.asr.whisper._load_library", self._load_library),
             mock.patch("transcript.asr.whisper._find_spec", self._find_spec),
+            mock.patch("transcript.asr.whisper._load_tokenizer", self._load_tokenizer),
         ):
             yield
+
+    def _load_tokenizer(self, path: Path) -> Tokenizer:
+        self.tokenizers_loaded.append(path)
+        return Tokenizer()
 
 
 class WhisperTestCase(unittest.TestCase):
@@ -473,7 +489,8 @@ class TranscribeTest(WhisperTestCase):
         self.assertEqual(
             dict(result.settings),
             {"model": "large-v3-turbo", "device": "cuda", "compute_type": "float16"}
-            | expected,
+            | expected
+            | {"hotwords": True, "hotword_min_tokens": HOTWORD_MIN_TOKENS},
         )
 
     def test_raw_is_the_unchanged_answer(self) -> None:
@@ -486,20 +503,45 @@ class TranscribeTest(WhisperTestCase):
         json.dumps(result.raw)
 
     def test_keywords_become_hotwords_and_are_reported_as_used(self) -> None:
-        result = self.run_backend(WhisperBackend(), "Drachenhort", "Beispielfigur")
+        keywords = ("Drachenhort", "Beispielfigur", *LONG_LIST)
+        result = self.run_backend(WhisperBackend(), *keywords)
 
         self.assertEqual(
-            self.runtime.models[0].calls[0]["hotwords"], "Drachenhort Beispielfigur"
+            self.runtime.models[0].calls[0]["hotwords"], " ".join(keywords)
         )
-        self.assertEqual(result.keywords_used, ("Drachenhort", "Beispielfigur"))
+        self.assertEqual(result.keywords_used, keywords)
 
-    def test_a_model_without_hotwords_ignores_keywords(self) -> None:
-        backend = WhisperBackend("large-v3")
-        result = self.run_backend(backend, "Drachenhort", "Beispielfigur")
+    def test_a_list_under_the_threshold_does_not_reach_whisper(self) -> None:
+        """TOOL-81: with the default config a short list makes turbo drop speech."""
+        short = ("Drachenhort", "Beispielfigur", *LONG_LIST[3:])  # one token short
+        backend = WhisperBackend.from_config(Config(language="de", root=self.root))
+        result = self.run_backend(backend, *short)
 
-        self.assertFalse(backend.capabilities.keyword_biasing)
         self.assertIsNone(self.runtime.models[0].calls[0]["hotwords"])
         self.assertEqual(result.keywords_used, ())
+        self.assertEqual(result.settings["hotword_min_tokens"], HOTWORD_MIN_TOKENS)
+
+    def test_a_model_without_hotwords_or_the_switch_off_ignores_keywords(self) -> None:
+        switched_off = Config(language="de", root=self.root, asr_hotwords=False)
+        for backend in (
+            WhisperBackend("large-v3"),
+            WhisperBackend.from_config(switched_off),
+        ):
+            self.runtime.models.clear()
+            with self.subTest(model=backend.info.model):
+                result = self.run_backend(backend, *LONG_LIST)
+
+                self.assertFalse(backend.capabilities.keyword_biasing)
+                self.assertIsNone(self.runtime.models[0].calls[0]["hotwords"])
+                self.assertEqual(result.keywords_used, ())
+                self.assertFalse(result.settings["hotwords"])
+                self.assertNotIn("hotword_min_tokens", result.settings)
+
+    def test_the_switch_changes_the_identity(self) -> None:
+        on = WhisperBackend().identity()
+        off = WhisperBackend(hotwords=False).identity()
+
+        self.assertFalse(on.matches(off.info, off.settings))
 
     def test_no_keywords_means_no_hotwords(self) -> None:
         result = self.run_backend(WhisperBackend())
@@ -535,7 +577,7 @@ class TranscribeTest(WhisperTestCase):
 
     def test_result_converts_into_the_reference_format(self) -> None:
         backend = WhisperBackend()
-        result = self.run_backend(backend, SECRET)
+        result = self.run_backend(backend, SECRET, *LONG_LIST)
         paths = SessionPaths(MANIFEST.key, self.root)
 
         reference = from_backend_result(result, backend, MANIFEST, SEGMENT, 900)
@@ -544,7 +586,7 @@ class TranscribeTest(WhisperTestCase):
 
         self.assertEqual(loaded, reference)
         self.assertEqual(loaded.asr.model_version, REVISION)
-        self.assertEqual(loaded.asr.keywords_used, (SECRET,))
+        self.assertEqual(loaded.asr.keywords_used, (SECRET, *LONG_LIST))
         self.assertEqual(loaded.passages[0].words[1].confidence, 0.61)
         raw = json.loads(paths.reference_raw(SEGMENT.index).read_text("utf-8"))
         self.assertEqual(raw["raw"]["segments"][0]["text"], " Zum Drachenhort.")
@@ -578,27 +620,68 @@ class TakesHotwordsTest(unittest.TestCase):
 
 
 class FitHotwordsTest(unittest.TestCase):
-    def count(self, text: str) -> int:
-        return len(text.split())
-
     def test_keywords_up_to_the_token_limit_are_kept(self) -> None:
         keywords = [f"Begriff{n}" for n in range(HOTWORD_TOKENS + 5)]
 
-        used = fit_hotwords(keywords, self.count)
+        used = fit_hotwords(keywords, count_tokens)
 
         self.assertEqual(used, tuple(keywords[:HOTWORD_TOKENS]))
 
     def test_first_keyword_that_does_not_fit_ends_the_list(self) -> None:
         long_term = " ".join(["lang"] * HOTWORD_TOKENS)
 
-        used = fit_hotwords(["Drachenhort", long_term, "Beispielfigur"], self.count)
+        used = fit_hotwords(["Drachenhort", long_term, "Beispielfigur"], count_tokens)
 
         self.assertEqual(used, ("Drachenhort",))
 
     def test_blank_keywords_are_skipped(self) -> None:
         self.assertEqual(
-            fit_hotwords(["", "  ", "Drachenhort"], self.count), ("Drachenhort",)
+            fit_hotwords(["", "  ", "Drachenhort"], count_tokens), ("Drachenhort",)
         )
+
+
+class CheckHotwordsTest(WhisperTestCase):
+    def test_a_list_at_the_threshold_is_passed(self) -> None:
+        check = check_hotwords(LONG_LIST, count_tokens)
+
+        self.assertTrue(check.passed)
+        self.assertEqual(check.used, LONG_LIST)
+        self.assertEqual((check.tokens, check.min_tokens), (110, 110))
+
+    def test_a_list_under_the_threshold_is_held_back_with_its_counts(self) -> None:
+        check = check_hotwords(["Drachenhort", "", "Beispielfigur"], count_tokens)
+
+        self.assertFalse(check.passed)
+        self.assertEqual(check.used, ())
+        self.assertEqual(check.tokens, 2)
+        self.assertEqual(check.fitted, ("Drachenhort", "Beispielfigur"))
+
+    def test_the_backend_checks_with_the_cached_tokenizer_and_no_model(self) -> None:
+        check = WhisperBackend().check_hotwords(LONG_LIST)
+
+        assert check is not None
+        self.assertTrue(check.passed)
+        self.assertEqual(self.runtime.models, [])
+        self.assertEqual(
+            self.runtime.tokenizers_loaded, [self.runtime.snapshot / "tokenizer.json"]
+        )
+
+    def test_the_backend_checks_nothing_without_hotwords(self) -> None:
+        for backend in (WhisperBackend("large-v3"), WhisperBackend(hotwords=False)):
+            with self.subTest(model=backend.info.model):
+                self.assertIsNone(backend.check_hotwords(LONG_LIST))
+        self.assertEqual(self.runtime.tokenizers_loaded, [])
+
+    def test_an_unreadable_tokenizer_fails_without_its_message(self) -> None:
+        def broken(path: Path) -> Any:
+            raise ValueError(SECRET)
+
+        with (
+            mock.patch("transcript.asr.whisper._load_tokenizer", broken),
+            self.assertRaises(BackendRuntimeError) as caught,
+        ):
+            WhisperBackend().check_hotwords(LONG_LIST)
+        self.assertNotIn(SECRET, str(caught.exception))
 
 
 if __name__ == "__main__":

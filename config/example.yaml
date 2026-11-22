@@ -35,6 +35,10 @@ asr:
   beam_size: 5
   # Weitere Versuche pro Segment nach Speichermangel oder Runtime-Fehler, 0 bis 5.
   retries: 2
+  # Begriffe aus dem Wissens-Snapshot als Hotwords an Whisper (nur turbo-Modelle).
+  # Eine Liste unter 110 Tokens geht auch bei true nicht an Whisper, weil sie
+  # Sprache auslassen lässt (TOOL-81). false schaltet die Hotwords ganz ab.
+  hotwords: true
 
 # Sprecher-Diarisierung: pyannote, nur aus dem lokalen Modell-Cache.
 # Einrichtung, einmaliger Download und Hardware siehe README, Abschnitt „Diarisierung“.
