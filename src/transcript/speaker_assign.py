@@ -21,7 +21,12 @@ from transcript.narrata import Participant
 from transcript.reference import ReferenceTranscript
 from transcript.session import SessionPaths
 from transcript.speaker_player import Played, sample_ms
-from transcript.speaker_samples import LabelSamples, ordered, sample_line
+from transcript.speaker_samples import (
+    LabelSamples,
+    absent_note,
+    ordered,
+    sample_line,
+)
 from transcript.speakers import AssignmentEntry, SpeakerAssignment, SpeakerMap, UserId
 from transcript.timecode import format_ms
 
@@ -97,7 +102,8 @@ class _Dialogue:
         self.help_assign = _HELP_ASSIGN.format(
             people=" · ".join(
                 f"[{number}] {person.display_name} "
-                f"({'former' if person.is_former else person.role})"
+                f"({'former' if person.is_former else person.role}"
+                f"{absent_note(person)})"
                 for number, person in enumerate(self.people, start=1)
             )
         )
@@ -171,7 +177,7 @@ class _Dialogue:
             person = self._person(answer)
             if person is None:
                 say(f"  not a choice: {answer}")
-            elif self._confirm_merge(found, person):
+            elif self._confirm_absent(person) and self._confirm_merge(found, person):
                 return self._entry(found, "person", person.user_id)
 
     def _person(self, answer: str) -> Participant | None:
@@ -179,6 +185,12 @@ class _Dialogue:
             return None
         number = int(answer)
         return self.people[number - 1] if 1 <= number <= len(self.people) else None
+
+    def _confirm_absent(self, person: Participant) -> bool:
+        """Ask before a label goes to someone Narrata marks absent."""
+        return not person.is_absent or self._yes(
+            f"  {person.display_name} is marked absent in Narrata. Assign?"
+        )
 
     def _confirm_merge(self, found: LabelSamples, person: Participant) -> bool:
         """Ask before a second label of the segment goes to the same person."""

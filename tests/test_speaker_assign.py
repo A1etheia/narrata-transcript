@@ -106,6 +106,15 @@ class QueueTest(unittest.TestCase):
         # 13 is a former member; within a group by name
         self.assertEqual(order, [14, 11, 12, 13])
 
+    def test_absent_participants_come_last_and_stay_to_choose(self) -> None:
+        absent = dataclasses.replace(PARTICIPANTS[0], present=False)
+        present = dataclasses.replace(participant(14), is_former=True, present=True)
+
+        order = [p.user_id for p in ordered((absent, *PARTICIPANTS[1:], present))]
+
+        # present (even former), unknown active, unknown former, absent
+        self.assertEqual(order, [14, 12, 13, 11])
+
 
 class DialogueTest(_SessionCase):
     def setUp(self) -> None:
@@ -116,9 +125,15 @@ class DialogueTest(_SessionCase):
         write_assignment(self.paths, assignment)
         self.assignment = assignment
 
-    def run_dialogue(self, script: Script, every: bool = False, labels=LABELS):
+    def run_dialogue(
+        self,
+        script: Script,
+        every: bool = False,
+        labels=LABELS,
+        participants=PARTICIPANTS,
+    ):
         return run(
-            self.paths, labels, REFERENCES, PARTICIPANTS, self.assignment,
+            self.paths, labels, REFERENCES, participants, self.assignment,
             script.console(), every,
         )  # fmt: skip
 
@@ -245,6 +260,21 @@ class DialogueTest(_SessionCase):
         self.assertEqual(after["effort_minutes"], 4)  # declined
         self.assertIn(
             f"  now: open (not applied, earlier: {NAME} 12 (person 12))", script.said
+        )
+
+    def test_an_absent_person_needs_a_yes(self) -> None:
+        absent = dataclasses.replace(PARTICIPANTS[0], present=False)
+        participants = (absent, *PARTICIPANTS[1:])
+        # 11 is absent and so third; declined once, then confirmed
+        script = Script("3", "n", "3", "y", "s", "s", "")
+
+        self.run_dialogue(script, participants=participants)
+
+        self.assertEqual(self.stored(), {(1, "SPEAKER_01"): ("person", 11)})
+        asked = [line for line in script.said if "marked absent" in line]
+        self.assertEqual(len(asked), 2)
+        self.assertTrue(
+            any(f"[3] {NAME} 11 (player, absent)" in p for p in script.said)
         )
 
     def test_a_second_label_of_one_person_needs_a_yes(self) -> None:

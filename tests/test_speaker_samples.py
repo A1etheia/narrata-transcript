@@ -1,3 +1,4 @@
+import dataclasses
 import unittest
 
 from test_reference import minimal
@@ -135,6 +136,20 @@ class RenderTest(unittest.TestCase):
         # active participants first, former ones still to choose
         self.assertLess(sheet.index(f"{NAME} 12"), sheet.index(f"{NAME} 13"))
         self.assertIn(f"| 13 | {NAME} 13 | player | former |", sheet)
+
+    def test_absent_participants_are_marked_and_listed_last(self) -> None:
+        absent = dataclasses.replace(PARTICIPANTS[0], present=False)
+        participants = (absent, *PARTICIPANTS[1:])
+
+        sheet = render(
+            minimal().key,
+            (),
+            participants,
+            check(SpeakerAssignment(), (), participants),
+        )
+
+        self.assertIn(f"| 11 | {NAME} 11 | player | active, absent |", sheet)
+        self.assertLess(sheet.index(f"{NAME} 13"), sheet.index(f"{NAME} 11"))
 
 
 if __name__ == "__main__":

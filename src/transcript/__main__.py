@@ -534,7 +534,7 @@ def _context(raw_key: str, config_path: Path, from_file: Path | None) -> int:
         f"({sum(p.role == 'gm' for p in participants)} gm, "
         f"{sum(p.is_former for p in participants)} former, "
         f"{sum(p.present is True for p in participants)} present, "
-        f"{sum(p.present is False for p in participants)} absent), "
+        f"{sum(p.is_absent for p in participants)} absent), "
         f"{sum(len(p.characters) for p in participants)} character(s)"
     )
     print(

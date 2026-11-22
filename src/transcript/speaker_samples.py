@@ -145,7 +145,7 @@ def render(
         membership = "former" if participant.is_former else "active"
         lines.append(
             f"| {participant.user_id} | {_cell(participant.display_name)} "
-            f"| {participant.role} | {membership} |"
+            f"| {participant.role} | {membership}{absent_note(participant)} |"
         )
     segment = None
     for found in labels:
@@ -164,14 +164,29 @@ def render(
     return "\n".join(lines) + "\n"
 
 
+_ATTENDANCE_RANK = {True: 0, None: 1, False: 2}
+
+
 def ordered(participants: Iterable[Participant]) -> tuple[Participant, ...]:
-    """Present first, then active, then former members; by name within each."""
+    """Present, then unknown, then absent; active before former, then by name.
+
+    Absent people stay to choose: Narrata's attendance may be wrong.
+    """
     return tuple(
         sorted(
             participants,
-            key=lambda p: (p.present is not True, p.is_former, p.display_name),
+            key=lambda p: (
+                _ATTENDANCE_RANK[p.present],
+                p.is_former,
+                p.display_name,
+            ),
         )
     )
+
+
+def absent_note(participant: Participant) -> str:
+    """`, absent` for someone Narrata marks absent; otherwise nothing."""
+    return ", absent" if participant.is_absent else ""
 
 
 def _summary(found: LabelSamples, assignment: SpeakerMap) -> str:

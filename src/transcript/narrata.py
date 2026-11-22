@@ -76,6 +76,11 @@ class Participant:
     characters: tuple[Character, ...]
     present: bool | None = None
 
+    @property
+    def is_absent(self) -> bool:
+        """Marked absent by the GM; unknown attendance is not absence."""
+        return self.present is False
+
 
 @dataclass(frozen=True)
 class NarrataParticipants:
