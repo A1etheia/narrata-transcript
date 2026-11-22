@@ -96,6 +96,7 @@ class PyannoteDiarizer:
         info: BackendInfo,
         audio_sha256: str,
         num_speakers: int | None = None,
+        max_speakers: int | None = None,
     ) -> DiarizationRun:
         """Turns of `audio`, a 16-bit PCM WAV; `info` comes from `identity`."""
         if self._pipeline is None:
@@ -105,6 +106,7 @@ class PyannoteDiarizer:
             output = self._pipeline(
                 {"waveform": waveform, "sample_rate": sample_rate},
                 num_speakers=num_speakers,
+                max_speakers=max_speakers,
             )
         except Exception as error:
             raise _error(error, f"cannot diarize {audio}") from error
@@ -115,6 +117,7 @@ class PyannoteDiarizer:
             exclusive_turns=_turns(output.exclusive_speaker_diarization),
             settings=self.settings,
             num_speakers=num_speakers,
+            max_speakers=max_speakers,
         )
 
     def close(self) -> None:

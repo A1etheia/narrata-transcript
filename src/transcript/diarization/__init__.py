@@ -56,6 +56,7 @@ from transcript.reference import (
     Renumbering,
     Word,
     check_span,
+    check_speaker_hints,
     load_reference,
     majority_speaker,
     next_processed_at,
@@ -103,13 +104,13 @@ class DiarizationRun:
     exclusive_turns: tuple[Turn, ...] = ()
     settings: Mapping[str, Any] = field(default_factory=dict)
     num_speakers: int | None = None  # the hint given, not the number found
+    max_speakers: int | None = None  # upper bound given, e.g. from attendance
     # of the diarizer call that made it; None: unknown. Not part of equality:
     # two runs with the same turns are the same answer.
     elapsed_ms: int | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
-        if self.num_speakers is not None and self.num_speakers < 1:
-            raise ValueError("num_speakers must be positive")
+        check_speaker_hints(self.num_speakers, self.max_speakers)
         exclusive = tuple(sorted(self.exclusive_turns, key=_start))
         object.__setattr__(self, "exclusive_turns", exclusive)
         for previous, current in itertools.pairwise(exclusive):
@@ -129,6 +130,8 @@ class DiarizationRun:
         settings: Mapping[str, Any],
         num_speakers: int | None,
         audio_sha256: str,
+        *,
+        max_speakers: int | None = None,
     ) -> bool:
         """Whether a new run with these inputs would repeat this one.
 
@@ -137,6 +140,7 @@ class DiarizationRun:
         return (
             BackendIdentity(self.info, self.settings).matches(info, settings)
             and self.num_speakers == num_speakers
+            and self.max_speakers == max_speakers
             and self.audio_sha256 == audio_sha256
         )
 
@@ -159,6 +163,7 @@ class Diarizer(Protocol):
         info: BackendInfo,
         audio_sha256: str,
         num_speakers: int | None = None,
+        max_speakers: int | None = None,
     ) -> "DiarizationRun": ...
 
     def close(self) -> None: ...
@@ -194,13 +199,15 @@ def diarize_session(
     retries: int = 0,
     sleep: Callable[[float], None] = time.sleep,
     min_turn_ms: int | None = None,
+    max_speakers: int | None = None,
 ) -> list[SegmentSummary]:
     """Label the words of every transcribed segment with speakers.
 
     With `min_turn_ms` the passages are cut at speaker changes, see
-    `assign_speakers`. A stored run is reused when audio, model, revision,
-    settings and `num_speakers` match, unless `force`; a new `min_turn_ms`
-    alone cuts again without the model. The model is loaded only for the first
+    `assign_speakers`. `max_speakers` bounds the number of speakers the model
+    may find, `num_speakers` fixes it. A stored run is reused when audio,
+    model, revision, settings and both hints match, unless `force`; a new
+    `min_turn_ms` alone cuts again without the model. The model is loaded only for the first
     segment that needs it and closed at the end. Segments without a transcript
     or with a failed one are skipped. A retryable `BackendError` from one
     segment is tried again up to `retries` times; the last one makes the
@@ -230,6 +237,7 @@ def diarize_session(
                 retries=retries,
                 sleep=sleep,
                 min_turn_ms=min_turn_ms,
+                max_speakers=max_speakers,
             )
             for segment in manifest.segments
         ]
@@ -250,6 +258,7 @@ def _diarize_segment(
     retries: int,
     sleep: Callable[[float], None],
     min_turn_ms: int | None,
+    max_speakers: int | None,
 ) -> SegmentSummary:
     """Diarize or reuse one segment and label its words; see `diarize_session`."""
     reference = (
@@ -264,11 +273,13 @@ def _diarize_segment(
     elapsed_ms = None
     attempts = 0
     if run is None or not run.matches(
-        info, diarizer.settings, num_speakers, audio_sha256
+        info, diarizer.settings, num_speakers, audio_sha256, max_speakers=max_speakers
     ):
         load()
         done = attempt(
-            lambda: diarizer.diarize(audio, info, audio_sha256, num_speakers),
+            lambda: diarizer.diarize(
+                audio, info, audio_sha256, num_speakers, max_speakers=max_speakers
+            ),
             retries,
             FailureLog(
                 _logger, f"{paths.key} segment {index}: {info.backend_id}", retries
@@ -355,6 +366,7 @@ def assign_speakers(
             model_version=run.info.model_version,
             settings=dict(run.settings),
             num_speakers=run.num_speakers,
+            max_speakers=run.max_speakers,
             labels=run.labels,
             overlaps=overlaps(run.turns),
             min_turn_ms=min_turn_ms,
@@ -427,7 +439,7 @@ def load_run(paths: SessionPaths, index: int) -> DiarizationRun | None:
     """The stored diarization of segment `index`; `None` if absent or outdated.
 
     A file in another format version counts as absent, so it is recomputed. One
-    written before `elapsed_ms` existed loads with `elapsed_ms` None.
+    written before `elapsed_ms` or `max_speakers` existed loads with None there.
     """
     path = paths.diarization_raw(index)
     if not path.exists():
@@ -446,6 +458,7 @@ def load_run(paths: SessionPaths, index: int) -> DiarizationRun | None:
             audio_sha256=_field(data, "audio_sha256", str, path),
             settings=_field(data, "settings", dict, path),
             num_speakers=_optional(data, "num_speakers", int, path),
+            max_speakers=_optional(data, "max_speakers", int, path),
             turns=_turns(data, "turns", path),
             exclusive_turns=_turns(data, "exclusive_turns", path),
             elapsed_ms=_optional(data, "elapsed_ms", int, path),
@@ -460,6 +473,7 @@ def to_json(run: DiarizationRun) -> dict[str, Any]:
         **asdict(run.info),
         "settings": dict(run.settings),
         "num_speakers": run.num_speakers,
+        "max_speakers": run.max_speakers,
         "audio_sha256": run.audio_sha256,
         "turns": [asdict(turn) for turn in run.turns],
         "exclusive_turns": [asdict(turn) for turn in run.exclusive_turns],

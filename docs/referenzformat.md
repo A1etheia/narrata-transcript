@@ -93,8 +93,8 @@ Sprecher kommen aus einer separaten Diarisierung mit pyannote (TOOL-76, Grundlag
 - **`speaker` einer Passage** ist das Label, das die meisten ihrer Wörter tragen (`majority_speaker`). Bei Gleichstand oder ohne Wort-Labels ist es `null`. Liefert ein Backend nur ein Label pro Passage, wird dieses übernommen. Ein Wechsel innerhalb einer Passage unterhalb der Schwelle oder in einer nicht teilbaren Passage bleibt an den Wörtern sichtbar.
 - **Labels sind generisch** (`SPEAKER_00`), nie Namen. Die Zuordnung zu Personen steht getrennt in `work/<gruppe>/<ordinal>/speakers/assignment.json` (TOOL-68, README „Sprecherzuordnung“) und kommt nie in diese Datei.
 - **Labels gelten pro Segment.** Jede Aufnahme wird für sich diarisiert; `SPEAKER_00` in zwei Segmenten ist nicht automatisch dieselbe Person.
-- **Rohform getrennt:** Die Turns des Modells liegen unverändert unter `work/<gruppe>/<ordinal>/diarization/segment-NN.json` (`format_version: 1`): `backend_id`, `model`, `model_version`, `runtime_version`, `settings`, `num_speakers`, `audio_sha256` des Segment-WAVs, `turns` und `exclusive_turns` (`[{start_ms, end_ms, label}]`), dazu `elapsed_ms`, die Dauer des Modellaufrufs, der die Datei erzeugt hat (`null` in Dateien von vor TOOL-59; eine wiederverwendete Datei behält ihren Wert). Nur die exklusiven Turns, in denen immer genau eine Person spricht, bestimmen die Wort-Labels; aus den überlappenden Turns entstehen `overlaps`. `transcript diarize` schreibt danach nur die Normalform neu (`update_reference`), die ASR-Rohdatei bleibt unberührt. Code: `src/transcript/diarization/`.
-- **`diarization`** hält die Metadaten getrennt von `asr`: `backend_id`, `model`, `model_version`, `settings`, `num_speakers` (die Vorgabe, nicht das Ergebnis), `labels` (alle Labels des Segments), `overlaps` (`[{start_ms, end_ms}]`, Bereiche mit Übersprechen) und `min_turn_ms` (die Schwelle, mit der geteilt wurde; `null`: nicht geteilt). Ist es gesetzt, darf kein Wort und keine Passage ein Label außerhalb von `labels` tragen.
+- **Rohform getrennt:** Die Turns des Modells liegen unverändert unter `work/<gruppe>/<ordinal>/diarization/segment-NN.json` (`format_version: 1`): `backend_id`, `model`, `model_version`, `runtime_version`, `settings`, `num_speakers`, `max_speakers` (Obergrenze aus der Anwesenheit, TOOL-79; fehlt in älteren Dateien und gilt dann als `null`), `audio_sha256` des Segment-WAVs, `turns` und `exclusive_turns` (`[{start_ms, end_ms, label}]`), dazu `elapsed_ms`, die Dauer des Modellaufrufs, der die Datei erzeugt hat (`null` in Dateien von vor TOOL-59; eine wiederverwendete Datei behält ihren Wert). Nur die exklusiven Turns, in denen immer genau eine Person spricht, bestimmen die Wort-Labels; aus den überlappenden Turns entstehen `overlaps`. `transcript diarize` schreibt danach nur die Normalform neu (`update_reference`), die ASR-Rohdatei bleibt unberührt. Code: `src/transcript/diarization/`.
+- **`diarization`** hält die Metadaten getrennt von `asr`: `backend_id`, `model`, `model_version`, `settings`, `num_speakers` (die Vorgabe, nicht das Ergebnis), `max_speakers` (die Obergrenze aus der Anwesenheit, TOOL-79; `null`: keine, auch in älteren Dateien ohne das Feld), `labels` (alle Labels des Segments), `overlaps` (`[{start_ms, end_ms}]`, Bereiche mit Übersprechen) und `min_turn_ms` (die Schwelle, mit der geteilt wurde; `null`: nicht geteilt). Ist es gesetzt, darf kein Wort und keine Passage ein Label außerhalb von `labels` tragen.
 
 ## Versionierung
 
@@ -131,6 +131,7 @@ Erfundener Inhalt, gekürzt auf eine Passage:
     "model_version": null,
     "settings": {},
     "num_speakers": null,
+    "max_speakers": 4,
     "labels": ["SPEAKER_00", "SPEAKER_01"],
     "overlaps": [{"start_ms": 1180, "end_ms": 1420}],
     "min_turn_ms": 500

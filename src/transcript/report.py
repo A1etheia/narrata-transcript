@@ -355,14 +355,20 @@ def _asr_values(reference: ReferenceTranscript) -> dict[str, Any]:
 
 
 def _diarization_values(diarization: Diarization) -> dict[str, Any]:
-    """What identifies the diarization run; the labels are counted elsewhere."""
-    return {
+    """What identifies the diarization run; the labels are counted elsewhere.
+
+    `max_speakers` only when set, so runs without it keep their config hash.
+    """
+    values: dict[str, Any] = {
         "backend_id": diarization.backend_id,
         "model": diarization.model,
         "model_version": diarization.model_version,
         "settings": dict(diarization.settings),
         "num_speakers": diarization.num_speakers,
     }
+    if diarization.max_speakers is not None:
+        values["max_speakers"] = diarization.max_speakers
+    return values
 
 
 def _used(runs: Iterable[tuple[int, dict[str, Any]]]) -> tuple[Used, ...]:

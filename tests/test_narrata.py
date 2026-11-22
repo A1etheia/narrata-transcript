@@ -221,6 +221,18 @@ class ParticipantsTest(unittest.TestCase):
         )
         self.assertTrue(all(p.present is None for p in loaded))
 
+    def test_attendance_keeps_true_false_and_unknown_apart(self) -> None:
+        loaded = self.load(
+            [
+                participant(user_id=1, present=True),
+                participant(user_id=2, present=False),
+                participant(user_id=3, present=None),
+                participant(user_id=4, is_former=True, present=True),
+            ]
+        )
+
+        self.assertEqual([p.present for p in loaded], [True, False, None, True])
+
     def test_origin_is_kept(self) -> None:
         store_context(self.paths, encoded(context()))
 
@@ -266,6 +278,8 @@ class ParticipantsTest(unittest.TestCase):
             ([participant(display_name=" ")], "participants[0].display_name"),
             ([participant(role=NAME)], "participants[0].role"),
             ([participant(is_former=None)], "participants[0].is_former"),
+            ([participant(present=NAME)], "participants[0].present"),
+            ([participant(present=1)], "participants[0].present"),
             ([participant(characters={})], "participants[0].characters"),
             ([participant(characters=[CHARACTER])], "characters[0] is not an object"),
             (

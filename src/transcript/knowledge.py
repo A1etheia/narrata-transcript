@@ -298,11 +298,14 @@ def _sha256(data: bytes) -> str:
 
 
 def _participant_json(participant: Participant) -> dict[str, Any]:
+    """Unknown attendance is left out, so a context before 1.3 keeps its snapshot_id."""
+    attendance = {} if participant.present is None else {"present": participant.present}
     return {
         "user_id": participant.user_id,
         "display_name": participant.display_name,
         "role": participant.role,
         "is_former": participant.is_former,
+        **attendance,
         "characters": [
             {
                 "person_id": character.person_id,

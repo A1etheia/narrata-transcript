@@ -102,7 +102,7 @@ P = [
         ("TOOL-99", "Archiv-Schreibtreffer heben keine Passage an", 0.5, "erledigt: `docs/plans/TOOL-99-archive-similar.md`; aus TOOL-60: 2 von 18 Archiv-Schreibtreffern richtig; eigene Schwelle `similar_archive_level`, Hinweis bleibt sichtbar"),
         ("TOOL-90", "Kontext 1.4: `session_terms` ins Biasing und in die Review-Zuordnung", 0.5, "erledigt: `docs/plans/TOOL-90-session-terms.md`; `session_terms` im Snapshot, im Biasing und als Review-Hinweis"),
         ("TOOL-84", "Kontext mit dem Pipeline-Token statt dem Login-Token abrufen", 0.5, "erledigt: `docs/plans/TOOL-84-pipeline-token.md`; IOA-1251 erledigt; ein Token pro Runde (`NARRATA_TOKEN_<SLUG>`), 90 Tage, nur dieser Endpoint; Import bleibt beim Login-Token"),
-        ("TOOL-79", "Anwesenheit aus dem Transkriptionskontext lesen", 0.5, "IOA-1271 erledigt (Kontext 1.3); grenzt Sprecherkandidaten ein und liefert die Sprecherzahl für die Diarisierung; vor TOOL-87"),
+        ("TOOL-79", "Anwesenheit aus dem Transkriptionskontext lesen", 0.5, "erledigt: `docs/plans/TOOL-79-attendance.md`; IOA-1271 erledigt (Kontext 1.3); Anwesende zuerst in der Sprecherzuordnung (Abwesende fragen nach), `max_speakers` aus dem Snapshot für die Diarisierung; vor TOOL-87"),
     ]),
     ("Phase 5 — Narrata-Oberflächen",
      "M5 — Transkript per Chat/MCP befragbar, in Narrata durchsuchbar, lesbar, verlinkt.", [
