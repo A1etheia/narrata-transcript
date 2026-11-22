@@ -7,7 +7,7 @@ Stand 2026-11-22, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 - **Eine Person, ein Zeitbudget.** TOOL- und IOA-Tickets konkurrieren um dieselben Tage; der Plan ist deshalb eine *lineare* Folge. Echte Parallelität gibt es nur dort, wo ASR-Läufe oder Modell-Downloads im Hintergrund laufen — dann wird am Narrata-Ticket derselben Phase gearbeitet.
 - **Kapazität: 3 Entwicklungstage pro Woche**, Start 23.11.2026, Pause 21.12.2026–03.01.2027. Das ist der Umrechnungsfaktor für die Kalenderspalte, nicht Teil des Plans — ändert sich die Kapazität, verschieben sich nur die Daten, nicht die Reihenfolge.
 - **Aufwände sind Entwicklungstage in 0,5er-Schritten**, grob geschätzt aus den Ticket-Beschreibungen. Sie dienen der Reihenfolge und den Meilenstein-Abständen; keine Zusage.
-- **Offener Umfang: 4.5 Entwicklungstage** ≈ 2 Wochen → letzter Meilenstein 01.12.2026; erledigt 74.5 Tage.
+- **Offener Umfang: 3.5 Entwicklungstage** ≈ 2 Wochen → letzter Meilenstein 30.11.2026; erledigt 75.5 Tage.
 - **Neu terminiert am 17.11.2026, Qualität zuerst, fortgeschrieben am 21.11.2026:** Erledigte Tickets belegen keine Tage mehr und tragen kein Datum; die offenen Tickets beginnen am ersten Arbeitstag ab heute, angeführt von der Erkennungsqualität (TOOL-93, TOOL-96) vor dem Pilot-Review (TOOL-60). Nach dem Backlog-Review vom 21.11.2026 folgt die Pipeline-Nacharbeit aus TOOL-60 (TOOL-81, 99, 90, 84, 79) vor den Reflexionspunkten TOOL-85 und TOOL-87. Die Narrata-Nacharbeit aus Epic IOA-1297 (Korrektur, IT/OT, Lesefassung) steht nicht in dieser Folge und konkurriert um dieselben Tage. Am 22.11.2026 kam Phase 9 dazu (Epic TOOL-100): Die ausgelassenen Wörter sind das größte Qualitätsproblem, die Spikes TOOL-101 bis TOOL-105 folgen auf TOOL-87.
 - Nicht eingeplant: die Epics selbst, zurückgestellte Tickets (TOOL-82 bis IOA-1326, Label `transcript-v0.2`), verworfene Tickets (TOOL-14 nach TOOL-60; TOOL-88 nach dem Backlog-Review, Review wandert nach Narrata;TOOL-21–32, 34; TOOL-3, 7; TOOL-11, 33 nach TOOL-62; TOOL-78 nach TOOL-59; Epic TOOL-65 mit TOOL-70–75, IT/OT nach Narrata verlegt in Epic IOA-1297), in andere aufgenommene Tickets (TOOL-77 in TOOL-57).
 
@@ -33,7 +33,7 @@ Stand 2026-11-22, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 | M6 | Erste Welt-Archiv-Einträge mit Transkript-Provenienz; IT/OT-Statistik und Abendvergleich sichtbar | Phase 6 | erledigt | 5 |
 | M7 | Entscheidung, ob und wie andere Narrata-Nutzer ihre Aufnahmen transkribieren können | Phase 7 | erledigt | 0.5 |
 | M8 | Konzept für Stimmprofile mit Einwilligung pro Spielrunde, Go/No-Go | Phase 8 | erledigt | 1 |
-| M9 | Auslassungen verortet und die offenen Hebel gemessen (Epic TOOL-100) | Phase 9 | 23.11.2026 – 01.12.2026 | 4.5 |
+| M9 | Auslassungen verortet und die offenen Hebel gemessen (Epic TOOL-100) | Phase 9 | 23.11.2026 – 30.11.2026 | 4.5 |
 
 ## Reflexionspunkte
 
@@ -196,11 +196,11 @@ Start/Ende der offenen Tickets sind in Jira als Start date / Due date gespiegelt
 
 | Ticket | Inhalt | Tage | Start | Ende | Hinweis |
 |---|---|---|---|---|---|
-| TOOL-101 | Spike: Auslassungen an den Handreferenzen verorten | 1 | 23.11.2026 | 23.11.2026 | zuerst, entscheidet die Reihenfolge der übrigen Tickets des Epics und den Zuschnitt von TOOL-82; Überlappung, Beitragslänge, Pegel je Sprecher, Temperatur-Fallback, VAD, Stabilität über die Seeds, Sprache ohne Wörter; Erweiterung von `scripts/spike/asr.py`, nur Kennzahlen |
-| TOOL-102 | Spike: Vereinigung mehrerer Seeds gegen Auslassungen messen | 1 | 24.11.2026 | 24.11.2026 | Orakel an A, B und C, danach Regeln ohne Referenz nur bei ≥ 3 Punkten; Läufe aus TOOL-93 wiederverwendbar, wenn die Schattenwurzeln noch liegen; Wörter aus einem anderen Lauf sind Alternativen, das ASR-Ergebnis bleibt |
-| TOOL-103 | Spike: Pegelausgleich vor der Erkennung messen | 1 | 26.11.2026 | 26.11.2026 | `dynaudnorm`, `acompressor`, `loudnorm`, `speechnorm` auf dem Prüfstand aus TOOL-92 (`scripts/spike/denoise.py`), drei Seeds, Go-Regel wie TOOL-92; TOOL-92 hat nur Rauschfilter gemessen |
-| TOOL-104 | Recherche: sprecherbedingte Dekodierung, neue lokale Modelle, Batched-Pipeline | 1 | 30.11.2026 | 30.11.2026 | nach TOOL-101; höchstens drei Kandidaten für eine Messung; Batched-Pipeline von faster-whisper direkt an A und B messen, falls sie Hotwords trägt; nur lokal lauffähige Ansätze |
-| TOOL-105 | Messung: Sitzung mit geänderter Aufnahme am Tisch gegen eine Handreferenz | 0.5 | 01.12.2026 | 01.12.2026 | braucht die Gruppe, Hardware und einen Spielabend, das Datum ist deshalb nur ein Platzhalter; wenn möglich mit dem bisherigen Mikrofon parallel aufnehmen; Handreferenz von der Projektverantwortlichen (20–30 min); aus TOOL-60 und TOOL-93: Mikrofon-Empfehlung bisher nur dokumentiert |
+| TOOL-101 | Spike: Auslassungen an den Handreferenzen verorten | 1 | — | — | erledigt: `docs/spikes/TOOL-101-auslassungen-verorten.md` |
+| TOOL-102 | Spike: Vereinigung mehrerer Seeds gegen Auslassungen messen | 1 | 23.11.2026 | 23.11.2026 | Orakel an A, B und C, danach Regeln ohne Referenz nur bei ≥ 3 Punkten; Läufe aus TOOL-93 wiederverwendbar, wenn die Schattenwurzeln noch liegen; Wörter aus einem anderen Lauf sind Alternativen, das ASR-Ergebnis bleibt; aus TOOL-101: Stabilität der Auslassungen über die Seeds als Vorarbeit für das Orakel (Kommentar) |
+| TOOL-103 | Spike: Pegelausgleich vor der Erkennung messen | 1 | 24.11.2026 | 24.11.2026 | `dynaudnorm`, `acompressor`, `loudnorm`, `speechnorm` auf dem Prüfstand aus TOOL-92 (`scripts/spike/denoise.py`), drei Seeds, Go-Regel wie TOOL-92; TOOL-92 hat nur Rauschfilter gemessen; aus TOOL-101: Reihenfolge und Begründung im Kommentar an TOOL-100 |
+| TOOL-104 | Recherche: sprecherbedingte Dekodierung, neue lokale Modelle, Batched-Pipeline | 1 | 26.11.2026 | 26.11.2026 | nach TOOL-101; höchstens drei Kandidaten für eine Messung; Batched-Pipeline von faster-whisper direkt an A und B messen, falls sie Hotwords trägt; nur lokal lauffähige Ansätze; aus TOOL-101: Reihenfolge und Begründung im Kommentar an TOOL-100 |
+| TOOL-105 | Messung: Sitzung mit geänderter Aufnahme am Tisch gegen eine Handreferenz | 0.5 | 30.11.2026 | 30.11.2026 | braucht die Gruppe, Hardware und einen Spielabend, das Datum ist deshalb nur ein Platzhalter; wenn möglich mit dem bisherigen Mikrofon parallel aufnehmen; Handreferenz von der Projektverantwortlichen (20–30 min); aus TOOL-60 und TOOL-93: Mikrofon-Empfehlung bisher nur dokumentiert; aus TOOL-101: Reihenfolge und Begründung im Kommentar an TOOL-100 |
 
 ## Pflege
 
