@@ -115,6 +115,9 @@ review:
     # Dasselbe für similar-Hinweise, die nur über den Klang gefunden wurden. Sie
     # bleiben in der Hinweisdatei sichtbar, heben die Passage aber nicht an.
     similar_sound_level: confident
+    # Dasselbe für similar-Hinweise über die Schreibung, deren nächster Kandidat
+    # nur im Archiv steht; an der Pilotsitzung waren 2 von 18 richtig (TOOL-60).
+    similar_archive_level: confident
 
 render:
   # Zeitstempel im gerenderten Transkript (TXT, später DOCX): turn an jedem

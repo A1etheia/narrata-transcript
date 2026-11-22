@@ -20,7 +20,7 @@ START = dt.date(2026, 11, 23)  # a Monday: the week the open work is planned fro
 FROM = dt.date(2026, 11, 23)  # first day counted; working days before it are skipped
 WORKDAYS = [0, 1, 3]  # Mon, Tue, Thu -> 3 dev-days per week
 PAUSES = [(dt.date(2026, 12, 21), dt.date(2027, 1, 3))]  # inclusive ranges, no work
-GENERATED = "2026-11-21"
+GENERATED = "2026-11-22"
 
 # (phase title, milestone sentence, [(key, title, dev-days, note)])
 P = [
@@ -99,7 +99,7 @@ P = [
         ("TOOL-95", "CLI ohne Startskript: cuBLAS vorladen, `paths.root` verankern", 0.5, "erledigt: `whisper.preload_cuda_libraries` lädt `libcublas.so.12` aus `nvidia-cublas-cu12` per absolutem Pfad mit `RTLD_GLOBAL` vor (Fallback: System-Bibliothek), `doctor` und Whisper-Smoke-Test auf `cuda` grün ohne `LD_LIBRARY_PATH`; relativer `paths.root`, Default-Config und `.env` gelten ab dem Projektordner, Argumente wie `--config` weiter ab dem aktuellen Verzeichnis; `scripts/transcript` entfernt, Aufruf direkt über `.venv/bin/transcript`"),
         ("TOOL-60", "V0.1 bewerten, Entscheidungen, V0.2-Backlog", 1.0, "erledigt: `docs/pilot/TOOL-60-bewertung.md`; Kernhypothese hält als Rangfolge (AUC 0,75–0,78 an zwei Sitzungen), nicht als Eingrenzung (74–89 % der Hörzeit markiert, 5–16 % der Fehler in sicheren Passagen); WER Pilot 21–26 %, zweite Sitzung 31,5 % gegen eine Hochdeutsch-Referenz; Review mit Anhören wandert nach Narrata (IOA-1326), CSV eingefroren, kein Pflicht-Review in der Pipeline; Go für IT/OT (IOA-1302); Mikrofon-Empfehlung nur dokumentiert; TOOL-14 verworfen; Archiv-Schreibtreffer 2 von 18 richtig (TOOL-99); Mundartsprecher an zwei Abenden etwa doppelte Fehlerquote, Gewichtung pro Person in IOA-1326; Re-Import-Warnung bei abhängigen Links (IOA-1327); TOOL-82 zurückgestellt"),
         ("TOOL-81", "Hotwords: Auslassungen und Seed-Streuung auf langen Aufnahmen", 1.0, "in Arbeit (Branch `tool-81-hotwords`, Rest geschätzt); aus TOOL-35: rund 16 % fehlende Wörter mit Hotwords; aus TOOL-93/TOOL-60: bis 8 Punkte WER zwischen Seeds; entscheidet, ob TOOL-90 noch ins Biasing geht"),
-        ("TOOL-99", "Archiv-Schreibtreffer heben keine Passage an", 0.5, "aus TOOL-60: 2 von 18 Archiv-Schreibtreffern richtig; eigene Schwelle `similar_archive_level`, Hinweis bleibt sichtbar"),
+        ("TOOL-99", "Archiv-Schreibtreffer heben keine Passage an", 0.5, "erledigt: `docs/plans/TOOL-99-archive-similar.md`; aus TOOL-60: 2 von 18 Archiv-Schreibtreffern richtig; eigene Schwelle `similar_archive_level`, Hinweis bleibt sichtbar"),
         ("TOOL-90", "Kontext 1.4: `session_terms` ins Biasing und in die Review-Zuordnung", 0.5, "nach TOOL-81; IOA-1279 erledigt; schaltet TOOL-81 das Biasing ab, bleiben nur die `asr_variants`"),
         ("TOOL-84", "Kontext mit dem Pipeline-Token statt dem Login-Token abrufen", 0.5, "IOA-1251 erledigt; ein Token pro Runde, 90 Tage, nur dieser Endpoint; Import bleibt beim Login-Token"),
         ("TOOL-79", "Anwesenheit aus dem Transkriptionskontext lesen", 0.5, "IOA-1271 erledigt (Kontext 1.3); grenzt Sprecherkandidaten ein und liefert die Sprecherzahl für die Diarisierung; vor TOOL-87"),

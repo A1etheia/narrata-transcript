@@ -12,6 +12,7 @@ from test_reference import minimal
 from transcript.asr.backend import FEATURES
 from transcript.config import UncertaintyThresholds
 from transcript.hints import Candidate, Hint, SegmentHints, write_hints
+from transcript.narrata import Relevance
 from transcript.reference import (
     TIME_CAPABILITIES,
     AsrInfo,
@@ -99,6 +100,19 @@ def hint(signal: str = "known_variant", ambiguous: bool = False) -> Hint:
         score=None if signal == "known_variant" else 0.9,
         candidates=(candidate,),
         ambiguous=ambiguous,
+    )
+
+
+def tiered(*relevance: Relevance) -> Hint:
+    """A `similar` hint by spelling with one candidate per tier."""
+    base = hint("similar")
+    (candidate,) = base.candidates
+    return dataclasses.replace(
+        base,
+        candidates=tuple(
+            dataclasses.replace(candidate, id=n, relevance=tier)
+            for n, tier in enumerate(relevance, start=1)
+        ),
     )
 
 
@@ -422,6 +436,31 @@ class HintTest(unittest.TestCase):
         loud = UncertaintyThresholds(similar_sound_level="needs_review")
         self.assertEqual(rate(reference, found, loud).level, "needs_review")
 
+    def test_a_similar_hint_on_archive_terms_has_its_own_level(self) -> None:
+        reference = transcript(passage(words(0.9, 0.9, 0.9)))
+        found = hints(tiered("archive"))
+
+        quiet = rate(reference, found)
+        self.assertEqual(quiet.reasons, ())
+        self.assertEqual(quiet.level, "confident")
+        loud = UncertaintyThresholds(similar_archive_level="needs_review")
+        self.assertEqual(rate(reference, found, loud).level, "needs_review")
+
+    def test_nearer_tiers_keep_the_similar_level(self) -> None:
+        reference = transcript(passage(words(0.9, 0.9, 0.9)))
+        for tiers in (("pc",), ("session",), ("recent",), ("archive", "recent")):
+            with self.subTest(tiers=tiers):
+                rating = rate(reference, hints(tiered(*tiers)))
+                self.assertEqual(rules(rating), ["similar"])
+                self.assertEqual(rating.level, "needs_review")
+
+    def test_a_sound_hit_on_archive_terms_follows_the_sound_level(self) -> None:
+        reference = transcript(passage(words(0.9, 0.9, 0.9)))
+        found = hints(dataclasses.replace(tiered("archive"), method="sound"))
+        limits = UncertaintyThresholds(similar_sound_level="uncertain")
+
+        self.assertEqual(rate(reference, found, limits).level, "uncertain")
+
     def test_hints_of_another_passage_do_not_count(self) -> None:
         reference = transcript(
             passage(words(0.9), index=1), passage(words(0.9), index=2)
@@ -518,9 +557,11 @@ class RatingFileTest(unittest.TestCase):
     def test_another_version_or_segment_is_rejected(self) -> None:
         assess_session(self.paths, [1], LIMITS)
         data = self.stored()
-        self.rewrite({**data, "format_version": 2})
-        with self.assertRaisesRegex(UncertaintyError, "run transcript assess"):
-            load_assessment(self.paths, 1)
+        # 1: before `similar_archive_level` (TOOL-99)
+        for version in (1, UNCERTAINTY_FORMAT_VERSION + 1):
+            self.rewrite({**data, "format_version": version})
+            with self.assertRaisesRegex(UncertaintyError, "run transcript assess"):
+                load_assessment(self.paths, 1)
         self.rewrite({**data, "segment": 2})
         with self.assertRaisesRegex(UncertaintyError, "another session or segment"):
             load_assessment(self.paths, 1)

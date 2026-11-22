@@ -411,7 +411,7 @@ Die Stufe einer Passage ist die höchste ihrer Gründe. Die Schwellen stehen unt
 | `speaker_unclear` | Diarisierung vorhanden, aber kein Mehrheitslabel der Wörter | `needs_review` |
 | `crosstalk` | die Passage überschneidet Bereiche mit Übersprechen für insgesamt mindestens `crosstalk_ms` | `needs_review` |
 | `known_variant` | Review-Hinweis auf einen bekannten Hörfehler | `needs_review` |
-| `similar` | Review-Hinweis auf eine ähnliche Schreibung oder einen ähnlichen Klang | `similar_level` (Schreibung), `similar_sound_level` (nur Klang, Default `confident`: Hinweis sichtbar, Passage nicht angehoben); `confident` heißt ohne Wirkung |
+| `similar` | Review-Hinweis auf eine ähnliche Schreibung oder einen ähnlichen Klang | `similar_level` (Schreibung), `similar_sound_level` (nur Klang, Default `confident`: Hinweis sichtbar, Passage nicht angehoben), `similar_archive_level` (Schreibung, nächster Kandidat nur im Archiv, Default `confident`); `confident` heißt ohne Wirkung |
 | `ambiguous` | mehrdeutiger Review-Hinweis | `uncertain` |
 | `no_signals` | weder Word-Confidence noch Whisper-Signale vorhanden | `needs_review` |
 
@@ -419,7 +419,7 @@ Die Stufe einer Passage ist die höchste ihrer Gründe. Die Schwellen stehen unt
 - **Gleiche Eingabe, gleiche Stufen:** Die Regeln sind deterministisch und lesen nur Referenztranskript, Hinweisdatei und Konfiguration. Beide Dateien bleiben unverändert.
 - **Sprecher und Mundart:** Labels gelten pro Segment. Die Bewertung kennt keine Personen, auch wenn eine [Sprecherzuordnung](#sprecherzuordnung) besteht. Schwellen pro Person gibt es deshalb nicht.
 
-Die Datei `work/<gruppe>/<ordinal>/review/segment-NN.uncertainty.json` (`format_version: 1`) enthält pro Passage Index, Stufe, Gründe (`rule`, `level`, gesehener `value`, `threshold`, Wortpositionen `words`) und `missing`. Dazu kommen im Kopf die verwendeten Schwellen, das gelesene Referenztranskript und die Snapshot-Kennung der Hinweise. Text enthält sie nicht. Ein fehlgeschlagenes Segment verliert seine Datei. Die Konsole zeigt nur Zahlen, etwa `passages: 412 confident, 96 needs_review, 31 uncertain`.
+Die Datei `work/<gruppe>/<ordinal>/review/segment-NN.uncertainty.json` (`format_version: 2`, seit TOOL-99 mit `similar_archive_level`; ältere Dateien schreibt `transcript assess` neu) enthält pro Passage Index, Stufe, Gründe (`rule`, `level`, gesehener `value`, `threshold`, Wortpositionen `words`) und `missing`. Dazu kommen im Kopf die verwendeten Schwellen, das gelesene Referenztranskript und die Snapshot-Kennung der Hinweise. Text enthält sie nicht. Ein fehlgeschlagenes Segment verliert seine Datei. Die Konsole zeigt nur Zahlen, etwa `passages: 412 confident, 96 needs_review, 31 uncertain`.
 
 ### Kalibrierung
 
@@ -736,7 +736,7 @@ Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht 
 | `review.similar.min_ratio` | nein | `0.85` | Mindestähnlichkeit der Schreibung für einen Hinweis `similar`, `0` bis `1` |
 | `review.similar.min_length` | nein | `4` | Mindestlänge von Begriff und Wortfolge in Buchstaben, `1` bis `50` |
 | `review.similar.max_length_deviation` | nein | `0.3` | höchste Längenabweichung als Anteil der Begriffslänge, `0` bis `0.9` |
-| `review.uncertainty.*` | nein | siehe `config/example.yaml` | Schwellen der [Unsicherheitsbewertung](#unsicherheitsbewertung): `word_low` (0,5), `word_very_low` (0,2), `low_share_review` (0,2), `low_share_uncertain` (0,5), `no_speech_prob` (0,6), `avg_logprob` (−1,0), `compression_ratio` (2,4), `gap_ms` (2500), `min_words_per_second` (1,0), `crosstalk_ms` (1000), `similar_level` (`needs_review`), `similar_sound_level` (`confident`); `word_very_low` darf `word_low` nicht übersteigen, `low_share_review` nicht `low_share_uncertain` |
+| `review.uncertainty.*` | nein | siehe `config/example.yaml` | Schwellen der [Unsicherheitsbewertung](#unsicherheitsbewertung): `word_low` (0,5), `word_very_low` (0,2), `low_share_review` (0,2), `low_share_uncertain` (0,5), `no_speech_prob` (0,6), `avg_logprob` (−1,0), `compression_ratio` (2,4), `gap_ms` (2500), `min_words_per_second` (1,0), `crosstalk_ms` (1000), `similar_level` (`needs_review`), `similar_sound_level` (`confident`), `similar_archive_level` (`confident`); `word_very_low` darf `word_low` nicht übersteigen, `low_share_review` nicht `low_share_uncertain` |
 | `render.timestamps` | nein | `turn` | Zeitstempel im gerenderten Transkript (TXT): `turn` an jedem Sprecherwechsel, `passage` an jeder Passage |
 | `playback.filter` | nein | `false` | ffmpeg-Filterkette, mit der `speakers --assign` die [Hörproben](#sprecherzuordnung) abspielt, z. B. `highpass=f=80,afftdn=nf=-25` bei verrauschten Aufnahmen; `false` spielt das Rohsignal. Wirkt nur auf die Wiedergabe |
 | `debug` | nein | `false` | schreibt Transkripttext nach `work/<gruppe>/<ordinal>/debug.log`, nie auf die Konsole |
