@@ -44,6 +44,7 @@ Die Werte für `base` weichen von TOOL-93 ab (dort 24,0 / 36,1 % WER). Die Trans
 | `+temp0` | Temperatur nur 0, kein Fallback | – | Fallback, Seed |
 | `+novad` | ohne VAD | – | VAD |
 | `+fill` | Liste mit Alltagswörtern bis zum Budget ergänzt | ~223 | Auffüllen als Schutz |
+| `+guard` | Schutz der Pipeline an: unter 110 Tokens keine Hotwords | – | Abnahme |
 
 ## Stufe 1: Wortverlust
 
@@ -155,8 +156,25 @@ Entschieden am 2026-11-22 (Projektverantwortung):
 
 Narrata soll den Füllstand schon beim Pflegen der Begriffe anzeigen, als Schätzung über die Zeichenzahl ([IOA-1336](https://alethe1a.atlassian.net/browse/IOA-1336)). Gemessen wurden 2,5–3,1 Zeichen pro Token bei Namen und 3,5 bei Alltagswörtern. Ab etwa 350 Zeichen liegt eine Liste sicher über der Schwelle.
 
+## Abnahme
+
+Die Läufe nutzen den Stand der Pipeline mit Schalter und Schutz (Chunk 3) und die Default-Config. Das Spike-Werkzeug setzt dabei nur den Seed. Der neue Modifikator `+guard` lässt den Schutz an, sonst schaltet ihn das Werkzeug für seine Varianten ab. `base+guard` ist also die Pipeline, wie sie ausgeliefert wird. `kw9+guard` gibt ihr eine echte kurze Liste. `transcript keywords` meldet vor den Läufen auf beiden Aufnahmen 48 von 86 Begriffen mit 221 Tokens, also über der Schwelle.
+
+| Lauf | Aufnahme | Wörter | Abschnitte mit Defizit gegen `nohw` | WER A / B | übersehen A / B |
+| --- | --- | --- | --- | --- | --- |
+| `base+guard` Seed 1 / 2 / 3 | 1 | 33125 / 33100 / 32978 | 0 / 0 / 0 | 21,3 % / 25,6–35,4 % | 0 / 0–4 |
+| `kw9+guard` Seed 1 | 1 | 32704 | 0 | 26,0 % / 28,1 % | 100 / 65 |
+| `base+guard` Seed 1 | 2 | 29006 | 3 (337 Wörter, größtes 31,5 %) | – | – |
+| `kw9+guard` Seed 1 | 2 | 29100 | 0 | – | – |
+
+- **Default:** `base+guard` ist auf beiden Aufnahmen Lauf für Lauf wortgleich mit `base`: dieselben Wortzahlen, dieselben Fehler an A und B, dieselben Abschnitte. Schalter und Schutz ändern bei voller Liste also nichts an der Erkennung, nur die Einstellungen im Transkript. AC 2 ist erfüllt: Aufnahme 1 hat keinen Abschnitt mit Defizit. Aufnahme 2 hat die 3 vereinzelten Abschnitte aus Stufe 4 und bleibt damit unter der Grenze für einen systematischen Verlust.
+- **Schutz:** Mit 9 Begriffen (51 Tokens) meldet `transcribe` einmal `hotwords off: 9 of 9 keyword(s) fit, 51 hotword token(s), under the 110 …`, und `keywords_used` bleibt leer. Das Ergebnis ist auf beiden Aufnahmen wortgleich mit `nohw` und hat keinen Abschnitt mit Defizit. Ohne Schutz verliert dieselbe Liste 19 bzw. 25 Abschnitte (`kw9`, 28121 bzw. 23734 Wörter).
+- **Kalibrierung:** `transcript calibrate` auf `base+guard` Seed 1 ergibt an A 21,3 % WER mit 0 übersehenen Fehlern und 0 Fehlalarmen, Confidence-AUC 0,78. An B sind es 25,6 % mit 0 übersehenen Fehlern und 0 Fehlalarmen, AUC 0,75. Die Schwellen der Bewertung passen zum Default, eine Nachkalibrierung ist dafür nicht nötig.
+- **Unter der Schwelle** verhält sich die Pipeline wie `nohw`, und die Bewertung übersieht dort wie in Stufe 3 100 / 65 Fehler in kurzen `confident`-Passagen. Das ist der bewusste Preis des Schutzes: kein Wortverlust, aber eine Bewertung, die zu oft „sicher“ sagt. Die Meldung weist darauf hin, Begriffe zu ergänzen.
+- **Nicht abgedeckt:** Das Werkzeug misst nur Segment 1. Segment 2 ist auf beiden Aufnahmen kurz (26 bzw. 5 min) und wurde nicht eigens gemessen.
+
 ## Offen
 
 - Ob die vereinzelten Defizite von `base` auf Aufnahme 2 echte Auslassungen sind, klärt nur eine Handreferenz in einem dieser Abschnitte.
-- Die Bewertung übersieht mit 110–161 Tokens mehr Fehler als mit vollem Budget. Ob die Schwellen dafür nachkalibriert werden müssen, prüft Chunk 4 mit `transcript calibrate`.
+- Bei 110–161 Tokens und unter der Schwelle übersieht die Bewertung mehr Fehler als mit vollem Budget, weil die Passagen kürzer werden. Für den Default ist das nicht so (Abnahme). Schwellen, die für kurze Passagen strenger sind, wären nur nötig, wenn Snapshots oft so kurz sind.
 - Zwischen 51 und 110 Tokens gibt es keine Messung. Eine genauere Schwelle wäre nur nötig, wenn Snapshots oft in diesem Bereich liegen.

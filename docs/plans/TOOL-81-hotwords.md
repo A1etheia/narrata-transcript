@@ -96,6 +96,10 @@ Ursache der drei Hotword-Effekte an realen Aufnahmen belegen: Wortverlust bei ku
   - Ein schneller Vorab-Check ohne Modell (z. B. `transcript keywords <session>`) zeigt dieselben Zahlen, bevor ein Lauf startet.
 - Verify: `scripts/check`
 - AC: Hotwords sind abschaltbar. Eine Liste unter der Schwelle erreicht Whisper mit Default-Config nicht (Test mit erfundenen Begriffen). Die Wiederaufnahme unterscheidet an und aus, und ein neuer Snapshot mit mehr Begriffen löst die Neutranskription aus.
+- Nachtrag nach der Umsetzung:
+  - Der Grund für ein leeres `keywords_used` steht nicht als eigener Vermerk im Ergebnis, sondern als Schwelle `hotword_min_tokens` in `asr.settings`. Ein Schlüssel nur im Ergebnis würde die Identität beim nächsten Lauf nicht mehr treffen.
+  - Die Wiederaufnahme verlangt nur noch, dass `keywords_used` eine geordnete Teilfolge der Keywords ist. Neue Begriffe kommen mit einem neuen Snapshot. Damit fällt die Regel weg, nach der ein Ergebnis ohne Hinweise bei gleichem Snapshot neu transkribiert wird (Ergebnis von `/simplify`).
+  - Zusätzlich geändert: `transcription.py`, `asr/backend.py` (`HotwordCheck`), `asr/fake.py`, `scripts/spike/asr.py` (Schutz für die Varianten aus), `docs/asr-backends.md`, `tests/test_smoke.py`, `tests/test_transcription.py`.
 
 ### Chunk 4 — Abnahmelauf, Kalibrierung, README
 - Dateien: `README.md` (Spracherkennung, Konfiguration), `docs/spikes/TOOL-81-hotwords.md` (Abschnitt Abnahme)
@@ -105,9 +109,13 @@ Ursache der drei Hotword-Effekte an realen Aufnahmen belegen: Wortverlust bei ku
   - README beschreibt Entscheidung, Schalter, Schutz und die einmalige Neutranskription
 - Verify: `scripts/check`
 - AC: README „Spracherkennung“ beschreibt die Entscheidung (AC 3). Abnahme- und Kalibrierungswerte stehen im Bericht.
+- Nachtrag nach dem Lauf:
+  - Der Abnahmelauf läuft über das Spike-Werkzeug mit dem neuen Modifikator `+guard`, also in eigenen Wurzeln unter `experiments/`. Die echten Transkripte unter `work/<s>/asr/` bleiben so unberührt.
+  - Gemessen ist Segment 1 beider Aufnahmen. Segment 2 (26 bzw. 5 min) ist nicht eigens gemessen.
+  - Die Kalibrierung ergibt 0 übersehene Fehler an A und B. Das Folge-Ticket für neue Schwellen entfällt.
 
 ## Folge-Tickets
-- Schwellen der Bewertung neu setzen, falls die Kalibrierung in Chunk 4 zeigt, dass die Defaults zur gewählten Einstellung nicht mehr passen: [kein Ticket: entsteht nur bei diesem Befund, wird dann vor dem Merge angelegt]
+- Schwellen der Bewertung neu setzen, falls die Kalibrierung in Chunk 4 zeigt, dass die Defaults zur gewählten Einstellung nicht mehr passen: [kein Ticket: Kalibrierung in Chunk 4 ergab 0 übersehene Fehler an A und B, die Defaults passen]
 - TOOL-90 (`session_terms` ins Biasing) kann danach starten; der Schutz aus Chunk 3 gilt auch für die neuen Begriffe: TOOL-90
 - Narrata zeigt den geschätzten Füllstand der Hotword-Liste schon beim Pflegen der Begriffe: IOA-1336
 - Handreferenz in einem Abschnitt, in dem `base` auf der zweiten Aufnahme ein Defizit hat, um zu klären, ob dort wirklich Sprache fehlt: [kein Ticket: nur nötig, falls die Abnahme in Chunk 4 wieder Defizite zeigt]

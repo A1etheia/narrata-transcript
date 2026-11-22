@@ -11,9 +11,11 @@ per seed.
 A variant is a hotword base (`base`, `pchw`, `nohw`, `nohw-hp`, `kw<N>`,
 `neutral9`, `neutral`) followed by modifiers joined with `+`, e.g.
 `nohw+vad-t35+beam10`. `+fill` appends everyday words to the list until the
-token budget is full. `kw<N>` passes the first N snapshot keywords; `neutral9`
-and `neutral` pass fixed everyday words instead of the snapshot's, 9 or as many as
-fit the token budget (TOOL-81). Two ways change the keywords: `pchw` builds the
+token budget is full. `+guard` keeps the pipeline's guard, which passes no list
+under 110 tokens; without it every variant gets its list as given, so
+`base+guard` is the pipeline as shipped. `kw<N>` passes the first N snapshot
+keywords; `neutral9` and `neutral` pass fixed everyday words instead of the
+snapshot's, 9 or as many as fit the token budget (TOOL-81). Two ways change the keywords: `pchw` builds the
 root's snapshot again with other budgets, so it gets its own snapshot id; `kw<N>`
 and `neutral*` keep the snapshot and change the list in the transcribe child,
 recorded in `asr.settings`. A list from other budgets takes the first way, any
@@ -92,6 +94,7 @@ class Variant:
     keyword_limit: int | None = None  # kw<N>: the first N snapshot keywords
     neutral: int | None = None  # this many NEUTRAL_WORDS instead of the snapshot's
     fill: bool = False  # NEUTRAL_WORDS after the list, cut at the token budget
+    guard: bool = False  # keep the pipeline's TOOL-81 guard against short lists
     chain: Chain = field(default_factory=Chain)
     # added to the fixed Whisper settings; a dict value merges with the base's
     asr: Mapping[str, object] = field(default_factory=dict)
@@ -221,6 +224,9 @@ BASES = {
 KEYWORD_LIMIT_PREFIX = "kw"  # kw<N>, parsed by `variant`
 # fills a short list with NEUTRAL_WORDS up to the token budget (TOOL-81)
 FILL = "fill"
+# keeps the pipeline's guard: a list under HOTWORD_MIN_TOKENS reaches no Whisper;
+# without it the variants measure the list as given (TOOL-81, acceptance)
+GUARD = "guard"
 # one factor each; stage 3 adds models
 MODIFIERS: dict[str, Mapping[str, object]] = {
     "novad": {"vad_filter": False},
@@ -263,10 +269,12 @@ def variant(name: str) -> Variant:
     asr: dict[str, object] = {}
     config: dict[str, object] = {}
     model = base.model
-    fill = False
+    fill = guard = False
     for mod in mods:
         if mod == FILL:
             fill = True
+        elif mod == GUARD:
+            guard = True
         elif mod in MODELS:
             if model != base.model:
                 raise SpikeError(f"{name}: more than one model")
@@ -279,9 +287,11 @@ def variant(name: str) -> Variant:
                 asr, {k: v for k, v in MODIFIERS[mod].items() if k not in CONFIG_KEYS}
             )
         else:
-            known = sorted([*MODIFIERS, *MODELS, FILL])
+            known = sorted([*MODIFIERS, *MODELS, FILL, GUARD])
             raise SpikeError(f"{name}: unknown modifier {mod!r}, one of {known}")
-    return dataclasses.replace(base, model=model, asr=asr, config=config, fill=fill)
+    return dataclasses.replace(
+        base, model=model, asr=asr, config=config, fill=fill, guard=guard
+    )
 
 
 def _base(name: str, head: str) -> Variant:
@@ -419,6 +429,7 @@ def run(paths: SessionPaths, name: str, seed: int, diarize: bool) -> int:
         "hotwords": spec.hotwords,
         "keywords": keyword_settings(spec),
         "asr": dict(spec.asr),
+        "guard": spec.guard,
     }
     command = [sys.executable, str(Path(__file__).resolve()), _WITH_VARIANT]
     command += [json.dumps(options), "transcribe", str(paths.key)]
@@ -516,9 +527,12 @@ def _cli_with_variant(options: str, argv: Sequence[str]) -> int:
     spec = json.loads(options)
     seed = spec["seed"]
     whisper.FIXED_SETTINGS.update(merge(whisper.FIXED_SETTINGS, spec["asr"]))
-    # The variants measure short lists, so the pipeline's TOOL-81 guard stays off,
-    # and its settings key stays out so earlier roots are still reused.
-    whisper.HOTWORD_MIN_TOKENS = 0
+    # The variants measure short lists, so the pipeline's TOOL-81 guard stays off
+    # and its settings key stays out, which keeps earlier roots reusable; `+guard`
+    # runs the pipeline as shipped and records the threshold.
+    guard = spec["guard"]
+    if not guard:
+        whisper.HOTWORD_MIN_TOKENS = 0
     if not spec["hotwords"]:
         whisper.takes_hotwords = lambda model: False
     changed = spec["keywords"]
@@ -543,7 +557,8 @@ def _cli_with_variant(options: str, argv: Sequence[str]) -> int:
     def prepare(self):
         runtime, model_path, identity = original_prepare(self)
         settings = {**identity.settings, **extra}
-        settings.pop("hotword_min_tokens", None)
+        if not guard:
+            settings.pop("hotword_min_tokens", None)
         return runtime, model_path, BackendIdentity(identity.info, settings)
 
     def transcribe(self, request):
