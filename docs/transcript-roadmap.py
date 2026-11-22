@@ -118,7 +118,7 @@ P = [
     ]),
     ("Phase 7 — Öffnung für andere Nutzer",
      "M7 — Entscheidung, ob und wie andere Narrata-Nutzer ihre Aufnahmen transkribieren können. Reflexionspunkt, kein Umsetzungsblock.", [
-        ("TOOL-85", "Entscheidung: Transkription für andere Narrata-Nutzer öffnen?", 0.5, "Wege: Nutzer rechnen lokal, eigener Worker getrennt vom Prod-VPS, externer ASR-Dienst, nichts tun; Datenschutz der Mitspielenden und Betriebsgrenzen klären; Erkenntnisse aus TOOL-59 und TOOL-60 einbeziehen; bei „ja“ Folge-Tickets; aus TOOL-60: bei „ja“ prüfen, ob eine Modellwahl auf Gruppenebene in Narrata nötig wird, weil andere Nutzer keine YAML-Datei pflegen"),
+        ("TOOL-85", "Entscheidung: Transkription für andere Narrata-Nutzer öffnen?", 0.5, "erledigt: `docs/pilot/TOOL-85-oeffnung.md`; nichts tun, die Pipeline bleibt das Werkzeug der eigenen Gruppe; keine Nachfrage, andere Gruppen nutzen den Fremdformat-Upload (IOA-1304, IOA-1306); lokal rechnen (Weg 1) bleibt erste Wahl bei einer konkreten Anfrage; eigener Worker und externer ASR-Dienst verworfen; Modellwahl auf Gruppenebene entfällt; keine Folge-Tickets"),
     ]),
     ("Phase 8 — Sprecher-Wiedererkennung",
      "M8 — Konzept für Stimmprofile mit Einwilligung pro Spielrunde, Go/No-Go. Reflexionspunkt, kein Umsetzungsblock.", [
@@ -215,7 +215,7 @@ def main() -> None:
     o.append("| M4 | Trägt die Kernhypothese (Konfidenz grenzt Review ein)? Aufwand pro Abend alltagstauglich? | TOOL-60 | Beantwortet: als Rangfolge ja, als Eingrenzung nein (74–89 % der Hörzeit markiert); Review wandert nach Narrata (IOA-1326), Go für IT/OT (IOA-1302), TOOL-14 verworfen |")
     o.append("| M4 | Reicht das Teilen am Sprecherwechsel, oder braucht die Diarisierung selbst ein Ticket? | TOOL-96 | Beantwortet: reicht, 3,4 / 3,6 Punkte Abstand zu Plaud, kein Diarisierungs-Ticket |")
     o.append("| M6 | Welche Fragen aus der Zielliste sind jetzt beantwortbar, welche nicht? | Retro, kein Ticket | V0.2-Backlog beider Projekte |")
-    o.append("| M7 | Öffnen wir die Transkription für andere Nutzer, und auf welchem Weg? | TOOL-85 | Entscheidung; bei „ja“ Folge-Tickets |")
+    o.append("| M7 | Öffnen wir die Transkription für andere Nutzer, und auf welchem Weg? | TOOL-85 | Beantwortet: nein, keine Nachfrage und Fremdformat-Upload in Narrata vorhanden; lokal rechnen erst bei konkreter Anfrage, keine Folge-Tickets |")
     o.append("| M8 | Lohnt sich die Wiedererkennung der Sprecher, und trägt die Einwilligung pro Spielrunde? | TOOL-87 | Go/No-Go; bei „ja“ Umsetzungstickets in TOOL und IOA |\n")
     o.append("## Arbeitsfolge\n")
     o.append("Start/Ende der offenen Tickets sind in Jira als Start date / Due date gespiegelt; erledigte Tickets behalten in Jira ihre damaligen Daten.\n")
