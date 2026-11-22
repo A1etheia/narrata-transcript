@@ -75,6 +75,10 @@ _DEFAULT_CONFIG = DEFAULT_CONFIG
 _DOTENV = DOTENV
 _SHORT_ID = knowledge.SHORT_ID
 _SHOWN_FINDINGS = 10  # the rest is in the diagnosis report
+_NUM_SPEAKERS_HELP = (
+    "number of people audible, for the diarization (default: at most the "
+    "participants marked present, else the model decides)"
+)
 _SNAPSHOT_BEHIND = f"warning: {knowledge.BEHIND_CONTEXT}"
 # the steps of a `process` run, for `pipeline.log` only: the console has its own lines
 _PROCESS_LOG = logging.getLogger("transcript.process")
@@ -166,7 +170,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     transcribe_command.add_argument(
         "--num-speakers",
         type=_positive_int,
-        help="number of people audible, for the diarization (default: model decides)",
+        help=_NUM_SPEAKERS_HELP,
     )
     keywords_command = commands.add_parser(
         "keywords",
@@ -181,7 +185,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     diarize_command.add_argument(
         "--num-speakers",
         type=_positive_int,
-        help="number of people audible, if known (default: the model decides)",
+        help=_NUM_SPEAKERS_HELP,
     )
     diarize_command.add_argument(
         "--force",
@@ -331,7 +335,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     process_command.add_argument(
         "--num-speakers",
         type=_positive_int,
-        help="number of people audible, for the diarization (default: model decides)",
+        help=_NUM_SPEAKERS_HELP,
     )
     for command in (
         config_command,
@@ -533,7 +537,7 @@ def _context(raw_key: str, config_path: Path, from_file: Path | None) -> int:
         f"  {len(participants)} participant(s) "
         f"({sum(p.role == 'gm' for p in participants)} gm, "
         f"{sum(p.is_former for p in participants)} former, "
-        f"{sum(p.present is True for p in participants)} present, "
+        f"{sum(p.is_present for p in participants)} present, "
         f"{sum(p.is_absent for p in participants)} absent), "
         f"{sum(len(p.characters) for p in participants)} character(s)"
     )
@@ -809,6 +813,7 @@ def _transcribe(
                 num_speakers=num_speakers,
                 retries=config.diarization_retries,
                 min_turn_ms=config.diarization_min_turn_ms,
+                max_speakers=_max_speakers(key, domain, num_speakers),
             )
         except (ValueError, DataFileError, BackendError) as error:
             print(f"error: {error}", file=sys.stderr)
@@ -1562,6 +1567,18 @@ def _domain(paths: SessionPaths) -> DomainContext | None:
     return DomainContext.load(paths)
 
 
+def _max_speakers(
+    key: SessionKey, domain: DomainContext | None, num_speakers: int | None
+) -> int | None:
+    """The attendance's speaker limit, unless `--num-speakers` fixes the number."""
+    if num_speakers is not None or domain is None:
+        return None
+    limit = domain.speaker_limit()
+    if limit is not None:
+        print(f"{key}: speaker limit {limit} from attendance")
+    return limit
+
+
 def _print_outcome(outcome: SegmentOutcome) -> None:
     if outcome.status == "open":
         line = "open"
@@ -1595,18 +1612,23 @@ def _diarize(
         key = SessionKey.parse(raw_key)
         config = _load_config(config_path)
         paths = config.session_paths(key)
+        session_manifest = manifest.load_manifest(paths)
+        # the snapshot only when the attendance or new hints need it
+        domain = _domain(paths) if num_speakers is None else None
         summaries = diarization.diarize_session(
             paths,
-            manifest.load_manifest(paths),
+            session_manifest,
             PyannoteDiarizer.from_config(config),
             num_speakers=num_speakers,
             force=force,
             retries=config.diarization_retries,
             min_turn_ms=config.diarization_min_turn_ms,
+            max_speakers=_max_speakers(key, domain, num_speakers),
         )
         indices = [s.index for s in summaries]
         outdated = hints.outdated(paths, indices)
-        domain = _domain(paths) if outdated else None
+        if outdated and domain is None:
+            domain = _domain(paths)
     except (ValueError, ConfigError, DataFileError, BackendError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

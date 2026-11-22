@@ -1,3 +1,4 @@
+import dataclasses
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,6 +18,7 @@ from test_narrata import (
     glossary_entry,
     participant,
 )
+from test_speakers import participant as member
 
 from transcript.domain import DomainContext, Origin
 from transcript.knowledge import SnapshotError, build_snapshot
@@ -226,6 +228,36 @@ class SessionTermsTest(unittest.TestCase):
         self.assertEqual([h.entry.ref for h in hits], [(SESSION_TERM, 2), ("place", 8)])
         # Narrata's ambiguities never count free terms
         self.assertFalse(self.context.is_ambiguous("Zarwok"))
+
+
+class SpeakerLimitTest(unittest.TestCase):
+    """At most the present participants, only when the attendance is complete."""
+
+    def limit(self, *marks: tuple[bool, bool | None]) -> int | None:
+        """`marks` are (is_former, present) of one participant each."""
+        participants = [
+            dataclasses.replace(member(n, is_former=former), present=present)
+            for n, (former, present) in enumerate(marks, start=1)
+        ]
+        origin = Origin(None, "elsewhere.json", "1.3", 4711)
+        return DomainContext(participants, glossary(), (), origin).speaker_limit()
+
+    def test_complete_attendance_gives_the_present_count(self) -> None:
+        self.assertEqual(self.limit((False, True), (False, True), (False, True)), 3)
+        self.assertEqual(self.limit((False, True), (False, False)), 1)
+
+    def test_present_former_members_count_and_unmarked_ones_do_not(self) -> None:
+        self.assertEqual(self.limit((False, True), (True, True), (True, None)), 2)
+        self.assertEqual(self.limit((False, False), (True, True)), 1)
+
+    def test_incomplete_or_empty_attendance_gives_no_limit(self) -> None:
+        for name, marks in (
+            ("active unknown", ((False, True), (False, None))),
+            ("nobody present", ((False, False), (False, False))),
+            ("no participants", ()),
+        ):
+            with self.subTest(name):
+                self.assertIsNone(self.limit(*marks))
 
 
 class OtherSourceTest(unittest.TestCase):

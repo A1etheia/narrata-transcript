@@ -115,6 +115,7 @@ def full() -> ReferenceTranscript:
             model_version="rev-2",
             settings={"min_duration_off": 0.0},
             num_speakers=2,
+            max_speakers=3,
             labels=("SPEAKER_00", "SPEAKER_01"),
             overlaps=(Overlap(start_ms=900, end_ms=1100),),
         ),
@@ -184,6 +185,17 @@ class RoundTripTest(ReferenceTestCase):
 
         self.assertIsNone(loaded.asr.knowledge_snapshot_id)
         self.assertEqual(loaded.asr.keywords_used, full().asr.keywords_used)
+
+    def test_diarization_without_speaker_limit_loads_with_none(self) -> None:
+        data = to_json(full())
+        del data["diarization"]["max_speakers"]  # as written before TOOL-79
+        self.store(data)
+
+        loaded = load_reference(self.paths, 1)
+
+        assert loaded.diarization is not None
+        self.assertIsNone(loaded.diarization.max_speakers)
+        self.assertEqual(loaded.diarization.num_speakers, 2)
 
     def test_a_failed_segment_has_an_error_and_no_passages(self) -> None:
         reference = minimal(

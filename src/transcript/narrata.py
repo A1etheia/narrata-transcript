@@ -77,6 +77,10 @@ class Participant:
     present: bool | None = None
 
     @property
+    def is_present(self) -> bool:
+        return self.present is True
+
+    @property
     def is_absent(self) -> bool:
         """Marked absent by the GM; unknown attendance is not absence."""
         return self.present is False

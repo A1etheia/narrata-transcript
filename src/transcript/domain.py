@@ -115,6 +115,17 @@ class DomainContext:
     def participant(self, user_id: int | str) -> Participant | None:
         return next((p for p in self.participants if p.user_id == user_id), None)
 
+    def speaker_limit(self) -> int | None:
+        """At most this many speakers, from the attendance (TOOL-79).
+
+        Only when every active membership is marked present or absent and at
+        least one present: then the present ones, former members included. A
+        former member without a mark counts as absent. Otherwise None.
+        """
+        if any(p.present is None for p in self.participants if not p.is_former):
+            return None
+        return sum(p.is_present for p in self.participants) or None
+
     def character(self, person_id: int | str) -> tuple[Participant, Character] | None:
         """The player character with this archive id and who plays it."""
         for participant in self.participants:

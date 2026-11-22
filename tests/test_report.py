@@ -211,6 +211,19 @@ class SegmentTest(_ReportCase):
         self.assertEqual(report.pipeline.knowledge_snapshot_id, "snapshot")
         self.assertEqual(report.pipeline.context_contract_version, "1.1")
 
+    def test_a_speaker_limit_is_listed_only_when_set(self) -> None:
+        assert self.reference.diarization is not None
+        limited = dataclasses.replace(
+            self.reference,
+            diarization=dataclasses.replace(self.reference.diarization, max_speakers=3),
+        )
+
+        (used,) = self.report(reference=limited).pipeline.diarization
+        (unlimited,) = self.report().pipeline.diarization
+
+        self.assertEqual(used.values["max_speakers"], 3)
+        self.assertNotIn("max_speakers", unlimited.values)
+
     def test_a_decision_not_applied_is_a_gap(self) -> None:
         orphan = ReviewDecision(1, 1, PROCESSED_AT, "corrected", "x", "Grauwasser")
 

@@ -858,6 +858,17 @@ def write_snapshot(paths: SessionPaths, **entry: object) -> None:
     """A stored context with one glossary entry, frozen as the snapshot."""
     data = context()
     data["glossary"] = [glossary_entry(**entry)]
+    freeze(paths, data)
+
+
+def write_attendance(paths: SessionPaths, *present: bool | None) -> None:
+    """A snapshot of active participants with this attendance each."""
+    members = [participant(user_id=n, present=p) for n, p in enumerate(present, 1)]
+    freeze(paths, context("1.3", members))
+
+
+def freeze(paths: SessionPaths, data: dict[str, Any]) -> None:
+    """`data` stored as the session's context and frozen as its snapshot."""
     paths.narrata_context.parent.mkdir(parents=True, exist_ok=True)
     paths.narrata_context.write_bytes(encoded(data))
     knowledge.build_snapshot(paths, DEFAULT_KEYWORD_BUDGET)
@@ -1360,6 +1371,17 @@ class TranscribeCommandTest(unittest.TestCase):
         for secret in (SECRET, "SPEAKER_"):
             self.assertNotIn(secret, stdout + stderr)
 
+    def test_attendance_limits_the_speakers_of_the_diarization(self) -> None:
+        write_attendance(self.paths, True, True, True)
+
+        code, stdout, stderr = self.transcribe()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("beispielgruppe/042: speaker limit 3 from attendance", stdout)
+        calls = self.diarizers[0].diarized
+        self.assertEqual([call[2:] for call in calls], [(None, 3)] * 3)
+        self.assertNotIn(NAME, stdout + stderr)
+
 
 class DiarizeCommandTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -1429,6 +1451,31 @@ class DiarizeCommandTest(unittest.TestCase):
         self.assertEqual(self.diarizers[0].diarized[0][2], 2)
         for secret in (SECRET, "SPEAKER_"):
             self.assertNotIn(secret, stdout + stderr)
+
+    def test_speaker_limit_from_the_snapshot_unless_overridden(self) -> None:
+        for name, present, extra, expected in (
+            ("complete", (True, True, True), (), (None, 3)),
+            ("no snapshot", None, (), (None, None)),
+            (
+                "num_speakers wins",
+                (True, True, True),
+                ("--num-speakers", "4"),
+                (4, None),
+            ),
+        ):
+            with self.subTest(name):
+                if present is None:
+                    self.paths.knowledge_snapshot.unlink(missing_ok=True)
+                else:
+                    write_attendance(self.paths, *present)
+
+                code, stdout, stderr = self.diarize("--force", *extra)
+
+                self.assertEqual(code, 0, stderr)
+                self.assertEqual(self.diarizers[-1].diarized[0][2:], expected)
+                limited = expected[1] is not None
+                self.assertEqual("speaker limit" in stdout, limited)
+                self.assertNotIn(NAME, stdout + stderr)
 
     def test_diarize_rates_the_passages_again(self) -> None:
         code, stdout, stderr = self.diarize()

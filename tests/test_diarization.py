@@ -409,6 +409,7 @@ class DiarizationRunTest(unittest.TestCase):
             lambda: Turn(0, 10, ""),
             lambda: run(Turn(0, 1000, "A"), Turn(900, 2000, "B")),
             lambda: run(num_speakers=0),
+            lambda: run(max_speakers=0),
         ):
             with self.assertRaises(ValueError):
                 build()
@@ -431,6 +432,7 @@ class DiarizationRunTest(unittest.TestCase):
         ):
             with self.subTest(changed=name):
                 self.assertFalse(stored.matches(*changed))
+        self.assertFalse(stored.matches(*same, max_speakers=3))
 
 
 class StoredRunTest(unittest.TestCase):
@@ -445,6 +447,7 @@ class StoredRunTest(unittest.TestCase):
             Turn(1200, 2000, "SPEAKER_01"),
             turns=(Turn(0, 1100, "SPEAKER_00"), Turn(900, 2000, "SPEAKER_01")),
             num_speakers=2,
+            max_speakers=3,
             elapsed_ms=18250,
         )
         write_run(self.paths, 3, stored)
@@ -515,7 +518,7 @@ class FakeDiarizer:
         self.info = info
         self.load_calls = 0
         self.close_calls = 0
-        self.diarized: list[tuple[str, str, int | None]] = []
+        self.diarized: list[tuple[str, str, int | None, int | None]] = []
 
     def identity(self) -> BackendInfo:
         return self.info
@@ -529,9 +532,10 @@ class FakeDiarizer:
         info: BackendInfo,
         audio_sha256: str,
         num_speakers: int | None = None,
+        max_speakers: int | None = None,
     ) -> DiarizationRun:
         assert self.load_calls == 1
-        self.diarized.append((audio.name, audio_sha256, num_speakers))
+        self.diarized.append((audio.name, audio_sha256, num_speakers, max_speakers))
         return DiarizationRun(
             info=info,
             audio_sha256=audio_sha256,
@@ -542,6 +546,7 @@ class FakeDiarizer:
             ),
             settings=self.settings,
             num_speakers=num_speakers,
+            max_speakers=max_speakers,
         )
 
     def close(self) -> None:
@@ -616,7 +621,7 @@ class DiarizeSessionTest(unittest.TestCase):
         self.assertEqual(stored.diarization.overlaps, (Overlap(800, 1000),))
         self.assertEqual(
             diarizer.diarized,
-            [("segment-01.wav", sha256_file(self.paths.segment_wav(1)), 2)],
+            [("segment-01.wav", sha256_file(self.paths.segment_wav(1)), 2, None)],
         )
         self.assertEqual((diarizer.load_calls, diarizer.close_calls), (1, 1))
         self.assertEqual(load_run(self.paths, 1).elapsed_ms, first.elapsed_ms)
@@ -660,6 +665,7 @@ class DiarizeSessionTest(unittest.TestCase):
         for name, diarizer, options, new_audio in (
             ("force", FakeDiarizer(), {"force": True}, False),
             ("num_speakers", FakeDiarizer(), {"num_speakers": 3}, False),
+            ("max_speakers", FakeDiarizer(), {"max_speakers": 3}, False),
             ("revision", FakeDiarizer(newer), {}, False),
             ("audio", FakeDiarizer(), {}, True),
         ):
@@ -673,6 +679,19 @@ class DiarizeSessionTest(unittest.TestCase):
 
                 self.assertEqual(summaries[0].outcome, "diarized")
                 self.assertEqual(len(diarizer.diarized), 1)
+
+    def test_old_raw_file_is_reused_only_without_speaker_limit(self) -> None:
+        self.diarize(FakeDiarizer())
+        raw = self.paths.diarization_raw(1)
+        data = json.loads(raw.read_text(encoding="utf-8"))
+        del data["max_speakers"]  # as written before TOOL-79
+        raw.write_text(json.dumps(data), encoding="utf-8")
+
+        self.assertEqual(self.diarize(FakeDiarizer())[0].outcome, "reused")
+        limited = FakeDiarizer()
+        self.assertEqual(self.diarize(limited, max_speakers=3)[0].outcome, "diarized")
+        self.assertEqual(limited.diarized[0][2:], (None, 3))
+        self.assertEqual(load_reference(self.paths, 1).diarization.max_speakers, 3)
 
     def test_unchanged_reference_is_not_rewritten(self) -> None:
         self.diarize(FakeDiarizer())
@@ -771,10 +790,10 @@ class DiarizeSessionTest(unittest.TestCase):
         pending = list(errors)
         answer = diarizer.diarize
 
-        def diarize(audio: Path, *args: Any) -> DiarizationRun:
+        def diarize(audio: Path, *args: Any, **kwargs: Any) -> DiarizationRun:
             if audio.name == "segment-01.wav" and pending:
                 raise pending.pop(0) from RuntimeError(SECRET)
-            return answer(audio, *args)
+            return answer(audio, *args, **kwargs)
 
         diarizer.diarize = diarize  # type: ignore[method-assign]
         return diarizer

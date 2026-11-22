@@ -86,8 +86,12 @@ class FakeRuntime:
                 self.device = device
                 return self
 
-            def __call__(self, file: dict[str, Any], num_speakers: Any) -> Any:
-                self.calls.append({**file, "num_speakers": num_speakers})
+            def __call__(
+                self, file: dict[str, Any], num_speakers: Any, max_speakers: Any
+            ) -> Any:
+                self.calls.append(
+                    {**file, "num_speakers": num_speakers, "max_speakers": max_speakers}
+                )
                 if runtime.diarize_error is not None:
                     raise runtime.diarize_error
                 return OUTPUT
@@ -285,8 +289,22 @@ class DiarizeTest(PyannoteTestCase):
         )
         self.assertEqual(
             self.runtime.pipelines[0].calls,
-            [{"waveform": "waveform", "sample_rate": 16000, "num_speakers": 2}],
+            [
+                {
+                    "waveform": "waveform",
+                    "sample_rate": 16000,
+                    "num_speakers": 2,
+                    "max_speakers": None,
+                }
+            ],
         )
+
+    def test_speaker_limit_reaches_the_pipeline_and_the_run(self) -> None:
+        run = self.diarizer.diarize(self.audio, self.info, AUDIO, max_speakers=3)
+
+        self.assertEqual((run.num_speakers, run.max_speakers), (None, 3))
+        call = self.runtime.pipelines[0].calls[0]
+        self.assertEqual((call["num_speakers"], call["max_speakers"]), (None, 3))
 
     def test_diarize_errors_are_mapped(self) -> None:
         self.runtime.diarize_error = RuntimeError("CUDA out of memory")

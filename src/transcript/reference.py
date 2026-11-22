@@ -243,12 +243,12 @@ class Diarization:
     overlaps: tuple[Overlap, ...] = ()
     # shortest run of one label that cuts a passage (TOOL-96); None: not cut
     min_turn_ms: int | None = None
+    max_speakers: int | None = None  # upper bound given, e.g. from attendance
 
     def __post_init__(self) -> None:
         if len(set(self.labels)) != len(self.labels):
             raise ValueError("diarization labels repeat")
-        if self.num_speakers is not None and self.num_speakers < 1:
-            raise ValueError("num_speakers must be positive")
+        check_speaker_hints(self.num_speakers, self.max_speakers)
         if self.min_turn_ms is not None and self.min_turn_ms < 0:
             raise ValueError("min_turn_ms must not be negative")
 
@@ -556,6 +556,7 @@ def to_json(reference: ReferenceTranscript) -> dict[str, Any]:
                 "model_version": diarization.model_version,
                 "settings": dict(diarization.settings),
                 "num_speakers": diarization.num_speakers,
+                "max_speakers": diarization.max_speakers,
                 "labels": list(diarization.labels),
                 "overlaps": [
                     {"start_ms": overlap.start_ms, "end_ms": overlap.end_ms}
@@ -667,6 +668,7 @@ def _diarization(data: dict[str, Any], path: Path) -> Diarization:
         model_version=_optional(data, "model_version", str, path),
         settings=_field(data, "settings", dict, path),
         num_speakers=_optional(data, "num_speakers", int, path),
+        max_speakers=_optional(data, "max_speakers", int, path),
         labels=_strings(data, "labels", path),
         overlaps=tuple(
             Overlap(
@@ -716,6 +718,13 @@ def check_span(start: int | None, end: int | None, what: str) -> None:
         raise ValueError(f"{what} is negative")
     if start is not None and end is not None and start > end:
         raise ValueError(f"{what} ends before it starts")
+
+
+def check_speaker_hints(num_speakers: int | None, max_speakers: int | None) -> None:
+    """Speaker number and upper bound for the diarization absent or positive."""
+    for name, value in (("num_speakers", num_speakers), ("max_speakers", max_speakers)):
+        if value is not None and value < 1:
+            raise ValueError(f"{name} must be positive")
 
 
 def _is_number(value: Any) -> bool:
