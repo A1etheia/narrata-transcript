@@ -345,7 +345,7 @@ def _narrata_access(key: SessionKey, config: Config, probes: Probes) -> list[str
     if key.group not in config.narrata_groups:
         missing.append(f"narrata.groups has no group id for {key.group}")
     try:
-        read_token(probes.environ, probes.dotenv)
+        read_token(probes.environ, probes.dotenv, key.group)
     except NarrataClientError as error:
         missing.append(str(error))
     return missing

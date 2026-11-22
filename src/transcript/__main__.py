@@ -685,7 +685,7 @@ def _fetch(key: SessionKey, config: Config, config_path: Path) -> bytes:
         raise ConfigError(
             f"{config_path}: narrata.groups has no group id for {key.group}"
         )
-    token = read_token(os.environ, _DOTENV)
+    token = read_token(os.environ, _DOTENV, key.group)
     return fetch_context(
         config.narrata_url,
         group_id,
