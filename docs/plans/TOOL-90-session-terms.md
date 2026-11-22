@@ -82,11 +82,16 @@ Narrata liefert ab Kontext 1.4 `session_terms`. Das sind Namen, die die Pflegend
   - Lokale Probe: `transcript context` → `snapshot --refresh` → `transcript keywords <session>` gegen eine Sitzung mit freiem Begriff. Ins Repo kommen nur Zahlen, keine Namen.
 - Verify: `scripts/check`
 - AC: Das README nennt das Verhalten. Die Probe zeigt die Zahl freier Begriffe im Snapshot und in den Keywords.
+- Nachtrag nach der Probe (22.11.2026):
+  - Produktiv liefert Narrata noch Contract 1.3. IOA-1279 ist gemergt, aber nicht ausgerollt. Eine echte Sitzung mit freien Begriffen gibt es deshalb noch nicht, und AC 1 ist nur durch den Smoke-Test mit dem Fake-Backend belegt.
+  - AC 2 ist an echten Daten belegt. Der frisch abgerufene 1.3-Kontext läuft durch `context`, `snapshot` und `keywords` und meldet `0 session term(s)`. Aus dem gespeicherten Kontext der Pilotgruppe baut der neue Code denselben Snapshot wie der Haupt-Checkout: gleiche Kennung, Datei bis auf `created_at` bytegleich. Vorhandene Transkripte gelten damit weiter.
+  - Die Probe lief mit dem Code dieses Branches im Worktree, also ohne den Haupt-Checkout oder dessen `work/` zu verändern. Ins Repo kommen nur diese Zahlen.
 
 ## Folge-Tickets
 - Diagnose meldet freie Begriffe, die einen Archivnamen doppeln: [kein Ticket: Narrata kennt beide Listen und kann das beim Pflegen zeigen; erst anlegen, wenn es in der Praxis vorkommt]
 - Variantenvorschläge für freie Begriffe: [kein Ticket: Ein freier Begriff wird über die Extraktion zum Archiv-Eintrag, und dann gilt der Vorschlag dem Eintrag]
 - Füllstand der Hotword-Liste beim Pflegen in Narrata: IOA-1336
+- Probe von AC 1 an einer echten Sitzung mit freien Begriffen, sobald Narrata Contract 1.4 ausrollt: [kein Ticket: drei Befehle ohne Modell (`context`, `snapshot --refresh`, `keywords`), AC 1 ist durch den Smoke-Test abgedeckt]
 
 ## Chunk-Tabelle
 | Chunk | Scope | Clear context after? |
