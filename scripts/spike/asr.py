@@ -10,7 +10,8 @@ per seed.
 
 A variant is a hotword base (`base`, `pchw`, `nohw`, `nohw-hp`, `kw<N>`,
 `neutral9`, `neutral`) followed by modifiers joined with `+`, e.g.
-`nohw+vad-t35+beam10`. `kw<N>` passes the first N snapshot keywords; `neutral9`
+`nohw+vad-t35+beam10`. `+fill` appends everyday words to the list until the
+token budget is full. `kw<N>` passes the first N snapshot keywords; `neutral9`
 and `neutral` pass fixed everyday words instead of the snapshot's, 9 or as many as
 fit the token budget (TOOL-81). Two ways change the keywords: `pchw` builds the
 root's snapshot again with other budgets, so it gets its own snapshot id; `kw<N>`
@@ -90,6 +91,7 @@ class Variant:
     pc_only: bool = False  # hotwords from `pc` entries only (budget 0 per type)
     keyword_limit: int | None = None  # kw<N>: the first N snapshot keywords
     neutral: int | None = None  # this many NEUTRAL_WORDS instead of the snapshot's
+    fill: bool = False  # NEUTRAL_WORDS after the list, cut at the token budget
     chain: Chain = field(default_factory=Chain)
     # added to the fixed Whisper settings; a dict value merges with the base's
     asr: Mapping[str, object] = field(default_factory=dict)
@@ -217,6 +219,8 @@ BASES = {
     "neutral": Variant(neutral=len(NEUTRAL_WORDS)),
 }
 KEYWORD_LIMIT_PREFIX = "kw"  # kw<N>, parsed by `variant`
+# fills a short list with NEUTRAL_WORDS up to the token budget (TOOL-81)
+FILL = "fill"
 # one factor each; stage 3 adds models
 MODIFIERS: dict[str, Mapping[str, object]] = {
     "novad": {"vad_filter": False},
@@ -259,8 +263,11 @@ def variant(name: str) -> Variant:
     asr: dict[str, object] = {}
     config: dict[str, object] = {}
     model = base.model
+    fill = False
     for mod in mods:
-        if mod in MODELS:
+        if mod == FILL:
+            fill = True
+        elif mod in MODELS:
             if model != base.model:
                 raise SpikeError(f"{name}: more than one model")
             model = MODELS[mod]
@@ -272,9 +279,9 @@ def variant(name: str) -> Variant:
                 asr, {k: v for k, v in MODIFIERS[mod].items() if k not in CONFIG_KEYS}
             )
         else:
-            known = sorted([*MODIFIERS, *MODELS])
+            known = sorted([*MODIFIERS, *MODELS, FILL])
             raise SpikeError(f"{name}: unknown modifier {mod!r}, one of {known}")
-    return dataclasses.replace(base, model=model, asr=asr, config=config)
+    return dataclasses.replace(base, model=model, asr=asr, config=config, fill=fill)
 
 
 def _base(name: str, head: str) -> Variant:
@@ -287,13 +294,14 @@ def _base(name: str, head: str) -> Variant:
     raise SpikeError(f"{name}: unknown base {head!r}, one of {known}")
 
 
-def keyword_settings(spec: Variant) -> dict[str, int]:
+def keyword_settings(spec: Variant) -> dict[str, int | bool]:
     """What a variant changes in the keyword list, as it goes into `asr.settings`.
 
     Empty for the TOOL-93 bases, so their transcripts stay reusable.
     """
     found = {"keyword_limit": spec.keyword_limit, "neutral": spec.neutral}
-    return {key: value for key, value in found.items() if value is not None}
+    changed = {key: value for key, value in found.items() if value is not None}
+    return {**changed, FILL: True} if spec.fill else changed
 
 
 def merge(base: Mapping[str, object], extra: Mapping[str, object]) -> dict[str, object]:
@@ -515,8 +523,13 @@ def _cli_with_variant(options: str, argv: Sequence[str]) -> int:
 
     def keywords(self):
         if "neutral" in changed:
-            return tuple(NEUTRAL_WORDS[: changed["neutral"]])
-        return snapshot_keywords(self)[: changed.get("keyword_limit")]
+            found = tuple(NEUTRAL_WORDS[: changed["neutral"]])
+        else:
+            found = snapshot_keywords(self)[: changed.get("keyword_limit")]
+        if not changed.get(FILL):
+            return found
+        # `fit_hotwords` cuts the filled list at the token budget
+        return found + tuple(word for word in NEUTRAL_WORDS if word not in found)
 
     DomainContext.transcription_keywords = keywords
     extra = {"seed": seed, "hotwords": spec["hotwords"], **changed}

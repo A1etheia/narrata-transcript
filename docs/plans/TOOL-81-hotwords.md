@@ -82,16 +82,20 @@ Ursache der drei Hotword-Effekte an realen Aufnahmen belegen: Wortverlust bei ku
   - Entscheidung nach der Auswahlregel, mit der Form des Schutzes
 - Verify: `scripts/check`. Der Bericht nennt für jede Hypothese belegt / widerlegt / offen.
 - AC: Die Ursache ist an mindestens einer realen Aufnahme belegt (AC 1). Die gewählte Einstellung hat auf der ganzen Aufnahme keinen 5-min-Abschnitt über der Schwelle (AC 2).
+- Nachtrag nach den Läufen:
+  - Dazugekommen ist der Modifikator `+fill` in `scripts/spike/asr.py`. Er prüft das Auffüllen als Schutz, mit dem Ergebnis: widerlegt.
+  - AC 2 ist präzisiert (Entscheidung der Projektverantwortung). Ein Wortverlust gilt als systematisch ab 5 Abschnitten mit Defizit oder ab 5 % weniger Wörtern im Segment. Vereinzelte, seed-abhängige Abschnitte bei voller Liste nennt der Bericht als Rest.
 
 ### Chunk 3 — Schalter und Schutz in der Pipeline
 - Dateien: `src/transcript/config.py`, `src/transcript/asr/whisper.py`, `src/transcript/__main__.py`, `config/example.yaml`, `tests/test_asr_whisper.py`, `tests/test_config.py`
 - Änderung:
   - `asr.hotwords` (bool, Default `true`) in Config und Beispiel-YAML
   - `WhisperBackend` setzt `keyword_biasing` aus Modell und Schalter und schreibt `hotwords` in die Settings
-  - der Schutz bzw. die feste Einstellung aus Chunk 2
-  - `transcribe` meldet abgeschaltete oder vom Schutz verworfene Hotwords einmal, nur mit Zahlen
+  - Schutz aus Chunk 2 (`docs/spikes/TOOL-81-hotwords.md`, Entscheidung): Eine Liste unter 110 Hotword-Tokens geht nicht an Whisper. `keywords_used` bleibt dann leer, und `asr.settings` vermerkt den Grund.
+  - `transcribe` meldet abgeschaltete Hotwords einmal, nur mit Zahlen: Begriffe, Tokens, Schwelle, dazu der Hinweis, Begriffe im Snapshot zu ergänzen und neu zu transkribieren.
+  - Ein schneller Vorab-Check ohne Modell (z. B. `transcript keywords <session>`) zeigt dieselben Zahlen, bevor ein Lauf startet.
 - Verify: `scripts/check`
-- AC: Hotwords sind abschaltbar. Die schädliche Lage aus Chunk 2 tritt mit Default-Config nicht mehr auf (Test mit erfundenen Begriffen). Wiederaufnahme unterscheidet an/aus.
+- AC: Hotwords sind abschaltbar. Eine Liste unter der Schwelle erreicht Whisper mit Default-Config nicht (Test mit erfundenen Begriffen). Die Wiederaufnahme unterscheidet an und aus, und ein neuer Snapshot mit mehr Begriffen löst die Neutranskription aus.
 
 ### Chunk 4 — Abnahmelauf, Kalibrierung, README
 - Dateien: `README.md` (Spracherkennung, Konfiguration), `docs/spikes/TOOL-81-hotwords.md` (Abschnitt Abnahme)
@@ -105,6 +109,8 @@ Ursache der drei Hotword-Effekte an realen Aufnahmen belegen: Wortverlust bei ku
 ## Folge-Tickets
 - Schwellen der Bewertung neu setzen, falls die Kalibrierung in Chunk 4 zeigt, dass die Defaults zur gewählten Einstellung nicht mehr passen: [kein Ticket: entsteht nur bei diesem Befund, wird dann vor dem Merge angelegt]
 - TOOL-90 (`session_terms` ins Biasing) kann danach starten; der Schutz aus Chunk 3 gilt auch für die neuen Begriffe: TOOL-90
+- Narrata zeigt den geschätzten Füllstand der Hotword-Liste schon beim Pflegen der Begriffe: IOA-1336
+- Handreferenz in einem Abschnitt, in dem `base` auf der zweiten Aufnahme ein Defizit hat, um zu klären, ob dort wirklich Sprache fehlt: [kein Ticket: nur nötig, falls die Abnahme in Chunk 4 wieder Defizite zeigt]
 
 ## Chunk-Tabelle
 | Chunk | Scope | Clear context after? |
