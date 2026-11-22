@@ -124,6 +124,14 @@ P = [
      "M8 — Konzept für Stimmprofile mit Einwilligung pro Spielrunde, Go/No-Go. Reflexionspunkt, kein Umsetzungsblock.", [
         ("TOOL-87", "Konzept: Sprecher über Sessions hinweg wiedererkennen", 1.0, "erledigt: `docs/pilot/TOOL-87-stimmprofile.md`; Ergebnis No-Go, keine Umsetzungstickets; Stimmprofil wäre ein biometrisches Datum (Art. 9 DSGVO) mit Opt-in pro Mitgliedschaft, Neuprüfung erst beim Kriterium aus der Notiz"),
     ]),
+    ("Phase 9 — Auslassungen verringern",
+     "M9 — Auslassungen verortet und die offenen Hebel gemessen (Epic TOOL-100). Reflexionspunkt: Welcher Hebel bekommt ein Umsetzungsticket?", [
+        ("TOOL-101", "Spike: Auslassungen an den Handreferenzen verorten", 1.0, "zuerst, entscheidet die Reihenfolge der übrigen Tickets des Epics und den Zuschnitt von TOOL-82; Überlappung, Beitragslänge, Pegel je Sprecher, Temperatur-Fallback, VAD, Stabilität über die Seeds, Sprache ohne Wörter; Erweiterung von `scripts/spike/asr.py`, nur Kennzahlen"),
+        ("TOOL-102", "Spike: Vereinigung mehrerer Seeds gegen Auslassungen messen", 1.0, "Orakel an A, B und C, danach Regeln ohne Referenz nur bei ≥ 3 Punkten; Läufe aus TOOL-93 wiederverwendbar, wenn die Schattenwurzeln noch liegen; Wörter aus einem anderen Lauf sind Alternativen, das ASR-Ergebnis bleibt"),
+        ("TOOL-103", "Spike: Pegelausgleich vor der Erkennung messen", 1.0, "`dynaudnorm`, `acompressor`, `loudnorm`, `speechnorm` auf dem Prüfstand aus TOOL-92 (`scripts/spike/denoise.py`), drei Seeds, Go-Regel wie TOOL-92; TOOL-92 hat nur Rauschfilter gemessen"),
+        ("TOOL-104", "Recherche: sprecherbedingte Dekodierung, neue lokale Modelle, Batched-Pipeline", 1.0, "nach TOOL-101; höchstens drei Kandidaten für eine Messung; Batched-Pipeline von faster-whisper direkt an A und B messen, falls sie Hotwords trägt; nur lokal lauffähige Ansätze"),
+        ("TOOL-105", "Messung: Sitzung mit geänderter Aufnahme am Tisch gegen eine Handreferenz", 0.5, "braucht die Gruppe, Hardware und einen Spielabend, das Datum ist deshalb nur ein Platzhalter; wenn möglich mit dem bisherigen Mikrofon parallel aufnehmen; Handreferenz von der Projektverantwortlichen (20–30 min); aus TOOL-60 und TOOL-93: Mikrofon-Empfehlung bisher nur dokumentiert"),
+    ]),
 ]
 
 CONDITIONAL: set[str] = set()
@@ -189,7 +197,7 @@ def main() -> None:
     o.append(f"- **Kapazität: {len(WORKDAYS)} Entwicklungstage pro Woche**, Start {de(FROM)}, Pause {pauses}. Das ist der Umrechnungsfaktor für die Kalenderspalte, nicht Teil des Plans — ändert sich die Kapazität, verschieben sich nur die Daten, nicht die Reihenfolge.")
     o.append("- **Aufwände sind Entwicklungstage in 0,5er-Schritten**, grob geschätzt aus den Ticket-Beschreibungen. Sie dienen der Reihenfolge und den Meilenstein-Abständen; keine Zusage.")
     o.append(f"- **Offener Umfang: {total:g} Entwicklungstage** ≈ {weeks} Wochen → letzter Meilenstein {de(last) if last else 'keiner offen'}; erledigt {done_days:g} Tage." + (f" Davon {cond_days:g} Tage bedingt ({', '.join(sorted(CONDITIONAL))})." if CONDITIONAL else ""))
-    o.append("- **Neu terminiert am 17.11.2026, Qualität zuerst, fortgeschrieben am 21.11.2026:** Erledigte Tickets belegen keine Tage mehr und tragen kein Datum; die offenen Tickets beginnen am ersten Arbeitstag ab heute, angeführt von der Erkennungsqualität (TOOL-93, TOOL-96) vor dem Pilot-Review (TOOL-60). Nach dem Backlog-Review vom 21.11.2026 folgt die Pipeline-Nacharbeit aus TOOL-60 (TOOL-81, 99, 90, 84, 79) vor den Reflexionspunkten TOOL-85 und TOOL-87. Die Narrata-Nacharbeit aus Epic IOA-1297 (Korrektur, IT/OT, Lesefassung) steht nicht in dieser Folge und konkurriert um dieselben Tage.")
+    o.append("- **Neu terminiert am 17.11.2026, Qualität zuerst, fortgeschrieben am 21.11.2026:** Erledigte Tickets belegen keine Tage mehr und tragen kein Datum; die offenen Tickets beginnen am ersten Arbeitstag ab heute, angeführt von der Erkennungsqualität (TOOL-93, TOOL-96) vor dem Pilot-Review (TOOL-60). Nach dem Backlog-Review vom 21.11.2026 folgt die Pipeline-Nacharbeit aus TOOL-60 (TOOL-81, 99, 90, 84, 79) vor den Reflexionspunkten TOOL-85 und TOOL-87. Die Narrata-Nacharbeit aus Epic IOA-1297 (Korrektur, IT/OT, Lesefassung) steht nicht in dieser Folge und konkurriert um dieselben Tage. Am 22.11.2026 kam Phase 9 dazu (Epic TOOL-100): Die ausgelassenen Wörter sind das größte Qualitätsproblem, die Spikes TOOL-101 bis TOOL-105 folgen auf TOOL-87.")
     o.append("- Nicht eingeplant: die Epics selbst, zurückgestellte Tickets (TOOL-82 bis IOA-1326, Label `transcript-v0.2`), verworfene Tickets (TOOL-14 nach TOOL-60; TOOL-88 nach dem Backlog-Review, Review wandert nach Narrata;TOOL-21–32, 34; TOOL-3, 7; TOOL-11, 33 nach TOOL-62; TOOL-78 nach TOOL-59; Epic TOOL-65 mit TOOL-70–75, IT/OT nach Narrata verlegt in Epic IOA-1297), in andere aufgenommene Tickets (TOOL-77 in TOOL-57).\n")
     o.append("## Leitlinien der Reihenfolge\n")
     o.append("1. **Entscheidungen vor Code.** Datenschutz (TOOL-66/IOA-1216) und Contract (IOA-1214) stehen, bevor irgendetwas Daten schreibt — sonst werden Fixtures, Logs und IDs später umgebaut.")
@@ -217,7 +225,8 @@ def main() -> None:
     o.append("| M4 | Reicht das Teilen am Sprecherwechsel, oder braucht die Diarisierung selbst ein Ticket? | TOOL-96 | Beantwortet: reicht, 3,4 / 3,6 Punkte Abstand zu Plaud, kein Diarisierungs-Ticket |")
     o.append("| M6 | Welche Fragen aus der Zielliste sind jetzt beantwortbar, welche nicht? | Retro, kein Ticket | V0.2-Backlog beider Projekte |")
     o.append("| M7 | Öffnen wir die Transkription für andere Nutzer, und auf welchem Weg? | TOOL-85 | Beantwortet: nein, keine Nachfrage und Fremdformat-Upload in Narrata vorhanden; lokal rechnen erst bei konkreter Anfrage, keine Folge-Tickets |")
-    o.append("| M8 | Lohnt sich die Wiedererkennung der Sprecher, und trägt die Einwilligung pro Spielrunde? | TOOL-87 | Go/No-Go; bei „ja“ Umsetzungstickets in TOOL und IOA |\n")
+    o.append("| M8 | Lohnt sich die Wiedererkennung der Sprecher, und trägt die Einwilligung pro Spielrunde? | TOOL-87 | Go/No-Go; bei „ja“ Umsetzungstickets in TOOL und IOA |")
+    o.append("| M9 | Wo entstehen die Auslassungen, und welcher Hebel verringert sie oder macht sie sichtbar? | TOOL-101, danach TOOL-102 bis TOOL-105 | Umsetzungsticket je Hebel mit Go; Zuschnitt von TOOL-82 (Parakeet-Zweitlauf); bei No-Go überall bleibt die Aufnahme am Tisch der einzige Hebel |\n")
     o.append("## Arbeitsfolge\n")
     o.append("Start/Ende der offenen Tickets sind in Jira als Start date / Due date gespiegelt; erledigte Tickets behalten in Jira ihre damaligen Daten.\n")
     for p in phases:
