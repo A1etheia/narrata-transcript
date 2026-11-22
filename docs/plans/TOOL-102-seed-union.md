@@ -109,10 +109,12 @@ TOOL-101 hat gezeigt, dass 32–72 % der betroffenen Wörter nur in einzelnen Se
 - AC: Go/No-Go nach der Regel im Ticket; bei Go ein Umsetzungsticket.
 
 ## Folge-Tickets
-- Umsetzungsticket bei Go: [kein Ticket: wird erst in Chunk 4 angelegt, wenn die Go-Regel erfüllt ist; der Key wird hier nachgetragen]
-- TOOL-82: Kommentar mit dem Vergleich Seed gegen Parakeet und dem, was für die Wörter bleibt, die in allen Seeds fehlen.
-- TOOL-107: Kommentar mit Zahl und Größe der Blockverluste über das Segment, weil derselbe Hinweis sie sichtbar machen soll.
-- TOOL-100: Kommentar mit dem Ergebnis für den Reflexionspunkt M9.
+- Umsetzungsticket bei Go: [kein Ticket: Ergebnis ist No-Go, entschieden am 2026-11-22]
+- TOOL-108: Folge-Spike, angelegt am 2026-11-22. Misst, ob sich ein Blockverlust ohne Referenz von einer Halluzination trennen lässt.
+- TOOL-82: Kommentar vom 2026-11-22 mit dem Vergleich Seed gegen Parakeet und dem, was für die Wörter bleibt, die in allen Seeds fehlen.
+- TOOL-107: Kommentar vom 2026-11-22 mit Zahl und Größe der Blockverluste über das Segment, weil derselbe Hinweis sie sichtbar machen soll.
+- TOOL-100: Kommentar vom 2026-11-22 mit dem Ergebnis für den Reflexionspunkt M9.
+- Referenzen D und E (Pilotsitzung): [kein Ticket: für diesen Spike getippt, liegen lokal unter `review/calibration/`; das vorgeschlagene Fenster der zweiten Sitzung steht in TOOL-108]
 - Go-Regel für R2 und R3 (Hälfte der Auslassungen, höchstens 10 Punkte Zeit): [kein Ticket: in diesem Plan festgelegt, weil das Ticket nur „deutlich" und „stark" sagt]
 
 ## Chunk-Tabelle

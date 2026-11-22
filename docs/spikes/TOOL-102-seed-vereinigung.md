@@ -1,10 +1,10 @@
 # TOOL-102 — Vereinigung mehrerer Seeds gegen Auslassungen
 
-Stand 2026-11-22, nach Segmentvergleich, Orakel und den Regeln R1 bis R3. Die Entscheidung über Go oder No-Go steht noch aus. Spike-Bericht zu [TOOL-102](../plans/TOOL-102-seed-union.md), Werkzeug: [`scripts/spike/seeds.py`](../../scripts/spike/seeds.py). Alle Messungen liefen lokal auf gespeicherten Läufen, ohne neue Transkription. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel.
+Stand 2026-11-22. Spike-Bericht zu [TOOL-102](../plans/TOOL-102-seed-union.md), Werkzeug: [`scripts/spike/seeds.py`](../../scripts/spike/seeds.py). Alle Messungen liefen lokal auf gespeicherten Läufen, ohne neue Transkription. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel.
 
-## Stand
+## Kurzfassung
 
-**Das Orakel trägt an drei von fünf Referenzen, aber keine der drei Regeln hebt den Gewinn, ohne anderswo zu schaden.** Wo ein Seed einen Block verliert, haben die anderen ihn oft richtig. Wo kein Block fehlt, sind die zusätzlichen Wörter der anderen Seeds überwiegend falsch, und ohne Referenz unterscheidet keine der Regeln die beiden Fälle.
+**No-Go für die drei gemessenen Regeln. Das Orakel trägt an drei von fünf Referenzen, aber keine Regel hebt den Gewinn, ohne anderswo zu schaden.** Die Folgefrage, ob sich ein Blockverlust ohne Referenz von einer Halluzination trennen lässt, geht an TOOL-108. Wo ein Seed einen Block verliert, haben die anderen ihn oft richtig. Wo kein Block fehlt, sind die zusätzlichen Wörter der anderen Seeds überwiegend falsch, und ohne Referenz unterscheidet keine der Regeln die beiden Fälle.
 
 - **Orakel im Mittel über die Basis-Seeds:** 0,7 Punkte WER an A, 1,5 an B, 6,3 an C, 12,3 an D, 5,2 an E ([Rückgewinn](#rückgewinn)). Die Schwelle von 3 Punkten an zwei Referenzen ist mit C, D und E erreicht.
 - **R1, Fensterwahl:** gegenüber dem Mittel der Seeds 6,2 Punkte besser an C und 3,3 an E, aber 6,7 Punkte schlechter an B und 12,5 an D. Gegenüber dem besten einzelnen Seed erreicht R1 an keiner Referenz 3 Punkte ([R1](#r1-fensterwahl)).
@@ -206,6 +206,16 @@ Die Go-Regel stand im Plan, vor der Messung.
 - **R1 erfüllt den Wortlaut und schadet trotzdem.** Die Go-Regel fragt nur nach dem Gewinn an zwei Referenzen und nicht nach Verlusten an den anderen. Über alle fünf Referenzen liegt R1 im Mittel 1,8 Punkte schlechter als das Mittel der Seeds und 6,5 Punkte schlechter als der beste Seed. Die Pipeline rechnet heute einen Lauf. Gegen Seed 1 allein gewinnt R1 0,8 Punkte an A und 2,7 an C und verliert 10,9 an B, 24,3 an D und 0,8 an E.
 - **Die Go-Regel für R2 und R3 hat ihren Gegenstand verloren.** Sie setzt voraus, dass Auslassungen in `confident`-Passagen liegen. Bei 96–97 % markierter Zeit tun das 10 von rund 1200 (Summe über Referenzen und Seeds).
 - **Was die Messung über die Go-Regel hinaus zeigt:** Der Gewinn sitzt in den Blockverlusten, und die betreffen jeden Seed. Ein Hinweis „hier hat ein anderer Lauf einen Block mehr" trifft an C und E überwiegend richtige Wörter (67–90 %), an D übernimmt er mit Seed 1 oder 2 als Basis eine Halluzination. Ob sich die beiden Fälle ohne Referenz trennen lassen, hat dieser Spike nicht beantwortet. Blockgröße und Übereinstimmung zweier Seeds reichen dafür nicht.
+
+## Entscheidung
+
+**No-Go** für R1, R2 und R3, entschieden von der Projektverantwortlichen am 2026-11-22. Es gibt kein Umsetzungsticket.
+
+- **R1** erfüllt den Wortlaut der Go-Regel an C und E, verliert aber an B und D mehr, als es dort gewinnt ([R1](#r1-fensterwahl)). Gegen einen einzelnen Lauf, wie ihn die Pipeline heute rechnet, erreicht es an keiner Referenz 3 Punkte.
+- **R2** erfüllt die Go-Regel nicht und bietet an B und D überwiegend falsche Wörter an ([R2](#r2-alternative-an-der-lücke)).
+- **R3** erfüllt den Wortlaut mit 6 Auslassungen. Bei 96–97 % markierter Zeit bleibt für einen Hinweis auf Passagenebene nichts zu tun ([R3](#r3-abweichung-als-review-hinweis)).
+- **Folge-Spike TOOL-108:** Das Orakel zeigt 5–12 Punkte an Blockverlusten ([Rückgewinn](#rückgewinn)). TOOL-108 misst, ob sich ein Block, den ein anderer Lauf mehr hat, ohne Referenz als Verlust oder als Halluzination erkennen lässt. Die Go-Regel dort verlangt zusätzlich, dass eine Regel an keiner Referenz mehr als 1 Punkt verliert.
+- **Für TOOL-82 und TOOL-107:** „Auslassungen in `confident`-Passagen" taugt an diesen Läufen nicht mehr als Messgröße ([Bewertung](#bewertung-nach-der-go-regel)). Beide Tickets haben dazu einen Kommentar.
 
 ## Zusätzliche Handreferenzen
 
