@@ -109,7 +109,7 @@ Bekannt ist, dass Whisper an den Handreferenzen 30–131 Wörter je Clip ausläs
 - TOOL-82: Kommentar mit dem empfohlenen Zuschnitt; das Ticket bleibt zurückgestellt, bis die Projektverantwortliche entscheidet.
 - TOOL-102: Kommentar mit der Stabilität der Auslassungen über die Seeds als Vorarbeit für das Orakel.
 - TOOL-103, TOOL-104, TOOL-105: Reihenfolge und Begründung stehen im Kommentar an TOOL-100, die Tickets selbst bleiben unverändert.
-- Neuer Hinweis „Sprache ohne Wörter" in der Bewertung: [kein Ticket: entsteht erst in Chunk 3, falls Trefferquote und markierte Zeit dafür sprechen]
+- TOOL-107: Spike zum Hinweis „Sprache ohne Wörter" gegen `gap` und `sparse`, angelegt in Chunk 3 im Epic TOOL-100.
 - Roadmap-Eintrag für Phase 9: [kein Ticket: liegt als `dc986c2` auf dem lokalen Branch `tool-100-roadmap-omissions` und muss vor `/close-ticket` auf `main` sein]
 - Ticketbeschreibung TOOL-101 „B hat keine Sprecher": [kein Ticket: überholt seit TOOL-60, im Bericht unter Material vermerkt]
 
