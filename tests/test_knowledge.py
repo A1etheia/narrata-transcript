@@ -5,7 +5,16 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from test_narrata import CHARACTER, NAME, context, encoded, glossary_entry
+from test_glossary import glossary
+from test_narrata import (
+    CHARACTER,
+    NAME,
+    NEW_TERM,
+    NEW_VARIANT,
+    context,
+    encoded,
+    glossary_entry,
+)
 from test_narrata import participant as participant_json
 
 from transcript.jsonfile import DataFileError
@@ -14,10 +23,17 @@ from transcript.knowledge import (
     _snapshot_id,
     build_snapshot,
     drift,
+    knowledge_entries,
     load_snapshot,
     select_keywords,
 )
-from transcript.narrata import GlossaryEntry, Relevance, store_context
+from transcript.narrata import (
+    SESSION_TERM,
+    GlossaryEntry,
+    Relevance,
+    SessionTerm,
+    store_context,
+)
 from transcript.session import SessionKey, SessionPaths
 
 # Every name below is made up.
@@ -31,6 +47,7 @@ BUDGET = {
     "lore": 0,
 }
 NOW = datetime.datetime(2026, 11, 5, 20, 0, tzinfo=datetime.timezone.utc)
+TERMS = [{"term": NEW_TERM, "asr_variants": [NEW_VARIANT]}, {"term": "Zarvok"}]
 
 
 def entry(
@@ -78,6 +95,56 @@ class SelectKeywordsTest(unittest.TestCase):
         self.assertEqual(select_keywords(entries, {"person": 9, "lore": 0}), ())
 
 
+class KnowledgeEntriesTest(unittest.TestCase):
+    def test_free_terms_stand_behind_the_session_tier(self) -> None:
+        known = glossary(
+            entry(7, "pc"),
+            entry(5, "session"),
+            entry(9, "recent"),
+            entry(8, "archive"),
+            terms=(SessionTerm(NEW_TERM, (NEW_VARIANT,)), SessionTerm("Zarvok", ())),
+        )
+
+        entries = knowledge_entries(known)
+
+        self.assertEqual(
+            [e.ref for e in entries],
+            [
+                ("person", 7),
+                ("person", 5),
+                (SESSION_TERM, 1),
+                (SESSION_TERM, 2),
+                ("person", 9),
+                ("person", 8),
+            ],
+        )
+        self.assertEqual(
+            entries[2],
+            GlossaryEntry(
+                SESSION_TERM, 1, NEW_TERM, (), (NEW_VARIANT,), None, "session"
+            ),
+        )
+
+    def test_without_free_terms_the_entries_are_narratas(self) -> None:
+        known = glossary(entry(5, "recent"), entry(7, "pc"))
+
+        self.assertIs(knowledge_entries(known), known.entries)
+
+    def test_free_terms_are_always_keywords_and_use_no_budget(self) -> None:
+        known = glossary(
+            entry(5, "session"),
+            entry(9, "recent"),
+            terms=(SessionTerm(NEW_TERM, ()), SessionTerm("Zarvok", ())),
+        )
+
+        chosen = select_keywords(knowledge_entries(known), {"person": 1})
+
+        self.assertEqual(
+            [e.ref for e in chosen],
+            [("person", 5), (SESSION_TERM, 1), (SESSION_TERM, 2)],
+        )
+
+
 class SnapshotTest(unittest.TestCase):
     def setUp(self) -> None:
         directory = tempfile.TemporaryDirectory()
@@ -113,6 +180,9 @@ class SnapshotTest(unittest.TestCase):
 
     def build(self, budget: dict[str, int] = BUDGET) -> Any:
         return build_snapshot(self.paths, budget, now=NOW)
+
+    def stored_snapshot(self) -> dict[str, Any]:
+        return json.loads(self.paths.knowledge_snapshot.read_bytes())
 
     def test_snapshot_keeps_origin_reason_and_ids_of_every_entry(self) -> None:
         self.store()
@@ -158,6 +228,32 @@ class SnapshotTest(unittest.TestCase):
             [("Nebel", (("place", 6), ("place", 8)))],
         )
         self.assertEqual((glossary.archive_total, glossary.archive_returned), (40, 1))
+
+    def test_session_terms_survive_in_narrata_order(self) -> None:
+        self.store(contract_version="1.4", session_terms=TERMS)
+
+        snapshot = self.build()
+
+        self.assertEqual(
+            snapshot.glossary.session_terms,
+            (SessionTerm(NEW_TERM, (NEW_VARIANT,)), SessionTerm("Zarvok", ())),
+        )
+        # behind the session entry, ahead of the recent one the budget leaves out
+        self.assertEqual(
+            [e.ref for e in snapshot.keyword_entries],
+            [("person", 7), ("place", 5), (SESSION_TERM, 1), (SESSION_TERM, 2)],
+        )
+        self.assertEqual(load_snapshot(self.paths), snapshot)
+
+    def test_without_session_terms_the_snapshot_has_no_new_block(self) -> None:
+        # an unchanged context without terms keeps its snapshot_id, so no
+        # segment is transcribed again
+        for overrides in ({}, {"contract_version": "1.4", "session_terms": []}):
+            with self.subTest(overrides=overrides):
+                self.store(**overrides)
+                self.build()
+
+                self.assertNotIn("session_terms", self.stored_snapshot())
 
     def test_snapshot_reads_without_the_context_file(self) -> None:
         self.store()
@@ -317,6 +413,10 @@ class SnapshotTest(unittest.TestCase):
             (
                 lambda d: d.update(format_version=True),
                 "unsupported format_version",
+            ),
+            (
+                lambda d: d.update(session_terms=[{"term": MARKER}, {"term": ""}]),
+                "session_terms[1].term missing or invalid",
             ),
         ):
             with self.subTest(expected=expected):

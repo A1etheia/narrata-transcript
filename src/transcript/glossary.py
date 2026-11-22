@@ -1,6 +1,6 @@
 """Looking up glossary terms and picking keyword candidates for ASR hints.
 
-Works on `narrata.NarrataGlossary` only and does no file I/O. Matching compares a
+Works on `narrata.GlossaryEntry` only and does no file I/O. Matching compares a
 normalized key; every returned string keeps Narrata's spelling. A term several
 entries share returns all of them: the glossary never decides which one is meant.
 """
@@ -11,7 +11,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Literal
 
-from transcript.narrata import GlossaryEntry, NarrataGlossary
+from transcript.narrata import GlossaryEntry
 
 MatchKind = Literal["name", "alias", "asr_variant"]
 
@@ -65,9 +65,9 @@ class Match:
 class GlossaryIndex:
     """Finds entries by name, alias or known misrecognition."""
 
-    def __init__(self, glossary: NarrataGlossary) -> None:
+    def __init__(self, entries: Iterable[GlossaryEntry]) -> None:
         self._matches: dict[str, list[Match]] = {}
-        for entry in glossary.entries:
+        for entry in entries:
             seen: set[str] = set()  # one match per entry and key, the strongest kind
             for kind, field, term in entry_terms(entry):
                 key = normalize(term)

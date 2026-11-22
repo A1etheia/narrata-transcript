@@ -7,6 +7,8 @@ from test_narrata import (
     ALIAS,
     CHARACTER,
     NAME,
+    NEW_TERM,
+    NEW_VARIANT,
     PLACE,
     PLAY_SESSION_ID,
     VARIANT,
@@ -18,7 +20,7 @@ from test_narrata import (
 
 from transcript.domain import DomainContext, Origin
 from transcript.knowledge import SnapshotError, build_snapshot
-from transcript.narrata import GlossaryEntry, store_context
+from transcript.narrata import SESSION_TERM, GlossaryEntry, store_context
 from transcript.session import SessionKey, SessionPaths
 
 # Every name below is made up.
@@ -170,6 +172,60 @@ class DomainContextTest(unittest.TestCase):
 
         with self.assertRaisesRegex(SnapshotError, "run transcript snapshot"):
             DomainContext.load(self.paths)
+
+
+class SessionTermsTest(unittest.TestCase):
+    """A context 1.4 snapshot with free terms, read through `DomainContext`."""
+
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        paths = SessionPaths(SessionKey("beispielgruppe", 42), Path(directory.name))
+        data = context("1.4")
+        data["glossary"] = [
+            glossary_entry(id=5, asr_variants=[]),
+            glossary_entry(
+                type="person", id=9, name="Orlan", aliases=[], relevance="recent"
+            ),
+            glossary_entry(
+                id=8,
+                name="Altfurt",
+                aliases=[],
+                asr_variants=["Zarwok"],
+                relevance="archive",
+            ),
+        ]
+        data["session_terms"] = [
+            {"term": NEW_TERM, "asr_variants": [NEW_VARIANT]},
+            {"term": "Zarvok", "asr_variants": ["Zarwok"]},
+        ]
+        store_context(paths, encoded(data))
+        build_snapshot(paths, BUDGET)
+        self.context = DomainContext.load(paths)
+
+    def test_free_terms_are_keywords_without_their_misrecognitions(self) -> None:
+        self.assertEqual(
+            self.context.transcription_keywords(),
+            (PLACE, ALIAS, NEW_TERM, "Zarvok", "Orlan"),
+        )
+
+    def test_a_misrecognition_of_a_free_term_finds_it(self) -> None:
+        (hit,) = self.context.lookup(NEW_VARIANT.lower())
+
+        self.assertEqual(hit.entry.ref, (SESSION_TERM, 1))
+        self.assertEqual(hit.entry.relevance, "session")
+        self.assertEqual(
+            (hit.kind, hit.field, hit.term),
+            ("asr_variant", "asr_variants[0]", NEW_VARIANT),
+        )
+        self.assertTrue(hit.keyword)
+
+    def test_a_variant_shared_with_the_archive_returns_both(self) -> None:
+        hits = self.context.lookup("Zarwok")
+
+        self.assertEqual([h.entry.ref for h in hits], [(SESSION_TERM, 2), ("place", 8)])
+        # Narrata's ambiguities never count free terms
+        self.assertFalse(self.context.is_ambiguous("Zarwok"))
 
 
 class OtherSourceTest(unittest.TestCase):

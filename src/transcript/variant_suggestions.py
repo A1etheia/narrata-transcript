@@ -28,7 +28,7 @@ from transcript.domain import DomainContext, TermHit
 from transcript.glossary import MatchKind, normalize, tidy, trim_edges, word_key
 from transcript.hints import MAX_SPAN_WORDS
 from transcript.jsonfile import write_atomic
-from transcript.narrata import VARIANT_TYPES, EntryRef, EntryType
+from transcript.narrata import VARIANT_TYPES, EntryRef, EntryType, KnowledgeType
 from transcript.session import SessionPaths
 
 SUGGESTIONS_FORMAT_VERSION = 1
@@ -49,7 +49,7 @@ class SuggestedEntry:
 class OtherName:
     """Another entry the variant already names."""
 
-    type: EntryType
+    type: KnowledgeType  # a free session term too
     id: int | str
     kind: MatchKind
 

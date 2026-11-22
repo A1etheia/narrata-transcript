@@ -32,10 +32,10 @@ from transcript.domain import DomainContext, TermHit
 from transcript.glossary import MatchKind, normalize, word_key
 from transcript.jsonfile import DataFileError, write_atomic
 from transcript.narrata import (
-    ENTRY_TYPES,
+    KNOWLEDGE_TYPES,
     RELEVANCE_TIERS,
     EntryRef,
-    EntryType,
+    KnowledgeType,
     Relevance,
     is_narrata_id,
 )
@@ -66,7 +66,7 @@ DEFAULT_SIMILAR = SimilarThresholds()
 class Candidate:
     """One entry a hint may point to, with the term that matched."""
 
-    type: EntryType
+    type: KnowledgeType
     id: int | str
     term: str  # as Narrata spells it
     kind: MatchKind
@@ -558,7 +558,7 @@ def _candidate_from(data: dict[str, Any], path: Path) -> Candidate:
     if not is_narrata_id(data.get("id")):
         raise HintsError(f"{path}: field 'id' missing or invalid")
     return Candidate(
-        type=_one_of(data, "type", ENTRY_TYPES, path),
+        type=_one_of(data, "type", KNOWLEDGE_TYPES, path),
         id=data["id"],
         term=_field(data, "term", str, path),
         kind=_one_of(data, "kind", get_args(MatchKind), path),

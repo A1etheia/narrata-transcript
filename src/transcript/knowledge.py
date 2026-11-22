@@ -9,6 +9,9 @@ Relevance is Narrata's tier per glossary entry (ios-archiv docs/transcripts.md,
 are chosen: every `pc` entry, then `session` and `recent` entries in Narrata's
 order up to a budget per entry type. `archive` entries stay in the snapshot for
 matching but never become keywords. Ambiguities are kept as Narrata reports them.
+Free session terms (contract 1.4) are stored as Narrata delivers them, in a block
+that is left out when there are none. `knowledge_entries` places them behind
+Narrata's `session` entries; they are always keywords and use no budget.
 
 Every entry comes from the one context file named in `source`. The snapshot holds
 real names, so messages name the file and the field, never a value.
@@ -18,7 +21,7 @@ import datetime
 import hashlib
 import json
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -31,11 +34,14 @@ from transcript.jsonfile import (
     write_atomic,
 )
 from transcript.narrata import (
+    RELEVANCE_TIERS,
+    SESSION_TERM,
     GlossaryEntry,
     NarrataContextError,
     NarrataGlossary,
     Participant,
     Relevance,
+    SessionTerm,
 )
 from transcript.session import SessionPaths
 
@@ -81,7 +87,7 @@ class Snapshot:
     keyword_budget: Mapping[str, int]
     participants: tuple[Participant, ...]
     glossary: NarrataGlossary
-    keyword_entries: tuple[GlossaryEntry, ...]  # in glossary order
+    keyword_entries: tuple[GlossaryEntry, ...]  # in `knowledge_entries` order
 
 
 @dataclass(frozen=True)
@@ -96,18 +102,51 @@ class Drift:
         return self.context_changed or self.budget_changed
 
 
+def session_term_entries(terms: Iterable[SessionTerm]) -> tuple[GlossaryEntry, ...]:
+    """Free session terms as entries of tier `session`, numbered from 1.
+
+    The number is the position in Narrata's list and only tells the terms of one
+    snapshot apart; a free term has no archive id.
+    """
+    return tuple(
+        GlossaryEntry(
+            type=SESSION_TERM,
+            id=number,
+            name=term.term,
+            aliases=(),
+            asr_variants=term.asr_variants,
+            summary=None,
+            relevance="session",
+        )
+        for number, term in enumerate(terms, start=1)
+    )
+
+
+def knowledge_entries(glossary: NarrataGlossary) -> tuple[GlossaryEntry, ...]:
+    """Narrata's entries with the free session terms right behind its `session` tier.
+
+    Narrata delivers its tiers in order, so a stable sort by tier keeps its order
+    and places the terms, which share the tier, after its own `session` entries.
+    """
+    if not glossary.session_terms:
+        return glossary.entries
+    merged = glossary.entries + session_term_entries(glossary.session_terms)
+    return tuple(sorted(merged, key=lambda e: RELEVANCE_TIERS.index(e.relevance)))
+
+
 def select_keywords(
     entries: Sequence[GlossaryEntry], budget: Mapping[str, int]
 ) -> tuple[GlossaryEntry, ...]:
     """The keyword candidates among `entries`, in their order.
 
-    `pc` entries always; `session` and `recent` ones while their type is under
-    budget, so the nearer tier fills first; a type missing from `budget` gets none.
+    `pc` entries and free session terms always; `session` and `recent` ones
+    while their type is under budget, so the nearer tier fills first; a type
+    missing from `budget` gets none.
     """
     used: Counter[str] = Counter()
     chosen = []
     for entry in entries:
-        if entry.relevance in _UNBUDGETED:
+        if entry.relevance in _UNBUDGETED or entry.type == SESSION_TERM:
             chosen.append(entry)
         elif entry.relevance in KEYWORD_TIERS and used[entry.type] < budget.get(
             entry.type, 0
@@ -132,7 +171,8 @@ def build_snapshot(
     session = narrata.parse_session(data, paths)
     participants = narrata.parse_participants(data, context)
     glossary = narrata.parse_glossary(data, context, session.play_session_id)
-    keywords = {entry.ref for entry in select_keywords(glossary.entries, budget)}
+    chosen = select_keywords(knowledge_entries(glossary), budget)
+    keywords = {entry.ref for entry in chosen}
     moment = now or datetime.datetime.now().astimezone()
     content: dict[str, Any] = {
         "format_version": SNAPSHOT_FORMAT_VERSION,
@@ -158,6 +198,12 @@ def build_snapshot(
             for ambiguity in glossary.ambiguities
         ],
     }
+    if glossary.session_terms:
+        # left out when empty, so a context without terms keeps its snapshot_id
+        content["session_terms"] = [
+            {"term": t.term, "asr_variants": list(t.asr_variants)}
+            for t in glossary.session_terms
+        ]
     write_atomic(
         paths.knowledge_snapshot,
         {
@@ -198,6 +244,7 @@ def load_snapshot(paths: SessionPaths) -> Snapshot:
     except NarrataContextError as error:
         raise SnapshotError(str(error)) from None
     flags = _keyword_flags(data, path)
+    flagged = {e.ref for e, flag in zip(glossary.entries, flags, strict=True) if flag}
     return Snapshot(
         path=path,
         snapshot_id=snapshot_id,
@@ -206,8 +253,11 @@ def load_snapshot(paths: SessionPaths) -> Snapshot:
         keyword_budget=_budget(data, path),
         participants=participants,
         glossary=glossary,
+        # free terms carry no stored flag: `select_keywords` always picks them
         keyword_entries=tuple(
-            entry for entry, flag in zip(glossary.entries, flags, strict=True) if flag
+            entry
+            for entry in knowledge_entries(glossary)
+            if entry.ref in flagged or entry.type == SESSION_TERM
         ),
     )
 

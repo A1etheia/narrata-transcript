@@ -18,6 +18,8 @@ from test_narrata import (
     ALIAS,
     CHARACTER,
     NAME,
+    NEW_TERM,
+    NEW_VARIANT,
     PLACE,
     SUMMARY,
     VARIANT,
@@ -472,7 +474,7 @@ class ContextCommandTest(unittest.TestCase):
         self.assertIn("  1 participant(s) (0 gm, 0 former), 0 character(s)\n", stdout)
         self.assertIn(
             "  0 glossary entries (0 pc, 0 session, 0 recent, 0 archive), "
-            "archive tier 0 of 0, 0 asr ambiguities",
+            "archive tier 0 of 0, 0 asr ambiguities, 0 session term(s)",
             stdout,
         )
         self.assertIn(f"wrote {self.paths.narrata_context}", stdout)
@@ -557,7 +559,7 @@ class ContextCommandTest(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assertIn(
             "  3 glossary entries (1 pc, 1 session, 0 recent, 1 archive), "
-            "archive tier 1 of 40, 1 asr ambiguities",
+            "archive tier 1 of 40, 1 asr ambiguities, 0 session term(s)",
             stdout,
         )
         for value in (CHARACTER, PLACE, ALIAS, VARIANT, SUMMARY, "Nebelsee"):
@@ -678,11 +680,13 @@ class SnapshotCommandTest(unittest.TestCase):
         self.assertIn(f"beispielgruppe/042: snapshot {first} built, created ", stdout)
         self.assertIn(
             "  1 participant(s), 3 glossary entries "
-            "(1 pc, 1 session, 0 recent, 1 archive), 0 asr ambiguities",
+            "(1 pc, 1 session, 0 recent, 1 archive), 0 asr ambiguities, "
+            "0 session term(s)",
             stdout,
         )
         self.assertIn(
-            "  2 keyword entries: 1 pc, 1/10 place, 0/2 person, 0/5 artifact, "
+            "  2 keyword entries: 1 pc, 0 session term(s), 1/10 place, 0/2 person, "
+            "0/5 artifact, "
             "0/5 organisation, 0/3 event, 0/3 lore\n",
             stdout,
         )
@@ -1010,6 +1014,29 @@ class TranscribeCommandTest(unittest.TestCase):
         _, stdout, _ = self.transcribe("--no-diarize")
         self.assertIn("0 transcribed, 3 reused", stdout)
 
+    def test_session_terms_reach_the_backend_behind_the_session_tier(self) -> None:
+        data = context("1.4")
+        data["glossary"] = [
+            glossary_entry(),
+            glossary_entry(
+                type="person", id=9, name="Orlan", aliases=[], relevance="recent"
+            ),
+        ]
+        data["session_terms"] = [{"term": NEW_TERM, "asr_variants": [NEW_VARIANT]}]
+        self.paths.narrata_context.parent.mkdir(parents=True, exist_ok=True)
+        self.paths.narrata_context.write_bytes(encoded(data))
+        knowledge.build_snapshot(self.paths, DEFAULT_KEYWORD_BUDGET)
+        self.backend = session_backend(biasing=True)
+
+        code, stdout, stderr = self.transcribe("--no-diarize")
+
+        self.assertEqual(code, 0, stderr)
+        # the misrecognition of the free term is no keyword
+        self.assertEqual(
+            self.backend.requests[0].keywords, (PLACE, ALIAS, NEW_TERM, "Orlan")
+        )
+        self.assert_no_terms(stdout + stderr)
+
     def test_review_hints_are_written_with_counts_but_no_names(self) -> None:
         data = context()
         data["glossary"] = [glossary_entry(asr_variants=[SECRET])]
@@ -1112,7 +1139,7 @@ class TranscribeCommandTest(unittest.TestCase):
         write_snapshot(self.paths)
 
     def assert_no_terms(self, output: str) -> None:
-        for name in (PLACE, ALIAS, VARIANT):
+        for name in (PLACE, ALIAS, VARIANT, NEW_TERM, NEW_VARIANT):
             self.assertNotIn(name, output)
 
     def hold_back(self) -> None:

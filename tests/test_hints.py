@@ -19,7 +19,7 @@ from transcript.hints import (
     segment_hints,
     write_hints,
 )
-from transcript.narrata import Ambiguity, GlossaryEntry
+from transcript.narrata import SESSION_TERM, Ambiguity, GlossaryEntry, SessionTerm
 from transcript.reference import AsrInfo, Passage, ReferenceTranscript, Word
 from transcript.session import SessionPaths
 
@@ -31,12 +31,15 @@ ALTFURT = entry("Altfurt", variants=("Nebel Au",), entry_id=3, relevance="archiv
 BRAKK = entry(
     "Brakk Þornfeld", "Brakk", entry_id=7, relevance="pc", entry_type="person"
 )
+VELMIRA = SessionTerm("Velmira", ("Wellmira",))  # a free session term
 
 
 def domain(
-    *entries: GlossaryEntry, ambiguities: tuple[Ambiguity, ...] = ()
+    *entries: GlossaryEntry,
+    ambiguities: tuple[Ambiguity, ...] = (),
+    terms: tuple[SessionTerm, ...] = (),
 ) -> DomainContext:
-    known = glossary(*entries, ambiguities=ambiguities)
+    known = glossary(*entries, ambiguities=ambiguities, terms=terms)
     return DomainContext((), known, {e.ref for e in entries}, ORIGIN)
 
 
@@ -112,6 +115,27 @@ class KnownVariantTest(unittest.TestCase):
         self.assertEqual(
             [(c.ref, c.field) for h in hints for c in h.candidates],
             [(place.ref, "asr_variants[0]"), (place.ref, "asr_variants[1]")],
+        )
+
+    def test_a_misrecognised_free_term_is_a_strong_hint(self) -> None:
+        free = domain(GRAUWASSER, terms=(VELMIRA,))
+
+        hint = only(find_hints(spoken("Dann kam Wellmira."), free))
+
+        self.assertEqual(hint.signal, "known_variant")
+        self.assertFalse(hint.ambiguous)
+        (candidate,) = hint.candidates
+        self.assertEqual(candidate.ref, (SESSION_TERM, 1))
+        self.assertEqual((candidate.term, candidate.relevance), ("Wellmira", "session"))
+
+    def test_a_variant_a_free_term_shares_with_an_entry_is_ambiguous(self) -> None:
+        free = domain(ALTFURT, terms=(SessionTerm("Nebelaue", ("Nebel Au",)),))
+
+        hint = only(find_hints(spoken("Hinter Nebel Au"), free))
+
+        self.assertTrue(hint.ambiguous)
+        self.assertEqual(
+            [c.ref for c in hint.candidates], [(SESSION_TERM, 1), ALTFURT.ref]
         )
 
     def test_without_variants_only_similar_hints_remain(self) -> None:
@@ -264,6 +288,16 @@ class HintFileTest(unittest.TestCase):
         self.assertEqual(
             data["counts"], {"ambiguous": 1, "known_variant": 2, "similar": 1}
         )
+
+    def test_a_free_term_candidate_survives_a_round_trip(self) -> None:
+        free = domain(terms=(VELMIRA,))
+        hints = segment_hints(spoken("Dann kam Wellmira."), free)
+        write_hints(self.paths, hints)
+
+        loaded = load_hints(self.paths, 1)
+
+        self.assertEqual(loaded, hints)
+        self.assertEqual(loaded.hints[0].candidates[0].type, SESSION_TERM)
 
     def test_another_version_or_segment_is_rejected(self) -> None:
         write_hints(self.paths, self.hints)
