@@ -438,7 +438,7 @@ class ContextCommandTest(unittest.TestCase):
         self.write_config(self.narrata.url)
         self.paths = SessionPaths(KEY, self.root)
         for patcher in (
-            mock.patch.dict(os.environ, {"NARRATA_TOKEN": TOKEN}),
+            mock.patch.dict(os.environ, {"NARRATA_TOKEN_BEISPIELGRUPPE": TOKEN}),
             mock.patch.object(transcript_main, "_DOTENV", self.root / ".env"),
         ):
             patcher.start()
@@ -586,15 +586,15 @@ class ContextCommandTest(unittest.TestCase):
         code, _, stderr = self.context()
 
         self.assertEqual(code, 2)
-        self.assertIn("NARRATA_TOKEN is missing or expired", stderr)
+        self.assertIn("NARRATA_TOKEN_BEISPIELGRUPPE is expired or revoked", stderr)
         self.assertNotIn(TOKEN, stderr)
         self.assertNotIn("Traceback", stderr)
 
     def test_missing_settings_name_their_source(self) -> None:
-        with mock.patch.dict(os.environ, {"NARRATA_TOKEN": ""}):
+        with mock.patch.dict(os.environ, {"NARRATA_TOKEN_BEISPIELGRUPPE": ""}):
             code, _, stderr = self.context()
         self.assertEqual(code, 2)
-        self.assertIn("NARRATA_TOKEN is not set", stderr)
+        self.assertIn("NARRATA_TOKEN_BEISPIELGRUPPE is not set", stderr)
 
         code, _, stderr = run("context", "andere-runde/1", "--config", str(self.config))
         self.assertEqual(code, 2)

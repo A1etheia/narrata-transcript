@@ -449,7 +449,7 @@ class SessionTest(PreflightTestCase):
         message = self.message(findings, "knowledge", "error")
         self.assertIn("narrata.url is not set", message)
         self.assertIn("narrata.groups has no group id for beispielgruppe", message)
-        self.assertIn("NARRATA_TOKEN is not set", message)
+        self.assertIn("NARRATA_TOKEN_BEISPIELGRUPPE is not set", message)
         self.assertIn("--from-file", message)
 
     def test_no_context_with_access_is_fine_and_the_token_stays_hidden(
@@ -460,7 +460,7 @@ class SessionTest(PreflightTestCase):
             "narrata:\n  url: https://narrata.example\n"
             "  groups:\n    beispielgruppe: 3\n"
         )
-        self.environ = {"NARRATA_TOKEN": "geheim-123"}
+        self.environ = {"NARRATA_TOKEN_BEISPIELGRUPPE": "geheim-123"}
 
         findings = self.preflight()
 

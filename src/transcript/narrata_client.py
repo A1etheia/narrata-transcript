@@ -1,5 +1,9 @@
 """Access to the Narrata transcription-context endpoint (IOA-1215).
 
+The token is a group's pipeline token (IOA-1251): the active game master mints
+it in Narrata for one group, it lasts 90 days and opens only this endpoint. Each
+group has its own variable, `NARRATA_TOKEN_<SLUG>`.
+
 The token is a secret: it comes from the environment or `.env`, never from the
 configuration file, and no message, log record or exception names its value.
 """
@@ -9,27 +13,47 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 
-TOKEN_VARIABLE = "NARRATA_TOKEN"
+TOKEN_PREFIX = "NARRATA_TOKEN_"
+LEGACY_VARIABLE = "NARRATA_TOKEN"  # the single login token before TOOL-84
 TIMEOUT_S = 30
+_MINT_HINT = (
+    "create a pipeline token for the group in Narrata (Profil → Aktive Sitzungen)"
+)
 
 
 class NarrataClientError(Exception):
     """Narrata could not be asked; the message is meant for the user."""
 
 
-def read_token(environ: Mapping[str, str], dotenv: Path) -> str:
-    """`NARRATA_TOKEN` from the environment, else from the `dotenv` file."""
-    token = environ.get(TOKEN_VARIABLE, "").strip()
-    if not token and dotenv.is_file():
-        token = _read_dotenv(dotenv).get(TOKEN_VARIABLE, "")
-    if not token:
-        raise NarrataClientError(
-            f"{TOKEN_VARIABLE} is not set; put a Narrata login token into "
-            f"{dotenv} (see .env.example) or into the environment"
-        )
-    return token
+@dataclass(frozen=True)
+class Token:
+    """A pipeline token with the variable it came from; `repr` hides the value."""
+
+    variable: str
+    value: str = field(repr=False)
+
+
+def token_variable(group: str) -> str:
+    """`NARRATA_TOKEN_<SLUG>`; slugs hold no `_`, so `-` → `_` stays unambiguous."""
+    return TOKEN_PREFIX + group.upper().replace("-", "_")
+
+
+def read_token(environ: Mapping[str, str], dotenv: Path, group: str) -> Token:
+    """The group's token from the environment, else from the `dotenv` file."""
+    variable = token_variable(group)
+    if value := environ.get(variable, "").strip():
+        return Token(variable, value)  # a set variable needs no readable .env
+    values = _read_dotenv(dotenv) if dotenv.is_file() else {}
+    if value := values.get(variable):
+        return Token(variable, value)
+    if environ.get(LEGACY_VARIABLE, "").strip() or values.get(LEGACY_VARIABLE):
+        where = f"{LEGACY_VARIABLE} is no longer read, store it as {variable}"
+    else:
+        where = f"put it into {dotenv} (see .env.example) or into the environment"
+    raise NarrataClientError(f"{variable} is not set; {_MINT_HINT} and {where}")
 
 
 def _read_dotenv(path: Path) -> dict[str, str]:
@@ -94,7 +118,7 @@ def fetch_context(
     base_url: str,
     group_id: int,
     ordinal: int,
-    token: str,
+    token: Token,
     *,
     recent_sessions: int,
     archive_limit: int,
@@ -109,14 +133,19 @@ def fetch_context(
             recent_sessions=recent_sessions,
             archive_limit=archive_limit,
         ),
-        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+        headers={
+            "Authorization": f"Bearer {token.value}",
+            "Accept": "application/json",
+        },
     )
     try:
         with _OPENER.open(request, timeout=timeout) as response:
             return response.read()
     except urllib.error.HTTPError as error:
         error.close()  # an HTTPError holds the open error response
-        raise NarrataClientError(_http_message(error.code, group_id, ordinal)) from None
+        raise NarrataClientError(
+            _http_message(error.code, group_id, ordinal, token.variable)
+        ) from None
     except (OSError, http.client.HTTPException) as error:  # URLError is an OSError
         reason = getattr(error, "reason", None) or str(error) or type(error).__name__
         raise NarrataClientError(
@@ -124,17 +153,17 @@ def fetch_context(
         ) from None
 
 
-def _http_message(code: int, group_id: int, ordinal: int) -> str:
+def _http_message(code: int, group_id: int, ordinal: int, variable: str) -> str:
     if code == 401:
         return (
-            f"Narrata rejected the token (HTTP 401); {TOKEN_VARIABLE} is missing "
-            "or expired, login tokens last 24 h"
+            f"Narrata rejected the token (HTTP 401); {variable} is expired or "
+            f"revoked, {_MINT_HINT} and replace it"
         )
     if code == 404:
         return (
             f"Narrata has no session {ordinal} in group {group_id} for this token "
-            "(HTTP 404); check narrata.groups and that the token belongs to the "
-            "group's active game master"
+            f"(HTTP 404); check narrata.groups, that {variable} was created for "
+            "this group and that its game master is still active"
         )
     if code == 422:
         return "Narrata rejected the request parameters (HTTP 422)"

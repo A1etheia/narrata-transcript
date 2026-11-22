@@ -9,12 +9,16 @@ from pathlib import Path
 
 from transcript.narrata_client import (
     NarrataClientError,
+    Token,
     context_url,
     fetch_context,
     read_token,
+    token_variable,
 )
 
 TOKEN = "12|made-up-token"  # stands in for a real token that must not leak
+GROUP = "beispielgruppe"
+VARIABLE = "NARRATA_TOKEN_BEISPIELGRUPPE"
 
 
 class ReadTokenTest(unittest.TestCase):
@@ -26,50 +30,93 @@ class ReadTokenTest(unittest.TestCase):
     def write(self, text: str) -> None:
         self.dotenv.write_text(text, encoding="utf-8")
 
-    def assert_fails(self, expected: str, environ: dict[str, str]) -> None:
+    def read(self, environ: dict[str, str]) -> Token:
+        return read_token(environ, self.dotenv, GROUP)
+
+    def assert_fails(self, environ: dict[str, str], *expected: str) -> None:
         with self.assertRaises(NarrataClientError) as caught:
-            read_token(environ, self.dotenv)
-        self.assertIn(expected, str(caught.exception))
+            self.read(environ)
+        for part in expected:
+            self.assertIn(part, str(caught.exception))
         self.assertNotIn("made-up", str(caught.exception))
 
-    def test_environment_wins_over_dotenv(self) -> None:
-        self.write("NARRATA_TOKEN=from-file\n")
+    def test_variable_is_named_after_the_group(self) -> None:
+        self.assertEqual(token_variable(GROUP), VARIABLE)
+        self.assertEqual(token_variable("runde-2"), "NARRATA_TOKEN_RUNDE_2")
 
-        self.assertEqual(read_token({"NARRATA_TOKEN": TOKEN}, self.dotenv), TOKEN)
+    def test_environment_wins_over_dotenv(self) -> None:
+        self.write(f"{VARIABLE}=from-file\n")
+
+        self.assertEqual(self.read({VARIABLE: TOKEN}), Token(VARIABLE, TOKEN))
+
+    def test_environment_alone_needs_no_readable_dotenv(self) -> None:
+        self.write("not a pair\n")
+
+        self.assertEqual(self.read({VARIABLE: TOKEN}).value, TOKEN)
 
     def test_dotenv_is_read_when_the_environment_has_none(self) -> None:
         for text in (
-            f"NARRATA_TOKEN={TOKEN}\n",
-            f"# comment\n\nOTHER=x\nexport NARRATA_TOKEN = {TOKEN}  \n",
-            f'NARRATA_TOKEN="{TOKEN}"\n',
-            f"NARRATA_TOKEN='{TOKEN}'\n",
+            f"{VARIABLE}={TOKEN}\n",
+            f"# comment\n\nOTHER=x\nexport {VARIABLE} = {TOKEN}  \n",
+            f'{VARIABLE}="{TOKEN}"\n',
+            f"{VARIABLE}='{TOKEN}'\n",
         ):
             with self.subTest(text=text):
                 self.write(text)
 
-                self.assertEqual(read_token({"NARRATA_TOKEN": ""}, self.dotenv), TOKEN)
+                self.assertEqual(self.read({VARIABLE: ""}).value, TOKEN)
 
-    def test_missing_token_points_to_the_example(self) -> None:
-        for text in (None, "NARRATA_TOKEN=\n", "OTHER=x\n"):
+    def test_another_groups_token_is_not_taken(self) -> None:
+        self.write(f"NARRATA_TOKEN_ANDERE_RUNDE={TOKEN}\n")
+
+        self.assert_fails({}, f"{VARIABLE} is not set")
+
+    def test_missing_token_points_to_narrata_and_the_example(self) -> None:
+        for text in (None, f"{VARIABLE}=\n", "OTHER=x\n"):
             with self.subTest(text=text):
                 if text is not None:
                     self.write(text)
 
-                self.assert_fails("NARRATA_TOKEN is not set", {})
-                self.assert_fails(".env.example", {})
+                self.assert_fails(
+                    {},
+                    f"{VARIABLE} is not set",
+                    "create a pipeline token",
+                    ".env.example",
+                )
+
+    def test_legacy_variable_is_named_but_not_used(self) -> None:
+        for environ, text in (
+            ({"NARRATA_TOKEN": TOKEN}, None),
+            ({}, f"NARRATA_TOKEN={TOKEN}\n"),
+        ):
+            with self.subTest(environ=environ, text=text):
+                if text is not None:
+                    self.write(text)
+
+                self.assert_fails(
+                    environ,
+                    "NARRATA_TOKEN is no longer read",
+                    f"store it as {VARIABLE}",
+                )
+
+    def test_value_stays_out_of_the_repr(self) -> None:
+        token = Token(VARIABLE, TOKEN)
+
+        self.assertIn(VARIABLE, repr(token))
+        self.assertNotIn("made-up", repr(token))
 
     def test_malformed_line_is_named_by_number_only(self) -> None:
         self.write(f"OTHER=x\n{TOKEN}\n")
 
-        self.assert_fails("line 2 is not KEY=VALUE", {})
+        self.assert_fails({}, "line 2 is not KEY=VALUE")
 
     def test_example_file_holds_no_token(self) -> None:
         example = Path(__file__).resolve().parent.parent / ".env.example"
 
         with self.assertRaises(NarrataClientError) as caught:
-            read_token({}, example)
+            read_token({}, example, GROUP)
 
-        self.assertIn("NARRATA_TOKEN is not set", str(caught.exception))
+        self.assertIn(f"{VARIABLE} is not set", str(caught.exception))
 
 
 class FakeNarrata(http.server.ThreadingHTTPServer):
@@ -127,7 +174,8 @@ class FetchContextTest(unittest.TestCase):
             "archive_limit": 500,
             **kwargs,
         }
-        return fetch_context(group_id=12, ordinal=42, token=TOKEN, **options)
+        token = Token(VARIABLE, TOKEN)
+        return fetch_context(group_id=12, ordinal=42, token=token, **options)
 
     def assert_fails(self, expected: str, **kwargs: object) -> str:
         with (
@@ -168,8 +216,9 @@ class FetchContextTest(unittest.TestCase):
 
     def test_status_codes_get_their_own_message(self) -> None:
         for status, expected in (
-            (401, "NARRATA_TOKEN is missing or expired"),
+            (401, f"{VARIABLE} is expired or revoked, create a pipeline token"),
             (404, "no session 42 in group 12"),
+            (404, f"{VARIABLE} was created for this group"),
             (422, "rejected the request parameters"),
             (500, "Narrata answered HTTP 500"),
             (503, "Narrata answered HTTP 503"),
