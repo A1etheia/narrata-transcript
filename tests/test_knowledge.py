@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from typing import Any
 
+from test_glossary import glossary
 from test_narrata import (
     CHARACTER,
     NAME,
@@ -22,10 +23,17 @@ from transcript.knowledge import (
     _snapshot_id,
     build_snapshot,
     drift,
+    knowledge_entries,
     load_snapshot,
     select_keywords,
 )
-from transcript.narrata import GlossaryEntry, Relevance, SessionTerm, store_context
+from transcript.narrata import (
+    SESSION_TERM,
+    GlossaryEntry,
+    Relevance,
+    SessionTerm,
+    store_context,
+)
 from transcript.session import SessionKey, SessionPaths
 
 # Every name below is made up.
@@ -85,6 +93,56 @@ class SelectKeywordsTest(unittest.TestCase):
         ]
 
         self.assertEqual(select_keywords(entries, {"person": 9, "lore": 0}), ())
+
+
+class KnowledgeEntriesTest(unittest.TestCase):
+    def test_free_terms_stand_behind_the_session_tier(self) -> None:
+        known = glossary(
+            entry(7, "pc"),
+            entry(5, "session"),
+            entry(9, "recent"),
+            entry(8, "archive"),
+            terms=(SessionTerm(NEW_TERM, (NEW_VARIANT,)), SessionTerm("Zarvok", ())),
+        )
+
+        entries = knowledge_entries(known)
+
+        self.assertEqual(
+            [e.ref for e in entries],
+            [
+                ("person", 7),
+                ("person", 5),
+                (SESSION_TERM, 1),
+                (SESSION_TERM, 2),
+                ("person", 9),
+                ("person", 8),
+            ],
+        )
+        self.assertEqual(
+            entries[2],
+            GlossaryEntry(
+                SESSION_TERM, 1, NEW_TERM, (), (NEW_VARIANT,), None, "session"
+            ),
+        )
+
+    def test_without_free_terms_the_entries_are_narratas(self) -> None:
+        known = glossary(entry(5, "recent"), entry(7, "pc"))
+
+        self.assertIs(knowledge_entries(known), known.entries)
+
+    def test_free_terms_are_always_keywords_and_use_no_budget(self) -> None:
+        known = glossary(
+            entry(5, "session"),
+            entry(9, "recent"),
+            terms=(SessionTerm(NEW_TERM, ()), SessionTerm("Zarvok", ())),
+        )
+
+        chosen = select_keywords(knowledge_entries(known), {"person": 1})
+
+        self.assertEqual(
+            [e.ref for e in chosen],
+            [("person", 5), (SESSION_TERM, 1), (SESSION_TERM, 2)],
+        )
 
 
 class SnapshotTest(unittest.TestCase):
@@ -179,6 +237,11 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(
             snapshot.glossary.session_terms,
             (SessionTerm(NEW_TERM, (NEW_VARIANT,)), SessionTerm("Zarvok", ())),
+        )
+        # behind the session entry, ahead of the recent one the budget leaves out
+        self.assertEqual(
+            [e.ref for e in snapshot.keyword_entries],
+            [("person", 7), ("place", 5), (SESSION_TERM, 1), (SESSION_TERM, 2)],
         )
         self.assertEqual(load_snapshot(self.paths), snapshot)
 

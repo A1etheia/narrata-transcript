@@ -4,6 +4,10 @@ Pipeline steps ask a `DomainContext`, never Narrata, the raw context or the
 snapshot file. `from_snapshot` is the only code that knows the snapshot's shape;
 another source of knowledge needs another factory, not new consumers.
 
+The entries hold the free session terms too (contract 1.4, see
+`knowledge.knowledge_entries`), so their misrecognitions point review hints at
+them like those of archive entries.
+
 Every query returns Narrata's spelling and changes neither knowledge nor
 transcript text. A term several entries share returns all of them: the context
 never decides which one is meant. It holds real names, so it logs nothing.
@@ -20,7 +24,12 @@ from transcript.glossary import (
     keyword_terms,
     normalize,
 )
-from transcript.knowledge import KEYWORD_TIERS, Snapshot, load_snapshot
+from transcript.knowledge import (
+    KEYWORD_TIERS,
+    Snapshot,
+    knowledge_entries,
+    load_snapshot,
+)
 from transcript.narrata import (
     Character,
     EntryRef,
@@ -65,10 +74,10 @@ class DomainContext:
     ) -> None:
         self.origin = origin
         self.participants = tuple(participants)
-        self.entries = glossary.entries  # Narrata's order, nearest tier first
+        self.entries = knowledge_entries(glossary)  # nearest tier first
         self.ambiguities = glossary.ambiguities
         self._ambiguous = frozenset(normalize(a.variant) for a in self.ambiguities)
-        self._index = GlossaryIndex(glossary)
+        self._index = GlossaryIndex(self.entries)
         self._entries = {entry.ref: entry for entry in self.entries}
         self._keyword_refs = frozenset(keyword_refs)
         self._keywords = tuple(e for e in self.entries if e.ref in self._keyword_refs)

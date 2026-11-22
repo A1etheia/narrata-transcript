@@ -67,6 +67,13 @@ Narrata liefert ab Kontext 1.4 `session_terms`. Das sind Namen, die die Pflegend
   - `VARIANT_TYPES` bleibt ohne `session_term`.
 - Verify: `scripts/check`
 - AC: `transcription_keywords()` enthält die Begriffe zwischen `session` und `recent`, ohne ihre `asr_variants` (AC 1, Smoke-Test mit dem Fake-Backend prüft die übergebenen Keywords). Eine `asr_variant` eines freien Begriffs erzeugt einen `known_variant`-Hinweis. Eine geteilte Variante wird `ambiguous`. Ohne `session_terms` sind Keywords und Hinweise unverändert (AC 2).
+- Nachtrag nach der Umsetzung (Ergebnis von `/simplify`):
+  - Das Einreihen der Begriffe und die Regel, dass sie immer Keywords sind, liegen in `knowledge.py` (`session_term_entries`, `knowledge_entries`, `select_keywords`), nicht in `domain.py`. So enthält `snapshot.keyword_entries` die Begriffe auch, und die Keyword-Wahl steht an einer Stelle. `DomainContext` liest nur `knowledge_entries`.
+  - `knowledge_entries` sortiert stabil nach `RELEVANCE_TIERS`, statt die Stufen ein zweites Mal aufzuzählen. Ohne Begriffe gibt die Funktion Narratas Einträge unverändert zurück.
+  - Freie Begriffe tragen im Snapshot kein `keyword`-Flag. `load_snapshot` nimmt sie immer in `keyword_entries` auf, wie `select_keywords`.
+  - `GlossaryIndex` nimmt Einträge statt eines `NarrataGlossary`. `snapshot` meldet `N session term(s)` auch in der Keyword-Zeile.
+  - Zusätzlich geändert: `src/transcript/knowledge.py`, `src/transcript/glossary.py`, `src/transcript/variant_suggestions.py` (nur die Typangabe von `OtherName`), `src/transcript/__main__.py`, `tests/test_glossary.py`, `tests/test_knowledge.py`.
+  - Nicht umgesetzt: den Typ `session_term` aus `narrata.py` herausziehen. Dafür bräuchte es eine zweite Eintragsklasse neben `GlossaryEntry`, also genau den zweiten Codepfad, den die Entscheidung vermeidet.
 
 ### Chunk 3 — Doku und Probe an einer echten Sitzung
 - Dateien: `README.md` (Abschnitt Wissen/Kontext), `docs/transcript-roadmap.py` und die daraus generierte `.md` (TOOL-81 als erledigt nachziehen)

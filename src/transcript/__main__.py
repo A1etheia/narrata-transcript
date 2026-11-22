@@ -617,6 +617,7 @@ def _snapshot(raw_key: str, config_path: Path, refresh: bool) -> int:
     )
     print(
         f"  {len(snapshot.keyword_entries)} keyword entries: {pc} pc, "
+        f"{budgeted[narrata.SESSION_TERM]} session term(s), "
         + ", ".join(
             f"{budgeted[t]}/{snapshot.keyword_budget.get(t, 0)} {t}"
             for t in narrata.ENTRY_TYPES

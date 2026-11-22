@@ -86,9 +86,14 @@ EntryType = Literal["place", "person", "artifact", "organisation", "event", "lor
 ENTRY_TYPES: tuple[EntryType, ...] = get_args(EntryType)
 # Narrata keeps aliases and misrecognitions on these only, never on events
 VARIANT_TYPES: tuple[EntryType, ...] = tuple(t for t in ENTRY_TYPES if t != "event")
+# A free session term in the pipeline's knowledge (see `domain`); Narrata's
+# glossary never delivers this type, so it is not in `ENTRY_TYPES`.
+KnowledgeType = Literal[EntryType, "session_term"]
+KNOWLEDGE_TYPES: tuple[KnowledgeType, ...] = get_args(KnowledgeType)
+SESSION_TERM: KnowledgeType = "session_term"
 Relevance = Literal["pc", "session", "recent", "archive"]
 RELEVANCE_TIERS: tuple[Relevance, ...] = get_args(Relevance)  # nearest first
-EntryRef = tuple[EntryType, int | str]  # unique within a glossary
+EntryRef = tuple[KnowledgeType, int | str]  # unique within a glossary
 
 
 @dataclass(frozen=True)
@@ -96,9 +101,11 @@ class GlossaryEntry:
     """One world-archive entry; strings keep Narrata's spelling unchanged.
 
     `asr_variants` are known misrecognitions of the name, kept by the GM.
+    Parsed from Narrata, `type` is one of `ENTRY_TYPES`; only `domain` makes
+    entries of type `SESSION_TERM`.
     """
 
-    type: EntryType
+    type: KnowledgeType
     id: int | str
     name: str
     aliases: tuple[str, ...]

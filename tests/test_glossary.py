@@ -3,7 +3,13 @@ import unittest
 from pathlib import Path
 
 from transcript.glossary import GlossaryIndex, Match, keyword_terms, normalize
-from transcript.narrata import Ambiguity, GlossaryEntry, NarrataGlossary, Relevance
+from transcript.narrata import (
+    Ambiguity,
+    GlossaryEntry,
+    NarrataGlossary,
+    Relevance,
+    SessionTerm,
+)
 
 # Every name below is made up.
 
@@ -28,17 +34,19 @@ def entry(
 
 
 def glossary(
-    *entries: GlossaryEntry, ambiguities: tuple[Ambiguity, ...] = ()
+    *entries: GlossaryEntry,
+    ambiguities: tuple[Ambiguity, ...] = (),
+    terms: tuple[SessionTerm, ...] = (),
 ) -> NarrataGlossary:
     return NarrataGlossary(
         source=Path("ctx.json"),
-        contract_version="1.1",
+        contract_version="1.4" if terms else "1.1",
         play_session_id=4711,
         entries=entries,
         archive_total=0,
         archive_returned=0,
         ambiguities=ambiguities,
-        session_terms=(),
+        session_terms=terms,
     )
 
 
@@ -74,7 +82,7 @@ class NormalizeTest(unittest.TestCase):
 class GlossaryIndexTest(unittest.TestCase):
     def test_finds_by_name_alias_and_variant_with_the_kind(self) -> None:
         place = entry("Grauwasser", "Grauwassr", variants=("Grau Wasser",))
-        index = GlossaryIndex(glossary(place))
+        index = GlossaryIndex(glossary(place).entries)
 
         self.assertEqual(
             index.lookup("grauwasser"), (Match(place, "name", "name", "Grauwasser"),)
@@ -92,7 +100,7 @@ class GlossaryIndexTest(unittest.TestCase):
         composed = entry("Mühlbräu", entry_id=1)
         fantasy = entry("Ærwyn Þornfeld", "Ka'ran-Dûl", entry_id=2)
         kanji = entry("雪の門", entry_id=3)
-        index = GlossaryIndex(glossary(composed, fantasy, kanji))
+        index = GlossaryIndex(glossary(composed, fantasy, kanji).entries)
 
         self.assertEqual(
             index.lookup(unicodedata.normalize("NFD", "MÜHLBRÄU")),
@@ -110,7 +118,7 @@ class GlossaryIndexTest(unittest.TestCase):
         first = entry("Brakk", entry_id=1, relevance="pc")
         second = entry("Brakkenfels", "brakk", entry_id=2)
         third = entry("Ödland", variants=("Brakk",), entry_id=3)
-        index = GlossaryIndex(glossary(first, second, third))
+        index = GlossaryIndex(glossary(first, second, third).entries)
 
         self.assertEqual(
             index.lookup("Brakk"),
@@ -125,16 +133,16 @@ class GlossaryIndexTest(unittest.TestCase):
         place = entry("Grauwasser", "GRAUWASSER", variants=("grauwasser",))
 
         self.assertEqual(
-            GlossaryIndex(glossary(place)).lookup("Grauwasser"),
+            GlossaryIndex(glossary(place).entries).lookup("Grauwasser"),
             (Match(place, "name", "name", "Grauwasser"),),
         )
 
     def test_unknown_and_blank_terms_find_nothing(self) -> None:
-        index = GlossaryIndex(glossary(entry("Grauwasser", " ")))
+        index = GlossaryIndex(glossary(entry("Grauwasser", " ")).entries)
 
         self.assertEqual(index.lookup("Nebelsee"), ())
         self.assertEqual(index.lookup(" "), ())
-        self.assertEqual(GlossaryIndex(glossary()).lookup("Grauwasser"), ())
+        self.assertEqual(GlossaryIndex(()).lookup("Grauwasser"), ())
 
 
 class KeywordTermsTest(unittest.TestCase):
