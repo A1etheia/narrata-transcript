@@ -393,6 +393,38 @@ class SnapshotTest(unittest.TestCase):
         )
         self.assertEqual((former.user_id, former.is_former), (4, True))
 
+    def test_attendance_survives_the_snapshot(self) -> None:
+        self.store(
+            participants=[
+                participant_json(user_id=1, present=True),
+                participant_json(user_id=2, present=False),
+                participant_json(user_id=3, present=None),
+            ]
+        )
+        self.build()
+
+        loaded = load_snapshot(self.paths).participants
+
+        self.assertEqual([p.present for p in loaded], [True, False, None])
+
+    def test_unknown_attendance_is_left_out_of_the_file(self) -> None:
+        # a snapshot before TOOL-79 has the same content, so the same snapshot_id
+        self.store(
+            participants=[
+                participant_json(user_id=1),
+                participant_json(user_id=2, present=None),
+                participant_json(user_id=3, present=False),
+            ]
+        )
+        self.build()
+
+        stored = json.loads(self.paths.knowledge_snapshot.read_text("utf-8"))
+
+        self.assertEqual(
+            [p.get("present", "left out") for p in stored["participants"]],
+            ["left out", "left out", False],
+        )
+
     def test_resigned_snapshot_with_invalid_content_names_the_field(self) -> None:
         self.store(glossary=[glossary_entry(id=5, name=MARKER)], asr_ambiguities=[])
         self.build()

@@ -62,7 +62,12 @@ class Character:
 
 @dataclass(frozen=True)
 class Participant:
-    """One group membership; `present` is None while Narrata keeps no attendance."""
+    """One group membership.
+
+    `present` is the attendance the GM entered for the session (context 1.3,
+    IOA-1271); None means unknown, never absent, and is all a context before
+    1.3 gives.
+    """
 
     user_id: int | str
     display_name: str
@@ -294,6 +299,9 @@ def _participant(entry: Any, where: str, path: Path) -> Participant:
     is_former = entry.get("is_former")
     if not isinstance(is_former, bool):
         raise _invalid(path, f"{where}.is_former")
+    present = entry.get("present")  # absent before contract 1.3
+    if present is not None and not isinstance(present, bool):
+        raise _invalid(path, f"{where}.present")
     characters = _optional_list(entry, "characters", f"{where}.characters", path)
     return Participant(
         user_id=user_id,
@@ -304,6 +312,7 @@ def _participant(entry: Any, where: str, path: Path) -> Participant:
             _character(character, f"{where}.characters[{index}]", path)
             for index, character in enumerate(characters)
         ),
+        present=present,
     )
 
 

@@ -471,7 +471,10 @@ class ContextCommandTest(unittest.TestCase):
         self.assertIn(
             "beispielgruppe/042: play session 4711, 2026-10-30, contract 1.1", stdout
         )
-        self.assertIn("  1 participant(s) (0 gm, 0 former), 0 character(s)\n", stdout)
+        self.assertIn(
+            "  1 participant(s) (0 gm, 0 former, 0 present, 0 absent), 0 character(s)\n",
+            stdout,
+        )
         self.assertIn(
             "  0 glossary entries (0 pc, 0 session, 0 recent, 0 archive), "
             "archive tier 0 of 0, 0 asr ambiguities, 0 session term(s)",
@@ -506,9 +509,10 @@ class ContextCommandTest(unittest.TestCase):
         self.narrata.body = encoded(
             context(
                 participants=[
-                    participant(user_id=7, role="gm"),
+                    participant(user_id=7, role="gm", present=True),
                     participant(
                         is_former=True,
+                        present=False,
                         characters=[
                             {"person_id": 18, "name": CHARACTER, "aliases": []},
                             {"person_id": 19, "name": "Ilse Erdacht", "aliases": []},
@@ -521,7 +525,10 @@ class ContextCommandTest(unittest.TestCase):
         code, stdout, stderr = self.context()
 
         self.assertEqual(code, 0, stderr)
-        self.assertIn("2 participant(s) (1 gm, 1 former), 2 character(s)", stdout)
+        self.assertIn(
+            "2 participant(s) (1 gm, 1 former, 1 present, 1 absent), 2 character(s)",
+            stdout,
+        )
         self.assertNotIn(NAME, stdout + stderr)
         self.assertNotIn(CHARACTER, stdout + stderr)
 
