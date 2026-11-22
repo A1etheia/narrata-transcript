@@ -12,6 +12,7 @@ from transcript.narrata import (
     GlossaryEntry,
     NarrataContextError,
     Participant,
+    SessionTerm,
     check_contract,
     read_glossary,
     read_participants,
@@ -27,6 +28,8 @@ PLACE = "Grauwasser"
 ALIAS = "Grauwassr"
 VARIANT = "Grau Wasser"  # a made-up misrecognition of PLACE
 SUMMARY = "Hafenstadt am Nebelsee"
+NEW_TERM = "Velmira Dornquell"  # a free session term, not yet in the archive
+NEW_VARIANT = "Wellmira"  # a made-up misrecognition of NEW_TERM
 ABSENT = object()  # leaves a block out of the context
 
 
@@ -405,6 +408,35 @@ class GlossaryTest(unittest.TestCase):
 
         self.assertEqual(read_glossary(self.paths).ambiguities, ())
 
+    def test_session_terms_keep_order_spelling_and_variants(self) -> None:
+        data = context("1.4")
+        data["glossary"] = [glossary_entry()]
+        data["session_terms"] = [
+            {"term": NEW_TERM, "asr_variants": [NEW_VARIANT]},
+            {"term": "Ölgrund", "asr_variants": [], "later_minor": True},
+            {"term": "Zarvok"},
+        ]
+        store_context(self.paths, encoded(data))
+
+        self.assertEqual(
+            read_glossary(self.paths).session_terms,
+            (
+                SessionTerm(NEW_TERM, (NEW_VARIANT,)),
+                SessionTerm("Ölgrund", ()),
+                SessionTerm("Zarvok", ()),
+            ),
+        )
+
+    def test_missing_or_null_session_terms_are_empty(self) -> None:
+        for terms in (ABSENT, None, []):
+            with self.subTest(terms=terms):
+                data = context("1.3")
+                if terms is not ABSENT:
+                    data["session_terms"] = terms
+                store_context(self.paths, encoded(data))
+
+                self.assertEqual(read_glossary(self.paths).session_terms, ())
+
     def test_same_id_of_another_type_is_a_different_entry(self) -> None:
         self.store([glossary_entry(), glossary_entry(type="person")])
 
@@ -512,6 +544,15 @@ class GlossaryTest(unittest.TestCase):
                 {"ambiguities": [{**ambiguity, "entries": [place, place]}]},
                 "asr_ambiguities[0].entries must name two or more distinct",
             ),
+            ([], {"terms": {"term": PLACE}}, "session_terms missing or invalid"),
+            ([], {"terms": [PLACE]}, "session_terms[0] is not an object"),
+            ([], {"terms": [{"term": " "}]}, "session_terms[0].term missing"),
+            ([], {"terms": [{"term": ["x"]}]}, "session_terms[0].term missing"),
+            (
+                [],
+                {"terms": [{"term": PLACE}, {"term": PLACE, "asr_variants": [1]}]},
+                "session_terms[1].asr_variants missing or invalid",
+            ),
         ):
             with self.subTest(expected=expected):
                 data = context()
@@ -522,6 +563,8 @@ class GlossaryTest(unittest.TestCase):
                     data["glossary_meta"] = values["meta"]
                 if "ambiguities" in values:
                     data["asr_ambiguities"] = values["ambiguities"]
+                if "terms" in values:
+                    data["session_terms"] = values["terms"]
                 with self.assertRaises(NarrataContextError) as caught:
                     store_context(self.paths, encoded(data))
 

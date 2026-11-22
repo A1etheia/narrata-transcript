@@ -18,7 +18,7 @@ Narrata liefert ab Kontext 1.4 `session_terms`. Das sind Namen, die die Pflegend
 - **Kein Budget pro Typ für freie Begriffe.** Wie `pc` sind sie immer Keywords. Die Liste ist klein und von Hand gepflegt. Die Hotword-Grenze von 223 Tokens schneidet weiter von hinten, also bei `recent`.
 - **Mehrdeutigkeit:** `asr_ambiguities` bleibt Narratas Angabe. Trifft eine Variante einen freien Begriff und einen Archiv-Eintrag, hat der Hinweis zwei Kandidaten und gilt deshalb schon jetzt als `ambiguous` (`hints.py:236`).
 - **Variantenvorschläge (TOOL-80) nur für Archiv-Einträge.** `session_term` gehört nicht zu `VARIANT_TYPES`. Ein freier Begriff wird über die Extraktion zum Eintrag, und erst dann hat ein Vorschlag ein Ziel in Narrata.
-- **Snapshot ohne Begriffe bleibt bytegleich.** Der Schlüssel `session_terms` wird nur geschrieben, wenn die Liste nicht leer ist. So behält ein 1.3-Kontext oder ein 1.4-Kontext ohne Begriffe beim Refresh dieselbe `snapshot_id`, und es gibt keine Neutranskription (AC 2).
+- **Snapshot ohne Begriffe bleibt bytegleich.** Der Schlüssel `session_terms` wird nur geschrieben, wenn die Liste nicht leer ist. So behält ein unveränderter Kontext ohne Begriffe beim Refresh dieselbe `snapshot_id`, und es gibt keine Neutranskription (AC 2). Ein neu abgerufener 1.4-Kontext bekommt dagegen immer eine neue Kennung, weil `source.contract_version` und `source.sha256` in den Hash eingehen. Das galt schon vor diesem Ticket für jede Änderung am Kontext.
 - **Diagnose (`diagnosis.py`) bleibt bei Narratas Glossar.** Ihre Befunde verweisen auf Glossar-Positionen.
 
 ## Daten-Check
@@ -55,6 +55,9 @@ Narrata liefert ab Kontext 1.4 `session_terms`. Das sind Namen, die die Pflegend
   - Die Konsole zeigt nur die Zahl der freien Begriffe.
 - Verify: `scripts/check`
 - AC: Ein 1.4-Kontext mit Begriffen landet im Snapshot. Ein 1.3-Kontext ergibt denselben Snapshot-Inhalt wie vor der Änderung. Ungültige Einträge werden mit ihrer Position gemeldet, ohne Wert.
+- Nachtrag nach der Umsetzung:
+  - Die Bytegleichheit gilt nur für einen unveränderten Kontext. Der Test prüft deshalb, dass ein Snapshot ohne Begriffe genau die Schlüssel von vorher hat, nicht, dass ein 1.4-Kontext mit leerer Liste dieselbe Kennung behält.
+  - Zusätzlich geändert: `tests/test_smoke.py`. `context` und `snapshot` melden jetzt auch `N session term(s)`.
 
 ### Chunk 2 — Biasing und Review-Zuordnung
 - Dateien: `src/transcript/narrata.py` (`SESSION_TERM`, `CANDIDATE_TYPES`), `src/transcript/domain.py`, `src/transcript/hints.py`, `tests/test_domain.py`, `tests/test_hints.py`, `tests/test_smoke.py`

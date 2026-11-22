@@ -538,7 +538,7 @@ def _context(raw_key: str, config_path: Path, from_file: Path | None) -> int:
     print(
         f"  {_tier_summary(glossary)}, "
         f"archive tier {glossary.archive_returned} of {glossary.archive_total}, "
-        f"{len(glossary.ambiguities)} asr ambiguities"
+        f"{_beside_glossary(glossary)}"
     )
     print(f"wrote {paths.narrata_context}")
     _warn_if_snapshot_differs(paths, config)
@@ -557,6 +557,14 @@ def _warn_if_snapshot_differs(paths: SessionPaths, config: Config) -> None:
         return
     if changed.context_changed:
         print(_SNAPSHOT_BEHIND, file=sys.stderr)
+
+
+def _beside_glossary(glossary: narrata.NarrataGlossary) -> str:
+    """The counts of the blocks next to the glossary entries."""
+    return (
+        f"{len(glossary.ambiguities)} asr ambiguities, "
+        f"{len(glossary.session_terms)} session term(s)"
+    )
 
 
 def _tier_summary(glossary: narrata.NarrataGlossary) -> str:
@@ -605,7 +613,7 @@ def _snapshot(raw_key: str, config_path: Path, refresh: bool) -> int:
     )
     print(
         f"  {len(snapshot.participants)} participant(s), {_tier_summary(glossary)}, "
-        f"{len(glossary.ambiguities)} asr ambiguities"
+        f"{_beside_glossary(glossary)}"
     )
     print(
         f"  {len(snapshot.keyword_entries)} keyword entries: {pc} pc, "

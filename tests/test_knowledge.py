@@ -5,7 +5,15 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from test_narrata import CHARACTER, NAME, context, encoded, glossary_entry
+from test_narrata import (
+    CHARACTER,
+    NAME,
+    NEW_TERM,
+    NEW_VARIANT,
+    context,
+    encoded,
+    glossary_entry,
+)
 from test_narrata import participant as participant_json
 
 from transcript.jsonfile import DataFileError
@@ -17,7 +25,7 @@ from transcript.knowledge import (
     load_snapshot,
     select_keywords,
 )
-from transcript.narrata import GlossaryEntry, Relevance, store_context
+from transcript.narrata import GlossaryEntry, Relevance, SessionTerm, store_context
 from transcript.session import SessionKey, SessionPaths
 
 # Every name below is made up.
@@ -31,6 +39,7 @@ BUDGET = {
     "lore": 0,
 }
 NOW = datetime.datetime(2026, 11, 5, 20, 0, tzinfo=datetime.timezone.utc)
+TERMS = [{"term": NEW_TERM, "asr_variants": [NEW_VARIANT]}, {"term": "Zarvok"}]
 
 
 def entry(
@@ -114,6 +123,9 @@ class SnapshotTest(unittest.TestCase):
     def build(self, budget: dict[str, int] = BUDGET) -> Any:
         return build_snapshot(self.paths, budget, now=NOW)
 
+    def stored_snapshot(self) -> dict[str, Any]:
+        return json.loads(self.paths.knowledge_snapshot.read_bytes())
+
     def test_snapshot_keeps_origin_reason_and_ids_of_every_entry(self) -> None:
         self.store()
 
@@ -158,6 +170,27 @@ class SnapshotTest(unittest.TestCase):
             [("Nebel", (("place", 6), ("place", 8)))],
         )
         self.assertEqual((glossary.archive_total, glossary.archive_returned), (40, 1))
+
+    def test_session_terms_survive_in_narrata_order(self) -> None:
+        self.store(contract_version="1.4", session_terms=TERMS)
+
+        snapshot = self.build()
+
+        self.assertEqual(
+            snapshot.glossary.session_terms,
+            (SessionTerm(NEW_TERM, (NEW_VARIANT,)), SessionTerm("Zarvok", ())),
+        )
+        self.assertEqual(load_snapshot(self.paths), snapshot)
+
+    def test_without_session_terms_the_snapshot_has_no_new_block(self) -> None:
+        # an unchanged context without terms keeps its snapshot_id, so no
+        # segment is transcribed again
+        for overrides in ({}, {"contract_version": "1.4", "session_terms": []}):
+            with self.subTest(overrides=overrides):
+                self.store(**overrides)
+                self.build()
+
+                self.assertNotIn("session_terms", self.stored_snapshot())
 
     def test_snapshot_reads_without_the_context_file(self) -> None:
         self.store()
@@ -317,6 +350,10 @@ class SnapshotTest(unittest.TestCase):
             (
                 lambda d: d.update(format_version=True),
                 "unsupported format_version",
+            ),
+            (
+                lambda d: d.update(session_terms=[{"term": MARKER}, {"term": ""}]),
+                "session_terms[1].term missing or invalid",
             ),
         ):
             with self.subTest(expected=expected):

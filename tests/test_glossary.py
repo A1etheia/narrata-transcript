@@ -38,6 +38,7 @@ def glossary(
         archive_total=0,
         archive_returned=0,
         ambiguities=ambiguities,
+        session_terms=(),
     )
 
 

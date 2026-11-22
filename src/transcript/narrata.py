@@ -2,8 +2,9 @@
 
 The raw endpoint response lies at `SessionPaths.narrata_context`. `store_context`
 is its only writer, whether the bytes come from the endpoint or from a local file.
-This module reads the `session`, `participants` and `glossary` blocks. Participants
-and glossary carry real names, so no message names a field's value.
+This module reads the `session`, `participants` and `glossary` blocks, the last
+together with `session_terms` (contract 1.4). Participants, glossary and session
+terms carry real names, so no message names a field's value.
 
 `parse_participants` and `parse_glossary` check one block of an already parsed
 object and name the given file in messages; the knowledge snapshot (TOOL-41) stores
@@ -119,8 +120,22 @@ class Ambiguity:
 
 
 @dataclass(frozen=True)
+class SessionTerm:
+    """A free term for this session only, not yet in the archive (contract 1.4).
+
+    It has no id and no tier, and Narrata's `asr_ambiguities` never count it.
+    """
+
+    term: str
+    asr_variants: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class NarrataGlossary:
-    """The glossary of one context file, in Narrata's tier order, with its origin."""
+    """The glossary of one context file, in Narrata's tier order, with its origin.
+
+    `session_terms` keep Narrata's order; before contract 1.4 there are none.
+    """
 
     source: Path
     contract_version: str
@@ -129,6 +144,7 @@ class NarrataGlossary:
     archive_total: int
     archive_returned: int
     ambiguities: tuple[Ambiguity, ...]
+    session_terms: tuple[SessionTerm, ...]
 
 
 def is_narrata_id(value: Any) -> bool:
@@ -298,7 +314,10 @@ def _character(entry: Any, where: str, path: Path) -> Character:
 def parse_glossary(
     data: dict[str, Any], path: Path, play_session_id: int | str
 ) -> NarrataGlossary:
-    """Check the glossary blocks; `asr_ambiguities` is absent before contract 1.1."""
+    """Check the glossary blocks.
+
+    `asr_ambiguities` is absent before contract 1.1, `session_terms` before 1.4.
+    """
     raw_entries = field(data, "glossary", list, path, NarrataContextError)
     entries = tuple(
         _glossary_entry(entry, f"glossary[{index}]", path)
@@ -316,6 +335,7 @@ def parse_glossary(
         raise _invalid(path, "glossary_meta.archive_returned")
     known = {(e.type, e.id) for e in entries}
     raw_ambiguities = _optional_list(data, "asr_ambiguities", "asr_ambiguities", path)
+    raw_terms = _optional_list(data, "session_terms", "session_terms", path)
     return NarrataGlossary(
         source=path,
         contract_version=data["contract_version"],
@@ -327,7 +347,19 @@ def parse_glossary(
             _ambiguity(entry, f"asr_ambiguities[{index}]", known, path)
             for index, entry in enumerate(raw_ambiguities)
         ),
+        session_terms=tuple(
+            _session_term(entry, f"session_terms[{index}]", path)
+            for index, entry in enumerate(raw_terms)
+        ),
     )
+
+
+def _session_term(entry: Any, where: str, path: Path) -> SessionTerm:
+    entry = _object(entry, where, path)
+    term = entry.get("term")
+    if not _is_text(term):
+        raise _invalid(path, f"{where}.term")
+    return SessionTerm(term, _strings(entry, "asr_variants", where, path))
 
 
 def _glossary_entry(entry: Any, where: str, path: Path) -> GlossaryEntry:

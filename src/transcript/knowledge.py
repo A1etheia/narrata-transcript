@@ -9,6 +9,8 @@ Relevance is Narrata's tier per glossary entry (ios-archiv docs/transcripts.md,
 are chosen: every `pc` entry, then `session` and `recent` entries in Narrata's
 order up to a budget per entry type. `archive` entries stay in the snapshot for
 matching but never become keywords. Ambiguities are kept as Narrata reports them.
+Free session terms (contract 1.4) are stored as Narrata delivers them, in a block
+that is left out when there are none.
 
 Every entry comes from the one context file named in `source`. The snapshot holds
 real names, so messages name the file and the field, never a value.
@@ -158,6 +160,12 @@ def build_snapshot(
             for ambiguity in glossary.ambiguities
         ],
     }
+    if glossary.session_terms:
+        # left out when empty, so a context without terms keeps its snapshot_id
+        content["session_terms"] = [
+            {"term": t.term, "asr_variants": list(t.asr_variants)}
+            for t in glossary.session_terms
+        ]
     write_atomic(
         paths.knowledge_snapshot,
         {

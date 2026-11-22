@@ -472,7 +472,7 @@ class ContextCommandTest(unittest.TestCase):
         self.assertIn("  1 participant(s) (0 gm, 0 former), 0 character(s)\n", stdout)
         self.assertIn(
             "  0 glossary entries (0 pc, 0 session, 0 recent, 0 archive), "
-            "archive tier 0 of 0, 0 asr ambiguities",
+            "archive tier 0 of 0, 0 asr ambiguities, 0 session term(s)",
             stdout,
         )
         self.assertIn(f"wrote {self.paths.narrata_context}", stdout)
@@ -557,7 +557,7 @@ class ContextCommandTest(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assertIn(
             "  3 glossary entries (1 pc, 1 session, 0 recent, 1 archive), "
-            "archive tier 1 of 40, 1 asr ambiguities",
+            "archive tier 1 of 40, 1 asr ambiguities, 0 session term(s)",
             stdout,
         )
         for value in (CHARACTER, PLACE, ALIAS, VARIANT, SUMMARY, "Nebelsee"):
@@ -678,7 +678,8 @@ class SnapshotCommandTest(unittest.TestCase):
         self.assertIn(f"beispielgruppe/042: snapshot {first} built, created ", stdout)
         self.assertIn(
             "  1 participant(s), 3 glossary entries "
-            "(1 pc, 1 session, 0 recent, 1 archive), 0 asr ambiguities",
+            "(1 pc, 1 session, 0 recent, 1 archive), 0 asr ambiguities, "
+            "0 session term(s)",
             stdout,
         )
         self.assertIn(
