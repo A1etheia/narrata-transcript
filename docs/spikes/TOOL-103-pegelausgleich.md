@@ -4,7 +4,7 @@ Stand 2026-11-23. Spike-Bericht zu [TOOL-103](../plans/TOOL-103-level-normalizat
 
 ## Zwischenstand
 
-Gemessen sind die fünf Kandidaten an allen fünf Referenzen. Der beste Kandidat nach der vorab festgelegten Regel ist `loud` ([Auswahl](#auswahl-des-besten-kandidaten)). Es fehlen noch: `loud` mit Hochpass, der Sprecherfehler, die Auslassungen je Sprecher und die Entscheidung Go oder No-Go.
+Gemessen sind die fünf Kandidaten an allen fünf Referenzen, dazu `loud` mit Hochpass, eine Kontrolle mit fester Verstärkung, der Sprecherfehler und die Auslassungen je Sprecher. Der beste Kandidat nach der vorab festgelegten Regel ist `loud` ([Auswahl](#auswahl-des-besten-kandidaten)). Es fehlt noch die Entscheidung Go oder No-Go.
 
 ## Material und Methode
 
@@ -23,7 +23,9 @@ Gemessen sind die fünf Kandidaten an allen fünf Referenzen. Der beste Kandidat
 - **Prüfstand ist `asr.py`.** Das Ticket nennt `denoise.py`, Seeds und Referenz C gibt es aber nur in `asr.py`. Die Kandidaten sind dort Basen mit Filterkette, also die Pipeline wie sie ist plus Filter.
 - **Zeitachse.** Jede Kette endet auf der Frame-Zahl des Manifests. `prepare` misst zusätzlich den Versatz der Hüllkurve gegen das Roh-WAV an drei Stellen und bricht über 10 ms ab.
 - **`loudnorm` zweistufig.** Der erste Durchgang misst die Aufnahme, der zweite bekommt die Messwerte. Beide Aufnahmen haben einen Lautheitsumfang über dem Zielwert (16,0 und 17,6 LU gegen 11 LU) und Spitzen über 0 dBTP. ffmpeg kann deshalb nicht mit fester Verstärkung arbeiten und regelt dynamisch.
-- **Abweichung vom Plan.** Der Plan hatte `loud` auch als Kontrolle mit fester Verstärkung vorgesehen. Das ist es nicht, die Verstärkung schwankt je Sekunde um rund 9 dB. Eine Kontrolle mit fester Verstärkung fehlt in dieser Messung.
+- **Abweichung vom Plan.** Der Plan hatte `loud` auch als Kontrolle mit fester Verstärkung vorgesehen. Das ist es nicht, die Verstärkung schwankt je Sekunde um rund 9 dB. Als Kontrolle kam deshalb `gain` dazu: 12 dB feste Verstärkung, ein Limiter fängt nur die Spitzen.
+- **Sprecherfehler.** Seed 1 von `base` und `loud` lief zusätzlich mit Diarisierung, bei `loud` auf dem gefilterten WAV. Die Diarisierung schneidet die Passagen neu. Die Spalten zur Bewertung dieser beiden Läufe gelten deshalb für den Stand davor.
+- **Auslassungen je Sprecher** über `omissions.py --variant`: VAD und Pegel aus dem WAV der Variante, Diarisierung der Sitzung. Die Summen je Seed stimmen mit `asr.py score` überein.
 - **Grenzen.** Je Referenz gibt es 369–909 Wörter und drei Seeds. An D und E gibt es keine Sprecher in der Auswertung, sie sind Gegenprobe für die WER.
 
 ## Kandidaten
@@ -38,6 +40,8 @@ Die Parameter standen vor der Messung fest (Plan). Verstärkung ist der Median d
 | `comp` | `acompressor=threshold=0.05:ratio=4:attack=5:release=200:makeup=4,alimiter=limit=0.95:level=false` | 8,9 dB (3,8 bis 12,0) | 11,5 dB (5,9 bis 12,1) | 5 ms | 6 s |
 | `loud` | `loudnorm=I=-16:TP=-1.5:LRA=11`, zweistufig | 12,6 dB (8,0 bis 17,0) | 15,6 dB (11,7 bis 19,4) | 0 ms | 295 s und 278 s |
 | `spn` | `speechnorm=e=12.5:r=0.0001:l=1` | 9,1 dB (3,8 bis 12,6) | 13,1 dB (8,3 bis 18,9) | 0 ms | 3 s |
+| `loud-hp` | `highpass=f=80` vor der Kette von `loud` | 12,5 dB (7,8 bis 16,5) | 14,7 dB (11,6 bis 18,1) | 0 ms | 284 s und 274 s |
+| `gain` | `volume=12dB,alimiter=limit=0.95:level=false` (Kontrolle) | 12,0 dB (9,8 bis 12,1) | 12,0 dB (11,7 bis 12,1) | 5 ms | 3 s |
 
 Kein gefiltertes WAV hat Samples am Vollausschlag. Messwerte des ersten `loudnorm`-Durchgangs:
 
@@ -94,6 +98,77 @@ Die Regel aus dem Plan: kleinstes Mittel der WER über A und B unter den Kandida
 | `spn` | 25,3 % | 15,7 | 16,0 | 15,8 | 0,4 % | ja |
 
 **Bester Kandidat ist `loud`.** Er hat das kleinste Mittel über A und B und ist zugleich an C der beste. Mit Hochpass wird deshalb `loud-hp` gemessen.
+
+### Hochpass und Kontrolle
+
+WER als Mittel über drei Seeds, in Klammern die Spanne, darunter die Auslassungen als Mittel.
+
+| Kandidat | A | B | C | D | E |
+| --- | --- | --- | --- | --- | --- |
+| `base` | 21,3 % (21,3–21,3) | 29,8 % (25,6–35,4) | 30,8 % (27,3–33,3) | 61,2 % (49,4–81,5) | 34,0 % (29,8–40,7) |
+| `loud` | 20,2 % (20,2–20,2) | 26,5 % (26,5–26,5) | 23,9 % (23,2–24,8) | 36,7 % (36,1–38,1) | 29,6 % (29,5–29,8) |
+| `loud-hp` | 18,5 % (18,5–18,5) | 35,4 % (30,2–38,3) | 25,5 % (24,9–26,7) | 43,7 % (37,4–56,1) | 30,4 % (29,3–32,2) |
+| `gain` | 29,6 % (18,8–50,5) | 29,3 % (25,9–31,1) | 28,8 % (26,8–31,0) | 39,9 % (38,1–43,4) | 31,4 % (31,4–31,4) |
+
+| Kandidat | A | B | C | D | E |
+| --- | --- | --- | --- | --- | --- |
+| `base` | 32,7 | 43,7 | 137,7 | 138,0 | 55,7 |
+| `loud` | 29,0 | 42,0 | 89,3 | 62,3 | 30,0 |
+| `loud-hp` | 31,0 | 66,0 | 96,7 | 70,0 | 38,0 |
+| `gain` | 29,3 | 53,7 | 119,0 | 77,0 | 43,0 |
+
+- **Der Hochpass bringt `loud` nichts.** An A ist `loud-hp` 1,7 Punkte besser, an B, C und D schlechter, und an B und D verliert es Blöcke, die `loud` behält (75 und 104 Auslassungen in einzelnen Seeds).
+- **Schon die feste Verstärkung holt den größten Teil des Gewinns an D.** `gain` fällt dort von 61,2 % auf 39,9 %, `loud` auf 36,7 %. An E liegt `gain` zwischen `base` und `loud`.
+- **An C kommt der Gewinn überwiegend vom Ausgleich.** `gain` gewinnt 2,0 Punkte, `loud` 6,9. Die Seeds von `gain` streuen dort wie die von `base`.
+- **`gain` ist nicht stabil.** An A hat ein Seed 123 Einfügungen (50,5 %), an B und D verliert je mindestens ein Seed einen Block.
+
+### Sprecherfehler
+
+Seed 1, Diarisierung bei `loud` auf dem gefilterten WAV. WDER nach bester 1:1-Zuordnung, in Klammern die bewerteten Wörter.
+
+| | Wörter ohne Label | WDER A | WDER B | WDER C | WDER D | WDER E | Übereinstimmung mit `base` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `base` Pilotsitzung | 6,8 % | 5,7 % (423) | 3,4 % (320) | — | 12,3 % (227) | 5,3 % (245) | 100,0 % |
+| `loud` Pilotsitzung | 7,3 % | 6,1 % (425) | 4,1 % (314) | — | 10,9 % (276) | 8,7 % (252) | 96,3 % |
+| `base` zweite Sitzung | 7,1 % | — | — | 4,7 % (684) | — | — | 100,0 % |
+| `loud` zweite Sitzung | 7,4 % | — | — | 4,1 % (677) | — | — | 96,1 % |
+
+Der Sprecherfehler bleibt im Rahmen: an A, B und E 0,4 bis 3,4 Punkte schlechter, an C und D 0,6 und 1,4 Punkte besser. Beide Sitzungen behalten vier Labels, der Anteil der Wörter ohne Label steigt um 0,3 bis 0,5 Punkte.
+
+### Auslassungen je Sprecher
+
+Auslassungen je Wort als Mittel über drei Seeds, in Klammern der Pegel zum lautesten Sprecher im gefilterten WAV. Die Sprecher sind nach Wortzahl nummeriert, Rang 1 ist an A und C nicht dieselbe Person. Der vierte Sprecher an A hat nur 4 Wörter und fehlt deshalb. „Grundgeräusch“ ist der Pegel außerhalb aller Turns.
+
+Referenz A:
+
+| Kandidat | Sprecher 1 (379 Wörter) | Sprecher 2 (103) | Sprecher 3 (45) | Grundgeräusch |
+| --- | --- | --- | --- | --- |
+| `base` | 3,7 % (−0,9 dB) | 7,8 % (−0,4 dB) | 19,3 % (0,0 dB) | −12,7 dB |
+| `dyn` | 12,3 % (−1,2 dB) | 8,7 % (−0,3 dB) | 23,0 % (0,0 dB) | −12,6 dB |
+| `dynx` | 5,7 % (−0,8 dB) | 9,7 % (0,0 dB) | 12,6 % (−0,3 dB) | −11,9 dB |
+| `comp` | 4,5 % (−0,9 dB) | 8,7 % (−0,6 dB) | 6,7 % (0,0 dB) | −11,2 dB |
+| `loud` | 4,0 % (−1,1 dB) | 7,8 % (−0,5 dB) | 8,9 % (0,0 dB) | −12,1 dB |
+| `spn` | 4,3 % (−1,4 dB) | 7,8 % (−0,3 dB) | 19,3 % (0,0 dB) | −11,2 dB |
+| `loud-hp` | 5,0 % (−1,0 dB) | 8,7 % (−0,7 dB) | 2,2 % (0,0 dB) | −12,4 dB |
+| `gain` | 4,7 % (−0,9 dB) | 6,8 % (−0,3 dB) | 5,9 % (0,0 dB) | −12,5 dB |
+
+Referenz C:
+
+| Kandidat | Sprecher 1 (346 Wörter) | Sprecher 2 (198) | Sprecher 3 (185) | Sprecher 4 (180) | Grundgeräusch |
+| --- | --- | --- | --- | --- | --- |
+| `base` | 15,2 % (0,0 dB) | 9,9 % (−4,6 dB) | 28,5 % (−0,2 dB) | 7,0 % (−3,2 dB) | −15,0 dB |
+| `dyn` | 16,4 % (0,0 dB) | 8,6 % (−4,1 dB) | 25,6 % (−1,3 dB) | 17,8 % (−1,9 dB) | −18,0 dB |
+| `dynx` | 17,4 % (−0,7 dB) | 8,8 % (−0,8 dB) | 20,4 % (0,0 dB) | 12,2 % (−0,9 dB) | −7,7 dB |
+| `comp` | 17,1 % (0,0 dB) | 10,4 % (−1,9 dB) | 21,6 % (−0,4 dB) | 15,6 % (−1,1 dB) | −13,0 dB |
+| `loud` | 7,1 % (0,0 dB) | 12,6 % (−2,6 dB) | 13,3 % (−0,4 dB) | 8,3 % (−2,3 dB) | −14,1 dB |
+| `spn` | 7,4 % (0,0 dB) | 8,1 % (−2,5 dB) | 22,2 % (−0,2 dB) | 7,6 % (−1,0 dB) | −17,0 dB |
+| `loud-hp` | 8,6 % (0,0 dB) | 8,1 % (−2,3 dB) | 21,1 % (−0,4 dB) | 6,7 % (−2,2 dB) | −15,2 dB |
+| `gain` | 10,4 % (0,0 dB) | 10,3 % (−4,3 dB) | 21,1 % (−0,8 dB) | 13,1 % (−3,1 dB) | −17,2 dB |
+
+- **Der Gewinn von `loud` an C liegt bei den lauten Sprechern, nicht bei den leisen.** Sprecher 1 und 3 fallen von 15,2 % auf 7,1 % und von 28,5 % auf 13,3 %. Die beiden leiseren Sprecher 2 und 4 werden leicht schlechter (9,9 % auf 12,6 %, 7,0 % auf 8,3 %).
+- **Wer die Sprecher am stärksten angleicht, gewinnt nichts.** `dynx` bringt alle vier an C auf 0,9 dB zusammen, hebt aber das Grundgeräusch um 7 dB und bleibt bei den Auslassungen auf dem Niveau von `base`. `loud` verkleinert den Abstand nur von 4,6 auf 2,6 dB.
+- **An A ändert sich nur der Sprecher mit den wenigsten Wörtern.** Die Sprecher liegen dort schon im Roh-WAV innerhalb von 0,9 dB. Sprecher 3 hat 45 Wörter, die Unterschiede sind 1 bis 11 Auslassungen je Seed.
+- **Der Befund aus TOOL-101 bestätigt sich:** Der Pegelabstand zwischen den Sprechern erklärt die Auslassungen nicht. `loud` hilft, indem es die Läufe stabilisiert und Blockverluste vermeidet ([Überblick](#überblick)).
 
 ## Messwerte
 
@@ -156,6 +231,17 @@ Die Tabellen stammen unverändert aus `asr.py score`. Weggelassen sind die Tabel
 | spn#2 | 33114 | 0,4% | 13,8% | 258 / 605 / 118 | 94,6% | 0 | 0 |
 | spn#3 | 32980 | 0,5% | 14,0% | 247 / 578 / 87 | 94,6% | 0 | 0 |
 
+`loud-hp` und `gain`, aus einem zweiten Aufruf mit `base` und `loud`:
+
+| Lauf | WER A (E/A/Ei) | WER B (E/A/Ei) | Wörter | Wiederholung | confident / needs_review / uncertain | markierte Zeit | übersehen A | übersehen B |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| loud-hp#1 | 18,5% (56/31/11) | 38,3% (82/75/12) | 32757 | 0,6% | 229 / 565 / 104 | 94,6% | 0 | 0 |
+| loud-hp#2 | 18,5% (56/31/11) | 30,2% (73/48/12) | 33227 | 0,5% | 201 / 582 / 127 | 95,4% | 0 | 0 |
+| loud-hp#3 | 18,5% (56/31/11) | 37,9% (68/75/24) | 33019 | 0,5% | 236 / 595 / 147 | 94,3% | 0 | 0 |
+| gain#1 | 19,6% (63/28/13) | 25,9% (62/43/9) | 33095 | 0,3% | 181 / 594 / 116 | 95,7% | 0 | 0 |
+| gain#2 | 18,8% (60/28/12) | 31,1% (69/59/9) | 33140 | 0,4% | 193 / 594 / 115 | 95,6% | 0 | 0 |
+| gain#3 | 50,5% (113/32/123) | 31,1% (69/59/9) | 33253 | 1,0% | 198 / 565 / 104 | 95,3% | 0 | 0 |
+
 ### Pilotsitzung, D und E
 
 | Variante | Seeds | Hotwords | WER D Mittel (Spanne) | Auslassungen D | WER E Mittel (Spanne) | Auslassungen E |
@@ -187,6 +273,12 @@ Die Tabellen stammen unverändert aus `asr.py score`. Weggelassen sind die Tabel
 | spn#1 | 38,8% (77/70/27) | 31,7% (62/53/2) | 10 | 0 |
 | spn#2 | 37,6% (83/62/24) | 31,7% (62/53/2) | 5 | 0 |
 | spn#3 | 35,6% (86/58/16) | 31,7% (62/53/2) | 8 | 0 |
+| loud-hp#1 | 56,1% (89/104/59) | 29,3% (64/35/9) | 0 | 0 |
+| loud-hp#2 | 37,4% (90/53/25) | 32,2% (65/35/19) | 16 | 0 |
+| loud-hp#3 | 37,4% (90/53/25) | 29,8% (60/44/6) | 16 | 0 |
+| gain#1 | 38,1% (91/65/15) | 31,4% (68/43/5) | 0 | 1 |
+| gain#2 | 43,4% (79/101/15) | 31,4% (68/43/5) | 7 | 1 |
+| gain#3 | 38,1% (91/65/15) | 31,4% (68/43/5) | 0 | 1 |
 
 ### Zweite Sitzung, C
 
@@ -244,3 +336,14 @@ Die Tabellen stammen unverändert aus `asr.py score`. Weggelassen sind die Tabel
 | spn#1 | 29705 | 0,3% | 15,0% | 231 / 559 / 155 | 94,4% | 0 |
 | spn#2 | 29616 | 0,8% | 14,9% | 188 / 540 / 137 | 95,5% | 9 |
 | spn#3 | 29771 | 0,5% | 14,9% | 160 / 534 / 132 | 96,0% | 0 |
+
+`loud-hp` und `gain`, aus einem zweiten Aufruf mit `base` und `loud`:
+
+| Lauf | WER C (E/A/Ei) | Wörter | Wiederholung | confident / needs_review / uncertain | markierte Zeit | übersehen C |
+| --- | --- | --- | --- | --- | --- | --- |
+| loud-hp#1 | 24,9% (100/99/27) | 29925 | 0,4% | 256 / 566 / 144 | 94,4% | 8 |
+| loud-hp#2 | 26,7% (117/93/33) | 30021 | 0,5% | 219 / 554 / 135 | 95,7% | 1 |
+| loud-hp#3 | 25,0% (101/98/28) | 29930 | 0,4% | 268 / 558 / 157 | 94,4% | 8 |
+| gain#1 | 26,8% (110/99/35) | 29251 | 0,6% | 192 / 548 / 151 | 95,8% | 10 |
+| gain#2 | 28,6% (103/112/45) | 29228 | 0,6% | 173 / 564 / 152 | 96,3% | 0 |
+| gain#3 | 31,0% (100/146/36) | 29499 | 0,4% | 161 / 559 / 153 | 95,7% | 13 |

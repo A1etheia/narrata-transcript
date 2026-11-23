@@ -245,4 +245,5 @@ K="dyn dynx comp loud spn"
 | `comp` | `acompressor=threshold=0.05:ratio=4:attack=5:release=200:makeup=4,alimiter=limit=0.95:level=false` |
 | `loud` | `loudnorm=I=-16:TP=-1.5:LRA=11`, zweistufig |
 | `spn` | `speechnorm=e=12.5:r=0.0001:l=1` |
+| `gain` | `volume=12dB,alimiter=limit=0.95:level=false` (Kontrolle: feste Verstärkung, der Limiter fängt nur die Spitzen) |
 | `<name>-hp` | `highpass=f=80` vor der Kette |

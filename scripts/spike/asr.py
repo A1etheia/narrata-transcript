@@ -247,6 +247,9 @@ LEVELLERS = {
     ),
     "loud": LOUDNORM + ":".join(f"{k}={v:g}" for k, v in LOUDNORM_TARGET.items()),
     "spn": "speechnorm=e=12.5:r=0.0001:l=1",  # "strong and fast" of the ffmpeg docs
+    # control: the median gain of `loud` without its levelling; the limiter only
+    # catches the peaks that would clip
+    "gain": "volume=12dB,alimiter=limit=0.95:level=false",
 }
 for _name, _leveller in LEVELLERS.items():
     BASES[_name] = Variant(chain=Chain(before=_leveller))
