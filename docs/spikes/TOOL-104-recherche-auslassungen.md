@@ -111,6 +111,108 @@ Längste Folge ausgelassener Wörter je Seed (`omissions.py`):
 - Wo im Segment `base+batched` wiederholt, und ob sich ein entgleistes Stück erkennen und einzeln neu dekodieren lässt (Kompression, `avg_logprob`).
 - `loud+batched` an E: Warum entgleist das Stück auf dem normalisierten Audio und nicht auf dem rohen?
 
+## Recherche: Punkt 3, 1, 2 und 5
+
+Quellenstand 2026-11-23. Kein Modell wurde heruntergeladen oder installiert. Alle Angaben stammen aus Modellkarten, Repos und Papern; „nicht belegt“ heißt, dass die Primärquelle dazu nichts sagt. Der Aufwand ist eine Schätzung gegen das heutige Backend: faster-whisper mit Wortzeiten, Wortkonfidenz und Hotwords, fünf Stunden am Stück.
+
+**Für keinen Kandidaten gibt es veröffentlichte Werte auf deutscher Meeting- oder Fernfeldsprache.** Das wichtigste Auswahlkriterium aus dem Plan lässt sich also bei keinem prüfen. Deutsche Gesprächssprache gibt es nur auf MLC-SLM: zwei Personen, Mobiltelefon, ruhiger Raum, kaum Überlappung ([Beschreibung](https://arxiv.org/html/2509.13785v1)). Alles andere ist gelesene Sprache.
+
+Schon gemessen und deshalb nicht in den Tabellen: Whisper large-v3-turbo und large-v3, Parakeet TDT 0.6B v3, Granite Speech 4.1 2B Plus (TOOL-62), das deutsche Turbo-Modell von primeline und CrisperWhisper 1.0 (TOOL-93).
+
+### Punkt 3: neue lokale Modelle
+
+| Kandidat | Quelle | Lizenz | Hardware | Deutsch | Wortzeiten | Biasing | Aufwand für ein Backend |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Qwen3-ASR-1.7B | [Karte](https://huggingface.co/Qwen/Qwen3-ASR-1.7B), [Paper](https://arxiv.org/html/2601.21337), 2026-01-29 | Apache-2.0 | 2 Mrd. Parameter, BF16; VRAM nicht belegt; Paket `qwen-asr` oder transformers | ja; WER MLS 6,05, Common Voice 5,85, FLEURS 3,92, MLC-SLM (Gespräch) 17,19; Fernfeld nicht belegt | nicht nativ; eigener Aligner Qwen3-ForcedAligner-0.6B mit Deutsch, bis 5 min je Aufruf | Kontext im System-Prompt laut Paper; in Karte und Beispielen nicht belegt | hoch: eigene Umgebung, Zuschnitt (laut Paper höchstens 20 min je Aufruf), Aligner als zweiter Schritt; Wortkonfidenz nicht belegt |
+| Cohere Transcribe 03-2026 | [Karte](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026), 2026-03-26 | Apache-2.0, Download nach Zustimmung | 2 Mrd. Parameter; VRAM nicht belegt; transformers ≥ 5.4 | ja (14 Sprachen); Mittel aus CoVoST-2 und FLEURS 3,84 ([Leaderboard-Paper](https://arxiv.org/html/2510.06961v4)); nur gelesene Sprache | keine | nicht belegt | hoch: Zwangsausrichtung nötig, VAD davor Pflicht, kein Biasing; Wortkonfidenz nicht belegt; Zuschnitt langer Dateien ist eingebaut |
+| Voxtral Mini 3B | [Karte](https://huggingface.co/mistralai/Voxtral-Mini-3B-2507), [Paper](https://arxiv.org/html/2507.13264v1), 2025-07 | Apache-2.0 | rund 9,5 GB VRAM laut Karte; vLLM oder transformers | ja (8 Sprachen); FLEURS 4,40, Common Voice 6,07, MLS 7,09 (large-v3: 5,46 / 6,25 / 5,72); nur gelesene Sprache | nicht belegt | nicht belegt; „System prompts are not yet supported“ | hoch: bis 30 min je Aufruf, Zwangsausrichtung nötig, kein Biasing, kaum VRAM-Reserve |
+| Canary-1b-v2 | [Karte](https://huggingface.co/nvidia/canary-1b-v2), [Paper](https://arxiv.org/html/2509.14128v2), 2025-08-14 | CC-BY-4.0 | 978 Mio. Parameter; VRAM nicht belegt; NeMo | ja (25 Sprachen); FLEURS 4,40, CoVoST2 5,53; nur gelesene Sprache | Wort und Segment über den NeMo Forced Aligner | nicht belegt | mittel: NeMo-Umgebung aus TOOL-62, Zuschnitt in 30–40 s eingebaut; die Karte rät von wörtlicher Transkription unvollständiger Sätze ab |
+| primeline/parakeet-primeline | [Karte](https://huggingface.co/primeline/parakeet-primeline), Datum nicht belegt | CC-BY-4.0 | 600 Mio. Parameter; VRAM nicht belegt; NeMo oder ONNX Runtime | deutsches Feintuning von Parakeet v3; Tuda-De 4,11 (Parakeet v3: 7,05), MLS 2,60 (2,95), Common Voice 3,03 (3,70); nur gelesene Sprache | nativ | nicht belegt | niedrig als Variante des Parakeet-Laufs aus TOOL-62 (Blöcke à 300 s); betrifft den Zweitlauf in TOOL-82 |
+| Granite Speech 5.0 2B | [Karte](https://huggingface.co/ibm-granite/granite-speech-5.0-2b), 2026-10-20 | Apache-2.0 | 2 Mrd. Parameter; VRAM nicht belegt; transformers, vLLM oder llama.cpp | ja (6 Sprachen); deutsche Werte nur als Grafik, als Zahl nicht belegt | nicht belegt | Keywords im Prompt, bis 2000 | hoch: Abschnitte bis rund 2 min, also eigener Zuschnitt; der Vorgänger lag in TOOL-62 bei 60,6 % WER und lief in Schleifen |
+
+- **Kein Kandidat ist ein Ersatz ohne Umbau.** Nur Whisper liefert heute Wortzeiten, Wortkonfidenz und Hotwords zusammen. Jeder Kandidat verliert mindestens eines davon, und die Wortkonfidenz ist bei keinem belegt. Auf ihr beruht die Bewertung der Passagen (TOOL-60).
+- **Am ehesten eine Messung wert sind Qwen3-ASR-1.7B und Cohere Transcribe.** Qwen3-ASR hat als einziger Kandidat einen deutschen Gesprächswert und bringt einen deutschen Aligner mit. Cohere Transcribe neigt laut Karte dazu, zu viel zu transkribieren („eager to transcribe, even non-speech sounds“), also in die Gegenrichtung unseres Fehlers; auf langen englischen Aufnahmen ist es das beste offene Modell des Leaderboards (WER 9,73 gegen 11,2 bei large-v3). Beide dekodieren mit einem anderen Decoder als Whisper und Parakeet, das Auslassungsprofil ist offen.
+- **Die Benchmark-Abstände sind klein.** Auf gelesenem Deutsch liegen alle Kandidaten innerhalb von 1–2 Punkten um large-v3. TOOL-62 und TOOL-93 haben gezeigt, dass solche Abstände an unserem Material nichts vorhersagen.
+- **Granite 4.1 Plus hat am 2026-10-19 neue Gewichte bekommen** ([Karte](https://huggingface.co/ibm-granite/granite-speech-4.1-2b-plus)): besseres Keyword-Biasing, Wortzeiten auf langen Abschnitten im Mittel 328 statt 814 ms daneben, WER im Mittel unverändert (6,10 gegen 6,01). TOOL-62 hat am 2026-11-04 gemessen, also nach dem Update; die Revision steht nicht im Bericht. Ein neuer Lauf ist damit nicht begründet.
+
+#### Mundart
+
+**Für Bairisch gibt es kein nutzbares lokales Modell.** Die Suche auf Hugging Face nach bairischen oder österreichischen Mundart-Modellen ergibt kein ASR-Modell.
+
+- **Whisper ist auf Mundart schon das beste verfügbare Modell und schreibt hochdeutsch.** Betthupferl ([Blaschke et al., Interspeech 2025](https://arxiv.org/abs/2506.02894)): rund 4 h gelesene Mundart (Fränkisch, Bairisch, Alemannisch), nur Evaluation, kein Modell. large-v3 ist in jedem Aufbau am besten, die WER gegen die hochdeutsche Referenz liegt trotzdem bei 31 statt 9. Ein zweites Paper mit einem oberbairischen Sprecher ([arXiv 2510.07890](https://arxiv.org/html/2510.07890v2)) misst für large-v3-turbo 26,0 gegen 9,0, für die CTC-Modelle XLS-R und MMS 81–83. Das Verhältnis deckt sich mit dem Zwei- bis Dreifachen aus TOOL-60.
+- **Schweizerdeutsch zeigt, dass Feintuning auf Mundart mit hochdeutscher Ausgabe geht, wenn es Daten gibt.** Auf ASGDTS liegen die feingetunten Modelle bei 20–22 % WER, large-v3 ohne Feintuning bei 24,0 %, Parakeet v3 bei 36,2 % ([Vergleichstabelle](https://huggingface.co/Flurin17/parakeet-tdt-0.6b-v3-swiss-german)). Dafür waren 300–1900 h Mundart mit hochdeutschem Transkript nötig. Für Bairisch gibt es kein solches Korpus, und laut Betthupferl überträgt sich ein Schweizer Modell nicht.
+- **Folge für den Zweitlauf (TOOL-82):** Parakeet fällt auf Mundart ohne Feintuning viel stärker ab als Whisper. Ein Zweitlauf mit Parakeet dürfte beim Mundartsprecher am wenigsten beitragen.
+
+### Punkt 1: sprecherbedingte Erkennung
+
+| Kandidat | Quelle | Lizenz | Hardware | Deutsch | Wortzeiten | Biasing | Aufwand für ein Backend |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| DiCoW v3.3 | [Karte](https://huggingface.co/BUT-FIT/DiCoW_v3_3), [Paper](https://arxiv.org/html/2601.19194v1), [Repo](https://github.com/BUTSpeechFIT/DiCoW), 2026-01 | Gewichte CC-BY-4.0, Code Apache-2.0; der dokumentierte Diarisierer DiariZen ist CC-BY-NC-4.0 | 0,9 Mrd. Parameter auf Basis large-v3-turbo; VRAM nicht belegt; transformers mit `trust_remote_code`, ein Durchlauf je Sprecher | Training nur auf Englisch (AMI, NOTSOFAR-1, LibriMix); Deutsch nicht belegt | Karte: nicht belegt; der Code gibt nur Segmentzeiten aus | keines dokumentiert | hoch: Maske je Sprecher aus der Diarisierung (Stille, Ziel, andere, Überlappung); die CLI kennt nur DiariZen, pyannote community-1 ist nicht belegt; feste Versionen (transformers 4.55, torch 2.5.1); Hotwords und Wortzeiten entfallen |
+| DiCoW_v3_MLC | [Karte](https://huggingface.co/BUT-FIT/DiCoW_v3_MLC), [Paper](https://arxiv.org/html/2506.13414v1), 2025-09 | auf der Karte widersprüchlich: CC-BY-4.0 und Apache-2.0 | 1,0 Mrd. Parameter; VRAM nicht belegt; transformers | ja, einzige Variante mit deutschem Training; tcpWER Deutsch auf MLC-SLM 27,3 mit echter Diarisierung, 23,9 mit Referenzsegmenten (large-v3 dort: 20,7) | nicht belegt | keines dokumentiert | hoch, wie v3.3; die Werte gelten mit einem auf MLC-SLM feingetunten DiariZen |
+| SE-DiCoW | [Karte](https://huggingface.co/BUT-FIT/SE_DiCoW), [Paper](https://arxiv.org/html/2601.19194v1), 2026-02 | Apache-2.0 | 1 Mrd. Parameter; VRAM nicht belegt; transformers | nur Englisch; Deutsch nicht belegt | nicht belegt | keines dokumentiert | hoch, wie v3.3, dazu ein Referenzfenster je Sprecher; an echtem Fernfeld kaum Gewinn (AMI SDM 18,6 → 18,5 tcpWER) |
+| Trelis/tiron | [Karte](https://huggingface.co/Trelis/tiron), 2026-07-21 | Apache-2.0 | 2 Mrd. Parameter auf Basis large-v3; 3–12 GB VRAM laut Karte | nicht belegt | 20-ms-Raster, unter Überlappung laut Karte ungefähr; Wortebene nicht belegt | keines dokumentiert | hoch: ersetzt ASR und Diarisierung, 30-s-Fenster, Sprecher über Fenster hinweg per Embedding verknüpft; cpWER AMI 34,68 |
+| MOSS-Transcribe-Diarize 0.9B | [Karte](https://huggingface.co/OpenMOSS-Team/MOSS-Transcribe-Diarize), [Repo](https://github.com/OpenMOSS/MOSS-Transcribe-Diarize), 2026-07-09 | Apache-2.0 | 0,9 Mrd. Parameter; VRAM nicht belegt, das Repo warnt vor Speichermangel bei langen Aufnahmen | „50+ Sprachen“; deutscher Wert nicht belegt | nur Segment | Hotwords im Prompt | hoch: bis 90 min je Durchlauf, Verknüpfung der Sprecher über Blöcke fehlt |
+
+- **Kein Beleg für Deutsch im Fernfeld, und der einzige deutsche Wert spricht nicht dafür.** Auf MLC-SLM ist DiCoW mit Referenzsegmenten auf Deutsch nicht besser als large-v3 (21,2 und 23,9 gegen 20,7). Der große Vorsprung mit echter Diarisierung (27,3–30,1 gegen 86,7) zeigt vor allem, wie schlecht die Diarisierung des Vergleichs dort war. Die Autoren warnen selbst, dass ein nur englisch trainiertes Modell auf anderen Sprachen begrenzt ist.
+- **Auslassungen bleiben auch dort der größte Fehler, und sie hängen an der Diarisierung.** Im [DiCoW-Paper](https://arxiv.org/html/2501.00114v1) sind auf NOTSOFAR-1 mit echter Diarisierung 14,5 von 33,5 Punkten tcpWER Auslassungen; die Autoren führen sie auf Sprache zurück, die der Diarisierer verpasst. Zwischen Referenz- und echter Diarisierung liegen 16,0 gegen 26,6 (NOTSOFAR-1) und 14,5 gegen 18,6 (AMI SDM). Kurze Beiträge, die der Diarisierer nicht findet, bekommt auch DiCoW nicht.
+- **Der Umbau ist der größte aller Punkte.** DiCoW läuft nicht über faster-whisper. Hotwords, Wortzeiten, Wortkonfidenz und die Batched-Dekodierung fielen weg, die Laufzeit wächst mit der Sprecherzahl. Dem steht gegenüber, dass Überlappung an A und C nur 3–6 % der Wörter trägt.
+- **Die Modelle mit eingebauter Sprecherzuordnung** (tiron, MOSS-Transcribe-Diarize) haben weder deutsche Werte noch Wortzeiten und ersetzen zwei Schritte auf einmal. Granite 4.1 Plus hat ebenfalls einen solchen Modus, er ist nur auf englischen Daten bewertet (WDER auf AMI SDM 13,9).
+
+### Punkt 2: Sprachtrennung vor der Erkennung
+
+| Kandidat | Quelle | Lizenz | Hardware | Deutsch | Wortzeiten | Biasing | Aufwand für ein Backend |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| pyannote PixIT (`speech-separation-ami-1.0`) | [Karte](https://huggingface.co/pyannote/speech-separation-ami-1.0), [Paper](https://arxiv.org/html/2403.02288v2), 2024 | MIT, Download nach Zustimmung | Parameter und VRAM nicht belegt; der Code hält alle Quellen in voller Länge im RAM | Training nur auf AMI SDM (Englisch, 79 h); Deutsch nicht belegt | 16 kHz auf der Originalzeit; jede Sprecherspur wird einzeln transkribiert, das Zusammenführen der Wortzeiten ist nicht beschrieben | unverändert, wirkt vor dem ASR | hoch: Karte nennt pyannote.audio 3.3.2, Laden unter 4.x nicht belegt; ein ASR-Lauf je Sprecherspur; höchstens 3 Sprecher je 5-s-Fenster im Paper; fünf Stunden nicht belegt |
+| MossFormer2_SS_16K | [Karte](https://huggingface.co/alibabasglab/MossFormer2_SS_16K), [Repo](https://github.com/modelscope/ClearerVoice-Studio), 2024-11 | Apache-2.0 | Parameter und VRAM nicht belegt; Paket `clearvoice` | Training auf gelesener und synthetischer Sprache, Englisch und Mandarin; Deutsch nicht belegt | 16 kHz; ob die Zeitachse erhalten bleibt, ist nicht belegt | unverändert, wirkt vor dem ASR | hoch: zwei Sprecher, voll überlagert trainiert; kein ASR-Ergebnis und keine echte Aufnahme veröffentlicht |
+| SepFormer WHAMR! 16k | [Karte](https://huggingface.co/speechbrain/sepformer-whamr16k), 2021 | Apache-2.0 | Parameter und VRAM nicht belegt; SpeechBrain | simuliertes Englisch mit Hall und Rauschen; Deutsch nicht belegt | 16 kHz; ob die Zeitachse erhalten bleibt, ist nicht belegt | unverändert, wirkt vor dem ASR | hoch: zwei Ausgänge, kein Verfahren für lange Aufnahmen; die Karte gibt keine Gewähr außerhalb des Testsets |
+
+- **Nur PixIT ist auf echten Fernfeld-Meetings trainiert, und sein Gewinn ist vor allem Sprecherzuordnung.** Auf AMI SDM mit Whisper large-v2 fällt die cpWER von 38,3 auf 31,7. Die WER je Äußerung, ohne Sprecherzuordnung, fällt nur von 35,4 auf 33,8.
+- **Artefakte sind das Hauptrisiko.** Im selben Paper steigt die cpWER ohne die beiden Schutzmaßnahmen (WavLM-Merkmale, Entfernen von Übersprechen zwischen den Spuren) von 38,8 auf 50,1. Auf LibriCSS kostet einkanalige Trennung in Abschnitten ohne Überlappung je nach Modell bis zu 4 Punkte ([Chen et al.](https://ar5iv.labs.arxiv.org/html/2008.05773)); erst mit sieben Kanälen wird sie dort besser. Das passt zu TOOL-92: Entrauschen vor Whisper hat nicht geholfen.
+- **Die übrigen Trennmodelle sind auf simulierten, voll überlagerten Mischungen trainiert.** Für echte, hallige Aufnahmen mit seltener Überlappung gilt das als bekannte Schwäche ([Wang und Cornell 2026](https://arxiv.org/abs/2605.19695)). Die besten Systeme der Einkanal-Wertung von NOTSOFAR-1 liegen bei 22,2 % tcpWER, mit Mikrofon-Array bei 10,8 % ([Zusammenfassung](https://arxiv.org/html/2501.17304v2)).
+- **Für Deutsch gibt es keine einzige Messung einer Trennung vor dem ASR.** Der Nutzen wäre auf die 3–6 % der Wörter in Überlappung begrenzt, das Risiko trifft die übrigen 94–97 %.
+
+### Punkt 5: Dekodierung je Redebeitrag
+
+| Kandidat | Quelle | Lizenz | Hardware | Deutsch | Wortzeiten | Biasing | Aufwand für ein Backend |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Turns der Diarisierung als `clip_timestamps` der Batched-Pipeline | [faster-whisper 1.2.1](https://github.com/SYSTRAN/faster-whisper/blob/v1.2.1/faster_whisper/transcribe.py) | MIT | wie `base+batched`: 4,6–4,8 GiB VRAM | unverändert, dasselbe Modell | bleiben, auf der Originalzeit | Hotwords bleiben | niedrig für eine Messung: ein Modifikator im Spike-Wrapper, die Diarisierung muss vor dem ASR laufen; für die Pipeline mittel, weil sich die Reihenfolge der Schritte umkehrt |
+
+- **Der Weg ist da, aber niemand dokumentiert ihn für diesen Zweck.** Die Batched-Pipeline nimmt eine Liste von Abschnitten, überspringt dann die VAD und dekodiert jeden Abschnitt für sich. Abschnitte über 30 s schneidet sie ab, eine Mindestlänge gibt es nicht, ein Fallback auch nicht. Lange Beiträge müssten also geteilt, kurze verbunden oder gepolstert werden. Die Maintainer nennen die Option einen Nachbau von Whispers eigenem `clip_timestamps`, nicht einen Eingang für eigene Segmente ([Issue 1205](https://github.com/SYSTRAN/faster-whisper/issues/1205)).
+- **Die Literatur spricht gegen sehr kurze Stücke.** WhisperX verbindet VAD-Abschnitte ausdrücklich bis 30 s, weil kurze Stücke den Kontext verlieren ([Paper](https://arxiv.org/html/2303.00747v2)). Bei NOTSOFAR-1 hat ein Team durch das Verbinden kurzer Segmente die tcORC-WER von 37,6 auf 31,0 gesenkt ([Zusammenfassung](https://arxiv.org/html/2501.17304v2)). Auf Stücken von 1 s ohne Sprache halluziniert large-v3 in 52 % der Fälle ([Barański et al. 2025](https://arxiv.org/html/2501.11378)). Unsere Diarisierung liefert Beiträge mit einem Median von 1,2 s (TOOL-20).
+- **Die Batched-Pipeline ist schon der halbe Weg.** Sie schneidet bei 160 ms Stille und dekodiert jedes Stück für sich. Was Punkt 5 darüber hinaus bringen kann, ist der Schnitt am Sprecherwechsel ohne Pause und die Abdeckung von Sprache, die die VAD verwirft (11–20 % der Auslassungen von `base+batched` an C, D und E).
+- **Ein Vergleich „erst diarisieren, dann je Beitrag transkribieren“ gegen „erst transkribieren, dann zuordnen“ mit getrennt ausgewiesenen Auslassungen ist nicht veröffentlicht.** Für deutsche Kurzbeiträge wie „ja“ oder „mhm“ gibt es keine Quelle. Die Frage lässt sich nur an den eigenen Referenzen klären, und Punkt 5 ist der einzige der vier Punkte, der das ohne neues Modell erlaubt.
+
+### Ausgeschieden
+
+| Ansatz | Grund |
+| --- | --- |
+| [Voxtral Small 24B](https://huggingface.co/mistralai/Voxtral-Small-24B-2507) | VRAM: rund 55 GB |
+| [Voxtral Mini 4B Realtime](https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602) | VRAM: ab 16 GB, Streaming-Modell |
+| [Voxtral Mini Transcribe V2](https://mistral.ai/news/voxtral-transcribe-2) | nur Cloud; die Variante mit Wortzeiten, Sprechern und Biasing |
+| [Nemotron 3.5 Transcribe 30B-A4B](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-FP8) | VRAM: ab 24 GB auch quantisiert; sonst der beste Treffer (Deutsch mit Sprecherzuordnung, Wortzeiten, Kontextbegriffe, 1 h Audio) |
+| [Microsoft VibeVoice-ASR](https://huggingface.co/microsoft/VibeVoice-ASR) | VRAM: 9 Mrd. Parameter, keine offizielle quantisierte Fassung; transkribiert bei Überlappung laut Autoren nur den dominanten Sprecher |
+| [Salesforce SOV-Transcribe-1](https://huggingface.co/salesforce-sovereign-intelligence/SOV-Transcribe-1) | VRAM: 26,6 Mrd. Parameter |
+| [Meta Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) | 7B braucht rund 17 GiB und ist auf Deutsch schlechter als large-v3 (4,58 gegen 4,26); keine Wortzeiten |
+| [Canary-Qwen-2.5B](https://huggingface.co/nvidia/canary-qwen-2.5b), [Kyutai STT](https://kyutai.org/stt), [Moonshine](https://arxiv.org/html/2509.02523v1), [Fun-ASR-MLT-Nano](https://huggingface.co/FunAudioLLM/Fun-ASR-MLT-Nano-2512) | kein Deutsch |
+| [BUT-FIT/Pandemonium](https://huggingface.co/BUT-FIT/Pandemonium) | kein Deutsch; sonst der Aufgabe am nächsten (einkanaliges Fernfeld mit mehreren Sprechern, Wortzeiten) |
+| [Phi-4-multimodal](https://huggingface.co/microsoft/Phi-4-multimodal-instruct) | höchstens 40 s je Aufruf, keine Wortzeiten, laut Karte experimentell |
+| [parakeet-ultra](https://huggingface.co/moondream/parakeet-ultra), [fluid-speech-pro](https://huggingface.co/FluidVoice-Labs/fluid-speech-pro), [nemotron-labs-unified-asr-0.6b](https://huggingface.co/nvidia/nemotron-labs-unified-asr-0.6b) | Nachtrainings von Parakeet v3 mit unter 1 Punkt Gewinn auf gelesenem Deutsch; dieselbe Architektur ist in TOOL-62 gemessen |
+| [NVIDIA Multitalker Parakeet mit Sortformer](https://huggingface.co/nvidia/multitalker-parakeet-streaming-0.6b-v1) | kein Deutsch |
+| [syvai/cohere-transcribe-diarize](https://huggingface.co/syvai/cohere-transcribe-diarize) | nur englisch trainiert, keine veröffentlichten Werte |
+| [TagSpeech](https://huggingface.co/AudenAI/TagSpeech-AMI), [SOT-DiCoW](https://github.com/BUTSpeechFIT/SOT-DiCoW) | kein Deutsch beziehungsweise keine veröffentlichten Gewichte |
+| [SepReformer](https://github.com/dmlguq456/SepReformer), [TF-Locoformer](https://github.com/merlresearch/tf-locoformer), TF-GridNet | nur Gewichte für simulierte Mischungen (WSJ0-2mix, Libri2Mix, WHAMR!) |
+| [WeSep](https://github.com/wenet-e2e/wesep) und andere Zielsprecher-Extraktion | keine veröffentlichten Gewichte für 16 kHz ohne Video; braucht Referenzaudio je Person |
+| Guided Source Separation und die Mehrkanal-Systeme aus CHiME | brauchen ein Mikrofon-Array |
+| pyannoteAI, gehostete Trennung | nur Cloud |
+| CrisperWhisper 2.0 | Lizenz, siehe TOOL-93 |
+
+### Stand nach der Recherche
+
+- **Punkt 3:** zwei Modelle mit einem anderen Decoder als Whisper, die eine Messung an A, B und C rechtfertigen könnten (Qwen3-ASR-1.7B, Cohere Transcribe), beide mit hohem Aufwand und ohne Beleg für unser Material. Für Mundart gibt es nichts.
+- **Punkt 1 und 2:** kein Kandidat mit Beleg für Deutsch oder für weniger Auslassungen im einkanaligen Fernfeld. Beide zielen auf Überlappung, die nach TOOL-101 höchstens ein Fünftel der Auslassungen trägt.
+- **Punkt 5:** kein neues Modell, mit dem vorhandenen Werkzeug messbar, Ausgang offen.
+- Welche davon einen der höchstens drei Plätze bekommen, entscheidet sich nach der neuen Handreferenz (Chunk 4 und 5).
+
 ## Messwerte
 
 Die Tabellen kommen unverändert aus `asr.py score`. Nicht abgedruckt sind die Aufteilung nach Füllwörtern und der Sprecherfehler, der nur für diarisierte Wurzeln (`base`, `loud`) vorliegt.
