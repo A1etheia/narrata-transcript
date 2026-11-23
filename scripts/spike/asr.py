@@ -16,7 +16,10 @@ A variant is a hotword base (`base`, `pchw`, `nohw`, `nohw-hp`, `kw<N>`,
 `nohw+vad-t35+beam10`. `+fill` appends everyday words to the list until the
 token budget is full. `+guard` keeps the pipeline's guard, which passes no list
 under 110 tokens; without it every variant gets its list as given, so
-`base+guard` is the pipeline as shipped. `kw<N>` passes the first N snapshot
+`base+guard` is the pipeline as shipped. `+batched` decodes with faster-whisper's
+`BatchedInferencePipeline`, one chunk of at most 30 s per VAD range and no
+temperature fallback; `+batched+ts` lets it sample timestamp tokens (TOOL-104).
+`kw<N>` passes the first N snapshot
 keywords; `neutral9` and `neutral` pass fixed everyday words instead of the
 snapshot's, 9 or as many as fit the token budget (TOOL-81). Two ways change the keywords: `pchw` builds the
 root's snapshot again with other budgets, so it gets its own snapshot id; `kw<N>`
@@ -105,6 +108,11 @@ class Variant:
     asr: Mapping[str, object] = field(default_factory=dict)
     # `asr.*` keys of the root's config, for what the backend takes from there
     config: Mapping[str, object] = field(default_factory=dict)
+
+    @property
+    def batched(self) -> bool:
+        """Decoded by the BatchedInferencePipeline, not the sequential loop."""
+        return BATCH_SIZE in self.asr
 
 
 # Everyday German words with no tie to a game or a group: a prompt of the same
@@ -266,8 +274,16 @@ FILL = "fill"
 # keeps the pipeline's guard: a list under HOTWORD_MIN_TOKENS reaches no Whisper;
 # without it the variants measure the list as given (TOOL-81, acceptance)
 GUARD = "guard"
+# TOOL-104: faster-whisper's BatchedInferencePipeline. It cuts the audio at the
+# VAD ranges into chunks of at most 30 s, decodes each on its own and only at the
+# first temperature; `ts` turns its `without_timestamps` default off
+BATCHED = "batched"
+TIMESTAMPS = "ts"
+BATCH_SIZE = "batch_size"  # the setting that marks a batched run
 # one factor each; stage 3 adds models
 MODIFIERS: dict[str, Mapping[str, object]] = {
+    BATCHED: {BATCH_SIZE: 8},  # the library's default
+    TIMESTAMPS: {"without_timestamps": False},
     "novad": {"vad_filter": False},
     "vad-t35": {"vad_parameters": {"threshold": 0.35}},
     "vad-pad800": {"vad_parameters": {"speech_pad_ms": 800}},
@@ -328,6 +344,10 @@ def variant(name: str) -> Variant:
         else:
             known = sorted([*MODIFIERS, *MODELS, FILL, GUARD])
             raise SpikeError(f"{name}: unknown modifier {mod!r}, one of {known}")
+    if BATCHED in mods:
+        asr.setdefault("without_timestamps", True)  # the library's default, recorded
+    elif TIMESTAMPS in mods:
+        raise SpikeError(f"{name}: +{TIMESTAMPS} needs +{BATCHED}")
     return dataclasses.replace(
         base, model=model, asr=asr, config=config, fill=fill, guard=guard
     )
@@ -689,6 +709,8 @@ def _cli_with_variant(options: str, argv: Sequence[str]) -> int:
         return found + tuple(word for word in NEUTRAL_WORDS if word not in found)
 
     DomainContext.transcription_keywords = keywords
+    # the batched pipeline takes its settings as the sequential call would
+    batched = BATCH_SIZE in spec["asr"]
     extra = {"seed": seed, "hotwords": spec["hotwords"], **changed}
 
     backend = whisper.WhisperBackend
@@ -703,11 +725,29 @@ def _cli_with_variant(options: str, argv: Sequence[str]) -> int:
 
     def transcribe(self, request):
         ctranslate2.set_random_seed(seed)
-        return original_transcribe(self, request)
+        model = self._model
+        if not batched or model is None:
+            return original_transcribe(self, request)
+        self._model = _Batched(model)
+        try:
+            return original_transcribe(self, request)
+        finally:
+            self._model = model
 
     backend._prepare = prepare
     backend.transcribe = transcribe
     return cli(list(argv))
+
+
+class _Batched:
+    """Stands in for the loaded model while the backend transcribes: the same
+    call and the same tokenizer, decoded by the batched pipeline."""
+
+    def __init__(self, model) -> None:
+        from faster_whisper import BatchedInferencePipeline
+
+        self.hf_tokenizer = model.hf_tokenizer
+        self.transcribe = BatchedInferencePipeline(model).transcribe
 
 
 # --- score --------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 """Omission spike (TOOL-101): where the words Whisper leaves out lie.
 
     omissions.py <group>/<ordinal> [--variant base] [--seeds 3] [--clip ...]
+    omissions.py <group>/<ordinal> --suggest [--clip ...]
 
 Reads the stored runs of `asr.py` (one root per seed), the session's diarization
 of segment 1 and the hand references under `review/calibration/`. Every
@@ -9,7 +10,11 @@ heard it, or a place between its neighbours if none did. Per clip it prints Mark
 the omissions against all reference words: overlap, turn length, speaker and
 level, decoding windows with temperature fallback, audio the VAD removed,
 stability over the seeds and speech without words. The only file it writes is
-`work/<s>/experiments/asr/vad.json`, the speech ranges of the VAD as numbers.
+`work/<s>/experiments/asr/vad.json`, the speech ranges of the VAD as numbers
+(`vad-batched.json` for a `+batched` variant, whose runs have no decoding
+windows). `--suggest` reads the diarization alone and proposes the 3-minute
+windows with the most overlap and short turns for a new hand reference
+(TOOL-104).
 
 Privacy (TOOL-66): the console gets counts, shares, levels and times only, no
 text, no names and no speaker labels; speakers appear as ranks by word count.
@@ -38,7 +43,7 @@ from transcript.config import DEFAULT_CONFIG, load_config
 from transcript.jsonfile import DataFileError
 from transcript.reference import ReferenceTranscript
 from transcript.session import SessionKey, SessionPaths
-from transcript.timecode import frames_to_ms
+from transcript.timecode import format_clock, frames_to_ms
 
 # thresholds fixed in the plan, before any count was seen
 JOIN_TURNS_MS = 500  # same-label turns this close are one turn (TOOL-96)
@@ -54,8 +59,13 @@ VAD_TOLERANCE_S = 1.0
 # faster-whisper 1.2.1, `WhisperModel.transcribe` with `vad_filter` and no
 # `vad_parameters`, as the pipeline runs it; spelled out so the cache records them
 VAD_OPTIONS = {"threshold": 0.5, "min_silence_duration_ms": 2000, "speech_pad_ms": 400}
+# `BatchedInferencePipeline.transcribe`: every speech range is at most a chunk
+# long, and without `vad_parameters` it cuts at much shorter pauses (TOOL-104)
+BATCHED_CHUNK = {"max_speech_duration_s": 30}
+BATCHED_DEFAULTS = {"min_silence_duration_ms": 160}
 
 YES, NO = "ja", "nein"
+N_A = "entfällt"  # the batched pipeline has no decoding windows and no fallback
 NO_TURN = "kein Turn"
 OVERLAP = "Überlappung"
 TURN_LENGTH = "Beitragslänge (Diarisierung)"
@@ -73,8 +83,8 @@ FEATURES: dict[str, tuple[str, ...]] = {
     TURN_LENGTH: (SHORT, MEDIUM, LONG, NO_TURN),
     HAND_TURN: ("1–3 Wörter", "4–10 Wörter", "über 10 Wörter"),
     LEVEL: (QUIET, LOUD, NO_TURN),
-    FALLBACK: (YES, NO),
-    SPARSE: (YES, NO),
+    FALLBACK: (YES, NO, N_A),
+    SPARSE: (YES, NO, N_A),
     VAD: (YES, NO),
     SILENT: (YES, NO),
     EXPLAINED: (YES, NO),
@@ -282,11 +292,16 @@ def vad_speech(paths: SessionPaths, name: str) -> Ranges:
     settings = spec.asr
     if settings.get("vad_filter") is False:
         raise SpikeError(f"{name}: runs without VAD")
-    options = {**VAD_OPTIONS, **settings.get("vad_parameters", {})}
+    given = settings.get("vad_parameters", {})
+    if spec.batched:
+        options = {**VAD_OPTIONS, **(given or BATCHED_DEFAULTS), **BATCHED_CHUNK}
+        cache = "vad-batched.json"  # the pipeline's ranges keep their file
+    else:
+        options, cache = {**VAD_OPTIONS, **given}, "vad.json"
     wav = asr.chain_wav(paths, spec.chain)
-    record = paths.work_dir / "experiments" / "asr" / "vad.json"
+    record = paths.work_dir / "experiments" / "asr" / cache
     if spec.chain != denoise.Chain():
-        record = wav.with_name("vad.json")
+        record = wav.with_name(cache)
     frames = denoise._manifest_frames(paths)
     stored = asr._read_json(record)
     if stored.get("frames") != frames or stored.get("options") != options:
@@ -388,14 +403,14 @@ def analyse(
     seed: int,
     deleted: Sequence[bool],
     times: Sequence[float],
-    windows: Sequence[asr.DecodeWindow],
+    windows: Sequence[asr.DecodeWindow] | None,  # None: a batched run has none
     quiet: Ranges,
     clip: HandClip,
     hand: calibration.HandReference,
     context: Context,
     turns: ClipTurns,
 ) -> ClipResult:
-    window_starts = [window.start_ms for window in windows]
+    window_starts = [window.start_ms for window in windows or ()]
     runs = _hand_turns(hand.speakers)
     classes: dict[str, list[str]] = {feature: [] for feature in FEATURES}
     pairs: Counter[tuple[str, str]] = Counter()
@@ -407,15 +422,17 @@ def analyse(
             length, level = turns.lengths[turn], turns.levels[turn]
             if not deleted[position]:
                 pairs[(hand.speakers[position], context.turns.labels[turn])] += 1
-        window = bisect.bisect_right(window_starts, ms) - 1
-        fallback = window >= 0 and windows[window].fallback
+        at = bisect.bisect_right(window_starts, ms) - 1
+        window = windows[at] if at >= 0 else None
+        fallback = window is not None and window.fallback
+        sparse = window is not None and window.sparse
         row = {
             OVERLAP: _yes(ms in context.overlaps),
             TURN_LENGTH: length,
             HAND_TURN: runs[position],
             LEVEL: level,
-            FALLBACK: _yes(fallback),
-            SPARSE: _yes(window >= 0 and windows[window].sparse),
+            FALLBACK: N_A if windows is None else _yes(fallback),
+            SPARSE: N_A if windows is None else _yes(sparse),
             VAD: _yes(ms not in context.vad),
             SILENT: _yes(ms in quiet),
         }
@@ -605,31 +622,120 @@ def print_segment(
     print()
 
 
+# --- suggest ------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Restless:
+    """One window of the segment, from the diarization alone; counts only."""
+
+    start_ms: int
+    overlap_ms: int
+    short_turns: int  # joined turns under SHORT_TURN_MS that start in it
+    speech_ms: int
+    labels: int
+
+
+def restless(
+    run: diarization.DiarizationRun, end_ms: int, clips: Sequence[HandClip]
+) -> list[Restless]:
+    """The windows with the most overlap and the most short turns.
+
+    Windows as `asr.windows` cuts them (3 minutes, every minute) that touch no clip and have
+    at least the median speech time, so pauses do not win. Ranked by the sum of
+    their ranks in overlap time and in short turns; the chosen ones do not
+    overlap each other.
+    """
+    overlaps, speech, turns = heard_speech(run)
+    found = []
+    for start in range(0, end_ms - asr.WINDOW_MS + 1, asr.WINDOW_STEP_MS):
+        end = start + asr.WINDOW_MS
+        if any(start < clip.end_ms and clip.start_ms < end for clip in clips):
+            continue
+        inside = [
+            (span, label)
+            for span, label in zip(turns.ranges.spans(), turns.labels, strict=True)
+            if start <= span[0] < end
+        ]
+        found.append(
+            Restless(
+                start_ms=start,
+                overlap_ms=overlaps.within(start, end).total,
+                short_turns=sum(e - s < SHORT_TURN_MS for (s, e), _ in inside),
+                speech_ms=speech.within(start, end).total,
+                labels=len({label for _, label in inside}),
+            )
+        )
+    if not found:
+        return []
+    median = statistics.median_low(w.speech_ms for w in found)
+    dense = [w for w in found if w.speech_ms >= median]
+    by_overlap = sorted(dense, key=lambda w: -w.overlap_ms)
+    by_short = sorted(dense, key=lambda w: -w.short_turns)
+    ranked = sorted(dense, key=lambda w: by_overlap.index(w) + by_short.index(w))
+    chosen: list[Restless] = []
+    for window in ranked:
+        if all(abs(window.start_ms - c.start_ms) >= asr.WINDOW_MS for c in chosen):
+            chosen.append(window)
+        if len(chosen) == asr.WINDOW_PROPOSALS:
+            break
+    return chosen
+
+
+def print_suggestions(found: Sequence[Restless]) -> None:
+    print(
+        "| Fenster | Überlappung (s) | Turns unter "
+        f"{SHORT_TURN_MS // 1000} s | Sprache | Labels |"
+    )
+    print("| --- | --- | --- | --- | --- |")
+    for w in found:
+        print(
+            f"| {format_clock(w.start_ms)}–{format_clock(w.start_ms + asr.WINDOW_MS)} | "
+            f"{asr._decimal(w.overlap_ms / 1000)} | {w.short_turns} | "
+            f"{_pct(w.speech_ms / asr.WINDOW_MS)} | {w.labels} |"
+        )
+
+
 # --- main ---------------------------------------------------------------------------
+
+
+def diarized(paths: SessionPaths) -> diarization.DiarizationRun:
+    run = diarization.load_run(paths, SEGMENT)
+    if run is None:
+        raise SpikeError(f"segment {SEGMENT} of the session is not diarized")
+    return run
+
+
+def heard_speech(run: diarization.DiarizationRun) -> tuple[Ranges, Ranges, Turns]:
+    """Where turns overlap, where anyone speaks, and the joined exclusive turns."""
+    return (
+        Ranges.union((o.start_ms, o.end_ms) for o in diarization.overlaps(run.turns)),
+        Ranges.union((t.start_ms, t.end_ms) for t in run.turns),
+        Turns.joined(run.exclusive_turns),
+    )
+
+
+def suggest(paths: SessionPaths, clips: Sequence[HandClip]) -> None:
+    print_suggestions(restless(diarized(paths), asr._end_ms(paths), clips))
 
 
 def measure(
     paths: SessionPaths, name: str, seeds: int, clips: Sequence[HandClip]
 ) -> None:
-    run = diarization.load_run(paths, SEGMENT)
-    if run is None:
-        raise SpikeError(f"segment {SEGMENT} of the session is not diarized")
+    overlaps, speech, turns = heard_speech(diarized(paths))
     vad = vad_speech(paths, name)
-    context = Context(
-        overlaps=Ranges.union(
-            (o.start_ms, o.end_ms) for o in diarization.overlaps(run.turns)
-        ),
-        speech=Ranges.union((t.start_ms, t.end_ms) for t in run.turns),
-        turns=Turns.joined(run.exclusive_turns),
-        vad=vad,
-    )
+    context = Context(overlaps=overlaps, speech=speech, turns=turns, vad=vad)
     references = {
         seed: asr.transcribed(paths, name, seed) for seed in range(1, seeds + 1)
     }
     asr.check_provenance(
         [asr.sections(paths, name, seed, r) for seed, r in references.items()]
     )
-    windows = {seed: asr.decode_windows(paths, name, seed) for seed in references}
+    batched = asr.variant(name).batched  # no decoding windows to read
+    windows = {
+        seed: None if batched else asr.decode_windows(paths, name, seed)
+        for seed in references
+    }
     for seed in references:
         raw = asr._read_json(
             SessionPaths(paths.key, asr.shadow_root(paths, name, seed)).reference_raw(
@@ -684,10 +790,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=asr.parse_clip,
         help="NAME=FILE@H:MM:SS-H:MM:SS (default: pilot clips A and B)",
     )
+    parser.add_argument(
+        "--suggest",
+        action="store_true",
+        help="only propose restless 3-minute windows for a hand reference, from "
+        "the diarization and outside the clips",
+    )
     args = parser.parse_args(argv)
     try:
         paths = load_config(args.config).session_paths(SessionKey.parse(args.session))
-        measure(paths, args.variant, args.seeds, args.clip or denoise.CLIPS)
+        clips = args.clip or denoise.CLIPS
+        if args.suggest:
+            suggest(paths, clips)
+        else:
+            measure(paths, args.variant, args.seeds, clips)
     except (SpikeError, ValueError, OSError, DataFileError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

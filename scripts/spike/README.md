@@ -247,3 +247,35 @@ K="dyn dynx comp loud spn"
 | `spn` | `speechnorm=e=12.5:r=0.0001:l=1` |
 | `gain` | `volume=12dB,alimiter=limit=0.95:level=false` (Kontrolle: feste Verstärkung, der Limiter fängt nur die Spitzen) |
 | `<name>-hp` | `highpass=f=80` vor der Kette |
+
+# Batched-Spike (TOOL-104)
+
+Misst, ob die `BatchedInferencePipeline` von faster-whisper weniger Wörter auslässt als die fortlaufende Dekodierung der Pipeline. Sie ist ein Modifikator in `asr.py`, kein eigenes Skript. Plan: [`TOOL-104`](../../docs/plans/TOOL-104-asr-research.md), Bericht: [`docs/spikes/TOOL-104-recherche-auslassungen.md`](../../docs/spikes/TOOL-104-recherche-auslassungen.md).
+
+## Datenschutz
+
+Wie beim ASR-Spike: Wurzeln und Zwischenspeicher liegen nur unter `work/<gruppe>/<ordinal>/experiments/asr/`. Die Konsole bekommt Zähler, Anteile und Zeiten, nie Text, Namen oder Sprecher-Labels. `--suggest` gibt nur Fenstergrenzen und Zähler aus.
+
+## Ablauf
+
+```bash
+V="base+batched base+batched+ts loud+batched"
+.venv/bin/python scripts/spike/asr.py prepare $S $V --seeds 3
+.venv/bin/python scripts/spike/asr.py run $S $V --seeds 3
+.venv/bin/python scripts/spike/asr.py score $S base base+temp0 loud $V --seeds 3 [--clip NAME=DATEI@H:MM:SS-H:MM:SS]…
+.venv/bin/python scripts/spike/omissions.py $S --variant base+batched [--clip …]
+.venv/bin/python scripts/spike/omissions.py $S --suggest [--clip …]
+```
+
+- **`+batched`** legt im Wrapper für die Dauer von `transcribe` einen Stellvertreter um das geladene Modell, der an `BatchedInferencePipeline(model).transcribe` weiterreicht. Hotwords, Wortzeiten und alle übrigen Settings gehen unverändert durch. `batch_size` (8) und `without_timestamps` stehen wie jeder Modifikator in `asr.settings`, so greift die Wiederaufnahme pro Wurzel.
+- **Was die Batched-Pipeline anders macht** (faster-whisper 1.2.1):
+  - Sie schneidet das Audio an den Sprachabschnitten der VAD in Stücke von höchstens 30 s und dekodiert jedes für sich.
+  - Ohne `vad_parameters` schneidet ihre VAD schon ab 160 ms Stille, die Pipeline erst ab 2000 ms.
+  - Sie dekodiert nur mit der ersten Temperatur, also ohne Fallback. Die Schwellen für `log_prob`, `no_speech` und Kompression wirken nicht. Ohne Stichproben sollte der Seed nichts ändern; der Bericht nennt, ob das an den Läufen stimmt.
+  - Sie setzt `without_timestamps`: ein Segment je Stück. Wortzeiten kommen trotzdem aus der Ausrichtung.
+- **`+ts`** schaltet `without_timestamps` ab und gilt nur zusammen mit `+batched`.
+- **`omissions.py --variant <…+batched>`** rechnet die VAD mit den Optionen der Batched-Pipeline und legt sie als `vad-batched.json` ab. Die Merkmale „Fallback-Fenster“ und „dünnes Fenster“ gibt es für solche Läufe nicht, ihre Klasse heißt „entfällt“. „Erklärt“ zählt dort nur Überlappung, kurze und leise Beiträge.
+- **`omissions.py --suggest`** schlägt drei sich nicht überlappende 3-min-Fenster für eine Handreferenz an unruhigen Stellen vor. Es liest nur die Diarisierung von Segment 1.
+  - Raster 1 min, außerhalb der angegebenen Clips, mindestens mediane Sprachzeit.
+  - Rang: Summe der Ränge nach Überlappungszeit und nach Zahl der Turns unter 2 s (gleiche Labels mit höchstens 500 ms Abstand verbunden).
+  - Ausgabe: Fenster, Überlappung in Sekunden, kurze Turns, Anteil Sprache, Zahl der Labels.

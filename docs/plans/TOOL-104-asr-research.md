@@ -21,7 +21,7 @@ TOOL-62 und TOOL-93 haben sechs lokale Modelle verglichen, aber weder die Batche
 - **Umgebung:** RTX 3080 Ti mit 12 GB. Der Worktree hat weder `.venv` noch `work/`. Die Spike-Skripte haben keine Unit-Tests, `scripts/check` prüft sie mit ruff.
 
 ## Entscheidungen
-- **Die Batched-Pipeline wird ein Modifikator `+batched`, kein eigenes Skript.** Der Wrapper legt für die Dauer von `transcribe` einen Stellvertreter um das Modell, der an `BatchedInferencePipeline(model).transcribe` weiterreicht. `batched`, `batch_size` (8, Vorgabe der Bibliothek) und `without_timestamps` stehen in `asr.settings`, nur bei Batched-Läufen, damit alle gespeicherten Wurzeln wiederverwendbar bleiben. Der Pipeline-Code unter `src/` bleibt unverändert.
+- **Die Batched-Pipeline wird ein Modifikator `+batched`, kein eigenes Skript.** Der Wrapper legt für die Dauer von `transcribe` einen Stellvertreter um das Modell, der an `BatchedInferencePipeline(model).transcribe` weiterreicht. `batch_size` (8, Vorgabe der Bibliothek) und `without_timestamps` stehen in `asr.settings`, nur bei Batched-Läufen, damit alle gespeicherten Wurzeln wiederverwendbar bleiben. Der Pipeline-Code unter `src/` bleibt unverändert.
 - **Drei Varianten, vorab festgelegt:**
 
   | Variante | Frage |
@@ -53,11 +53,11 @@ TOOL-62 und TOOL-93 haben sechs lokale Modelle verglichen, aber weder die Batche
 - Fixtures: *N/A*, weil keine angelegt werden.
 
 ## Contract-Check
-*N/A*, weil das Ticket keine Contract-JSON liest oder schreibt. Bekommt die Batched-Pipeline ein Umsetzungsticket, stehen `batched` und `batch_size` in `asr.settings` des internen Referenzformats; ob der Contract (IOA-1214) sie trägt, klärt jenes Ticket.
+*N/A*, weil das Ticket keine Contract-JSON liest oder schreibt. Bekommt die Batched-Pipeline ein Umsetzungsticket, steht `batch_size` in `asr.settings` des internen Referenzformats; ob der Contract (IOA-1214) sie trägt, klärt jenes Ticket.
 
 ## Resume-Check
 - Abbruch beim Transkribieren: *handled* — die Wiederaufnahme der Pipeline gilt je Wurzel, ein neuer `run` überspringt fertige Wurzeln.
-- Gleiches Modell und gleicher Snapshot: *handled* — `asr.transcribed` prüft Seed, Modell und Settings, neu auch `batched`, `batch_size` und `without_timestamps`. `check_provenance` bricht bei abweichender Revision oder abweichendem Snapshot ab. Weicht eine Batched-Variante von den gespeicherten Vergleichsläufen ab, laufen diese neu und der Bericht nennt es.
+- Gleiches Modell und gleicher Snapshot: *handled* — `asr.transcribed` prüft Seed, Modell und Settings, neu auch `batch_size` und `without_timestamps`. `check_provenance` bricht bei abweichender Revision oder abweichendem Snapshot ab. Weicht eine Batched-Variante von den gespeicherten Vergleichsläufen ab, laufen diese neu und der Bericht nennt es.
 - VAD-Zwischenspeicher: *handled* — `vad.json` hält die Optionen; andere Optionen rechnen neu. Die Batched-VAD bekommt eine eigene Datei, damit der Speicher der Pipeline-VAD bleibt.
 - Abbruch der Recherche: *handled* — die Tabelle im Dokument wächst zeilenweise, jede Zeile mit Quelle; ein neuer Anlauf setzt dort fort.
 
@@ -78,7 +78,7 @@ TOOL-62 und TOOL-93 haben sechs lokale Modelle verglichen, aber weder die Batche
 - Verify: `scripts/check`. Im Hauptcheckout:
   - `asr.py score $S base --seeds 3` ergibt weiter 21,3 % (A) und 29,8 % (B)
   - `omissions.py $S` für `base` ergibt weiter 31/31/36 Auslassungen an A
-  - `asr.py prepare` und `run` für `base+batched`, Seed 1, Pilotsitzung: Der Lauf endet, `asr.settings` trägt `batched`, die Wörter haben Zeiten, `keywords_used` ist nicht leer
+  - `asr.py prepare` und `run` für `base+batched`, Seed 1, Pilotsitzung: Der Lauf endet, `asr.settings` trägt `batch_size`, die Wörter haben Zeiten, `keywords_used` ist nicht leer
   - `omissions.py $S --suggest` an beiden Sitzungen gibt Fenster außerhalb von A–E aus
 - AC: Punkt 4 ist am Lauf belegt (Hotwords und Wortzeiten). Die Projektverantwortliche bekommt Sitzung und Zeitfenster im Chat.
 
