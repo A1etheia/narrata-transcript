@@ -101,8 +101,10 @@ Nach dem Spike steht je Kandidat (`dynaudnorm` mild und stark, `acompressor`, `l
 - AC: Go/No-Go nach der Regel aus TOOL-92; bei Go ein Umsetzungsticket; nur Kennzahlen im Dokument.
 
 ## Folge-Tickets
-- Umsetzungsticket bei Go: [kein Ticket: hängt am Ergebnis; Chunk 4 legt es an oder trägt hier den Grund für das No-Go ein]
-- Bewertung auf gefiltertem Audio neu kalibrieren (offener Punkt aus TOOL-92): [kein Ticket: nur bei Go nötig, dann Teil des Umsetzungstickets]
+- Umsetzung von `loudnorm` vor der Erkennung: TOOL-109, angelegt nach dem „Go mit Vorbehalt“ vom 2026-11-23. Die Go-Regel ist an B verfehlt, die Projektverantwortliche hat trotzdem für die Umsetzung entschieden.
+- Bewertung auf gefiltertem Audio neu kalibrieren (offener Punkt aus TOOL-92): TOOL-109, als Akzeptanzkriterium.
+- Diarisierung auf Roh-WAV oder gefiltertem WAV: TOOL-109, als Punkt im Vorgehen.
+- Kontrolle `gain` mit fester Verstärkung, im Plan nicht vorgesehen: [kein Ticket: in Chunk 3 mitgemessen, weil `loudnorm` dynamisch regelt und als Kontrolle ausfiel]
 - TOOL-100: Kommentar mit dem Ergebnis für den Reflexionspunkt M9, in Chunk 4.
 - Reihenfolge aus TOOL-101 (TOOL-103 zuletzt): [kein Ticket: am 2026-11-22 von der Projektverantwortlichen entschieden, voll wie im Ticket zu messen]
 

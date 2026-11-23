@@ -2,9 +2,18 @@
 
 Stand 2026-11-23. Spike-Bericht zu [TOOL-103](../plans/TOOL-103-level-normalization.md), Werkzeug: [`scripts/spike/asr.py`](../../scripts/spike/asr.py) und [`scripts/spike/omissions.py`](../../scripts/spike/omissions.py). Alle Filter und Läufe liefen lokal. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel.
 
-## Zwischenstand
+## Kurzfassung
 
-Gemessen sind die fünf Kandidaten an allen fünf Referenzen, dazu `loud` mit Hochpass, eine Kontrolle mit fester Verstärkung, der Sprecherfehler und die Auslassungen je Sprecher. Der beste Kandidat nach der vorab festgelegten Regel ist `loud` ([Auswahl](#auswahl-des-besten-kandidaten)). Es fehlt noch die Entscheidung Go oder No-Go.
+**Entscheidung: Go mit Vorbehalt für `loud` (zweistufiges `loudnorm` vor der Erkennung).** Die vorab festgelegte Regel ist an B knapp verfehlt. Die Projektverantwortliche hat am 2026-11-23 trotzdem für die Umsetzung entschieden, weil vier von fünf Referenzen gewinnen und die Läufe stabil werden ([Entscheidung](#entscheidung)).
+
+- **`loud` senkt die Auslassungen dort, wo `base` Blöcke verliert.** Im Mittel je Seed an C von 138 auf 89, an D von 138 auf 62, an E von 56 auf 30. An A und B bleiben sie fast gleich (33 auf 29, 44 auf 42) ([Überblick](#überblick)).
+- **WER:** an C 23,9 % statt 30,8 %, an D 36,7 % statt 61,2 %, an E 29,6 % statt 34,0 %, an A 20,2 % statt 21,3 %, an B 26,5 % statt 29,8 % im Mittel.
+- **Die Läufe werden stabil.** `loud` liefert an A und B in allen drei Seeds dasselbe Ergebnis und streut sonst um höchstens 2,0 Punkte. `base` streut an B um 9,8 und an D um 32,1 Punkte.
+- **Die anderen Kandidaten tragen nicht.** `dyn` und `comp` verlieren Blöcke, die `base` behält. `dynx` gewinnt an C nichts, `spn` an B nichts. Der Hochpass verschlechtert `loud` an B, C und D ([Hochpass und Kontrolle](#hochpass-und-kontrolle)).
+- **Der Gewinn kommt nicht vom Angleichen der Sprecher.** An C gewinnen die lauten Sprecher, die leisen werden leicht schlechter. Eine feste Verstärkung von 12 dB holt an D schon den größten Teil, an C nur 2 von 7 Punkten, und sie ist nicht stabil ([Auslassungen je Sprecher](#auslassungen-je-sprecher)).
+- **Sprecherfehler im Rahmen:** an A, B und E 0,4 bis 3,4 Punkte schlechter, an C und D besser ([Sprecherfehler](#sprecherfehler)).
+
+**Vorbehalte für die Umsetzung:** B liegt über dem besten `base`-Lauf. Die Bewertung verschiebt sich und ist auf gefiltertem Audio neu zu kalibrieren. Der Sprecherfehler an E steigt von 5,3 % auf 8,7 %. Das Filtern kostet knapp 5 min je 5-Stunden-Segment.
 
 ## Material und Methode
 
@@ -169,6 +178,32 @@ Referenz C:
 - **Wer die Sprecher am stärksten angleicht, gewinnt nichts.** `dynx` bringt alle vier an C auf 0,9 dB zusammen, hebt aber das Grundgeräusch um 7 dB und bleibt bei den Auslassungen auf dem Niveau von `base`. `loud` verkleinert den Abstand nur von 4,6 auf 2,6 dB.
 - **An A ändert sich nur der Sprecher mit den wenigsten Wörtern.** Die Sprecher liegen dort schon im Roh-WAV innerhalb von 0,9 dB. Sprecher 3 hat 45 Wörter, die Unterschiede sind 1 bis 11 Auslassungen je Seed.
 - **Der Befund aus TOOL-101 bestätigt sich:** Der Pegelabstand zwischen den Sprechern erklärt die Auslassungen nicht. `loud` hilft, indem es die Läufe stabilisiert und Blockverluste vermeidet ([Überblick](#überblick)).
+
+## Entscheidung
+
+Die Regel aus dem Plan, übernommen aus TOOL-92: An A und an B liegt die höchste WER der drei Seeds des Kandidaten unter der niedrigsten von `base`, und Einfügungen und Wiederholungsanteil liegen im Mittel nicht über `base`. C, D und E sind Gegenprobe.
+
+| Prüfung für `loud` | Ergebnis | erfüllt |
+| --- | --- | --- |
+| A: höchste WER unter der niedrigsten von `base` | 20,2 % gegen 21,3 % | ja |
+| B: höchste WER unter der niedrigsten von `base` | 26,5 % gegen 25,6 % | nein |
+| Einfügungen im Mittel nicht über `base` | 11,5 gegen 17,5 | ja |
+| Wiederholungsanteil nicht über `base` | 0,6 % gegen 0,7 % (Pilotsitzung), 0,4 % gegen 0,7 % (zweite Sitzung) | ja |
+| Gegenprobe C: im Mittel nicht schlechter | 23,9 % gegen 30,8 %, jeder Lauf unter dem besten von `base` | ja |
+| Gegenprobe D | 36,7 % gegen 61,2 %, jeder Lauf unter dem besten von `base` | ja |
+| Gegenprobe E | 29,6 % gegen 34,0 %, zwei von drei Läufen unter dem besten von `base` | ja |
+
+- **Nach der Regel allein wäre es ein No-Go.** An B fehlen 0,9 Punkte, das sind 4 von 441 Wörtern gegen einen einzelnen `base`-Lauf. Im Mittel liegt `loud` an B 3,3 Punkte unter `base`.
+- **Entschieden ist Go mit Vorbehalt.** Die Abweichung von der Regel ist eine bewusste Entscheidung der Projektverantwortlichen vom 2026-11-23, nach Kenntnis der Messwerte. Die Begründung: Die Regel prüft nur A und B, wo `base` kaum Blöcke verliert. Der Hebel wirkt an C, D und E.
+- **Umsetzung:** [TOOL-109](https://alethe1a.atlassian.net/browse/TOOL-109) im Epic TOOL-100.
+
+Offen für die Umsetzung:
+
+- **Bewertung neu kalibrieren.** Mit Filter gibt es mehr `confident`-Passagen, und an C und D werden mehr Fehler übersehen ([Überblick](#überblick)).
+- **B und E beobachten.** B ist die Stelle, an der die Regel verfehlt ist. An E steigt der Sprecherfehler.
+- **Welche Schritte das gefilterte WAV lesen.** Gemessen ist: Erkennung und Diarisierung beide auf dem gefilterten WAV. Die Diarisierung auf dem Roh-WAV mit Erkennung auf dem gefilterten ist nicht gemessen.
+- **Laufzeit und Voraussetzungen.** Zwei Durchgänge, zusammen knapp 5 min je Segment auf der CPU. Die gefilterte Fassung ist eine zusätzliche Arbeitsdatei, Filter und Version gehören in `asr.settings`, gespeicherte Transkripte werden `stale`.
+- **Nur zwei Aufnahmen.** Beide haben fast dieselbe Lautheit (−26,6 und −26,5 LUFS). Wie `loudnorm` auf eine deutlich lautere oder leisere Aufnahme wirkt, ist nicht gemessen.
 
 ## Messwerte
 
