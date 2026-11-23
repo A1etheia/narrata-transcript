@@ -20,7 +20,7 @@ START = dt.date(2026, 11, 23)  # a Monday: the week the open work is planned fro
 FROM = dt.date(2026, 11, 23)  # first day counted; working days before it are skipped
 WORKDAYS = [0, 1, 3]  # Mon, Tue, Thu -> 3 dev-days per week
 PAUSES = [(dt.date(2026, 12, 21), dt.date(2027, 1, 3))]  # inclusive ranges, no work
-GENERATED = "2026-11-22"
+GENERATED = "2026-11-23"
 
 # (phase title, milestone sentence, [(key, title, dev-days, note)])
 P = [
@@ -128,7 +128,7 @@ P = [
      "M9 — Auslassungen verortet und die offenen Hebel gemessen (Epic TOOL-100). Reflexionspunkt: Welcher Hebel bekommt ein Umsetzungsticket?", [
         ("TOOL-101", "Spike: Auslassungen an den Handreferenzen verorten", 1.0, "erledigt: `docs/spikes/TOOL-101-auslassungen-verorten.md`"),
         ("TOOL-102", "Spike: Vereinigung mehrerer Seeds gegen Auslassungen messen", 1.0, "erledigt: `docs/spikes/TOOL-102-seed-vereinigung.md`; Ergebnis No-Go für R1 bis R3, keine Umsetzungstickets; Folgefrage Blockverlust gegen Halluzination in TOOL-108"),
-        ("TOOL-103", "Spike: Pegelausgleich vor der Erkennung messen", 1.0, "`dynaudnorm`, `acompressor`, `loudnorm`, `speechnorm` auf dem Prüfstand aus TOOL-92 (`scripts/spike/denoise.py`), drei Seeds, Go-Regel wie TOOL-92; TOOL-92 hat nur Rauschfilter gemessen; aus TOOL-101: Reihenfolge und Begründung im Kommentar an TOOL-100"),
+        ("TOOL-103", "Spike: Pegelausgleich vor der Erkennung messen", 1.0, "erledigt: `docs/spikes/TOOL-103-pegelausgleich.md`; Ergebnis Go mit Vorbehalt für `loudnorm`, Umsetzung in TOOL-109 (aus TOOL-103: Bewertung auf gefiltertem Audio neu kalibrieren; Diarisierung auf Roh-WAV oder gefiltertem WAV entscheiden)"),
         ("TOOL-104", "Recherche: sprecherbedingte Dekodierung, neue lokale Modelle, Batched-Pipeline", 1.0, "nach TOOL-101; höchstens drei Kandidaten für eine Messung; Batched-Pipeline von faster-whisper direkt an A und B messen, falls sie Hotwords trägt; nur lokal lauffähige Ansätze; aus TOOL-101: Reihenfolge und Begründung im Kommentar an TOOL-100"),
         ("TOOL-105", "Messung: Sitzung mit geänderter Aufnahme am Tisch gegen eine Handreferenz", 0.5, "braucht die Gruppe, Hardware und einen Spielabend, das Datum ist deshalb nur ein Platzhalter; wenn möglich mit dem bisherigen Mikrofon parallel aufnehmen; Handreferenz von der Projektverantwortlichen (20–30 min); aus TOOL-60 und TOOL-93: Mikrofon-Empfehlung bisher nur dokumentiert; aus TOOL-101: Reihenfolge und Begründung im Kommentar an TOOL-100"),
     ]),
