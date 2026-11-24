@@ -12,6 +12,11 @@ clip: R1 takes per 30-second window the run with the most words, R2 offers what
 another run has more as an alternative, R3 hints at `confident` passages where
 the runs deviate. It writes nothing.
 
+    seeds.py <group>/<ordinal> [--variant base] --with <variant> [--seeds 3] [--clip ...]
+
+With `--with` (TOOL-104) it prints only the oracle and the naive union across
+two variants, per clip, in both directions and for every pair of one run each.
+
 Privacy (TOOL-66): the console gets counts, shares, error rates and times only,
 no text, no token, no names and no speaker labels.
 """
@@ -46,6 +51,8 @@ RASTER_TOKENS = 5  # a raster window with this many deviating tokens counts
 SUGGEST_MS = 180_000  # length of a window proposed for a new hand reference
 SUGGESTIONS = 3
 HINT_TOKENS = (1, 2, 3)  # R3: a passage deviating by this many tokens gets a hint
+# `--with` (TOOL-104, not in the TOOL-102 plan): omitted tokens in a row count as a block
+CROSS_BLOCK_TOKENS = 5
 
 HIT, SUBSTITUTED, DELETED = "hit", "substituted", "deleted"
 
@@ -373,6 +380,19 @@ def merged(base: Sequence[str], other: Sequence[str]) -> list[str]:
     return out
 
 
+def _fate(base: ClipRun, others: Sequence[ClipRun]) -> dict[int, str]:
+    """Per reference token `base` omits: the best any of `others` has for it."""
+    return {
+        n: HIT
+        if any(run.status[n] == HIT for run in others)
+        else SUBSTITUTED
+        if any(run.status[n] == SUBSTITUTED for run in others)
+        else DELETED
+        for n, status in enumerate(base.status)
+        if status == DELETED
+    }
+
+
 def _errors(counts: Mapping[str, int]) -> int:
     return sum(counts[k] for k in ("substitutions", "deletions", "insertions"))
 
@@ -406,16 +426,7 @@ def print_clip(
     print("| --- | --- | --- | --- | --- | --- | --- | --- |")
     oracle: list[float] = []
     for base in runs:
-        others = [run for run in runs if run is not base]
-        fate = Counter(
-            HIT
-            if any(run.status[n] == HIT for run in others)
-            else SUBSTITUTED
-            if any(run.status[n] == SUBSTITUTED for run in others)
-            else DELETED
-            for n, status in enumerate(base.status)
-            if status == DELETED
-        )
+        fate = Counter(_fate(base, [run for run in runs if run is not base]).values())
         errors = _errors(base.counts)
         oracle.append(fate[HIT] / words)
         print(
@@ -450,6 +461,64 @@ def print_clip(
         f"Im Mittel über die Basis-Seeds: Orakel {_points(sum(oracle) / len(oracle))} "
         f"Punkte, naive Vereinigung {_points(sum(union) / len(union))} Punkte."
     )
+    print()
+
+
+def _in_blocks(status: Sequence[str]) -> set[int]:
+    """The omitted reference tokens in a row of at least `CROSS_BLOCK_TOKENS`."""
+    found: set[int] = set()
+    for omitted, group in itertools.groupby(
+        enumerate(status), key=lambda item: item[1] == DELETED
+    ):
+        row = [position for position, _ in group]
+        if omitted and len(row) >= CROSS_BLOCK_TOKENS:
+            found.update(row)
+    return found
+
+
+def print_cross(
+    clip: HandClip,
+    hand: calibration.HandReference,
+    sides: Mapping[str, Sequence[ClipRun]],
+) -> None:
+    """The oracle and the naive union of one run with one run of the other variant.
+
+    Both directions, every pair of seeds; a pair with the same tokens as an
+    earlier one is left out.
+    """
+    words = len(hand.tokens)
+    print(f"## Referenz {clip.name}")
+    print()
+    print(f"{words} Referenzwörter")
+    print()
+    print(
+        "| Basis | zweiter Lauf | WER | E / A / Ei | Auslassungen: der zweite Lauf hat "
+        f"das Wort richtig | davon in Folgen ab {CROSS_BLOCK_TOKENS} Wörtern | nur als "
+        "Ersetzung | fehlt auch dort | WER Orakel | Gewinn (Punkte) | "
+        "WER Vereinigung | Gewinn (Punkte) |"
+    )
+    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    for (name, runs), (other_name, others) in itertools.permutations(sides.items(), 2):
+        seen: set[tuple[tuple[str, ...], tuple[str, ...]]] = set()
+        for base, other in itertools.product(runs, others):
+            if (base.tokens, other.tokens) in seen:
+                continue
+            seen.add((base.tokens, other.tokens))
+            found = _fate(base, [other])
+            fate = Counter(found.values())
+            in_blocks = sum(found[n] == HIT for n in _in_blocks(base.status))
+            union = _errors(
+                calibration.align(hand, merged(base.tokens, other.tokens)).counts
+            )
+            errors = _errors(base.counts)
+            print(
+                f"| {name}#{base.seed} | {other_name}#{other.seed} | "
+                f"{_pct(errors / words)} | {_eai(base.counts)} | {fate[HIT]} | "
+                f"{in_blocks} | {fate[SUBSTITUTED]} | {fate[DELETED]} | "
+                f"{_pct((errors - fate[HIT]) / words)} | "
+                f"{_points(fate[HIT] / words)} | {_pct(union / words)} | "
+                f"{_points((errors - union) / words)} |"
+            )
     print()
 
 
@@ -840,6 +909,61 @@ def _passage_errors(base: ClipRun) -> tuple[Counter[int], Counter[int], set[int]
 # --- main ---------------------------------------------------------------------------
 
 
+def _stored(
+    paths: SessionPaths, name: str, seeds: int
+) -> dict[int, ReferenceTranscript]:
+    return {seed: asr.transcribed(paths, name, seed) for seed in range(1, seeds + 1)}
+
+
+def _sections(
+    paths: SessionPaths, name: str, references: Mapping[int, ReferenceTranscript]
+) -> list[asr.Sections]:
+    return [asr.sections(paths, name, seed, r) for seed, r in references.items()]
+
+
+def _timed_runs(
+    paths: SessionPaths, name: str, references: Mapping[int, ReferenceTranscript]
+) -> list[Run]:
+    runs = []
+    for seed, reference in references.items():
+        root = asr.shadow_root(paths, name, seed)
+        thresholds = load_config(root / "config.yaml").review_uncertainty
+        hints = stored_hints(SessionPaths(paths.key, root), SEGMENT)
+        ratings = segment_assessment(reference, hints, thresholds).ratings
+        runs.append(timed(seed, reference, ratings, thresholds.compression_ratio))
+    return runs
+
+
+def measure_cross(
+    paths: SessionPaths,
+    names: Sequence[str],
+    seeds: int,
+    clips: Sequence[HandClip],
+) -> None:
+    """What one variant has right where the other omits, per clip."""
+    stored = {name: _stored(paths, name, seeds) for name in names}
+    asr.check_provenance(
+        [s for name, found in stored.items() for s in _sections(paths, name, found)]
+    )
+    # only tokens and starts are used here; the ratings come along with `timed`
+    runs = {name: _timed_runs(paths, name, found) for name, found in stored.items()}
+    for clip in clips:
+        hand = calibration.read_hand_reference(
+            paths.review_dir / "calibration" / clip.file
+        )
+        print_cross(
+            clip,
+            hand,
+            {
+                name: [
+                    clip_run(run, stored[name][run.seed], hand, clip)
+                    for run in runs[name]
+                ]
+                for name in names
+            },
+        )
+
+
 def measure(
     paths: SessionPaths,
     name: str,
@@ -849,20 +973,10 @@ def measure(
 ) -> None:
     if seeds < 2:
         raise SpikeError("a comparison needs at least two seeds")
-    references = {
-        seed: asr.transcribed(paths, name, seed) for seed in range(1, seeds + 1)
-    }
-    asr.check_provenance(
-        [asr.sections(paths, name, seed, r) for seed, r in references.items()]
-    )
+    references = _stored(paths, name, seeds)
+    asr.check_provenance(_sections(paths, name, references))
     end_ms = asr._end_ms(paths)
-    runs = []
-    for seed, reference in references.items():
-        root = asr.shadow_root(paths, name, seed)
-        thresholds = load_config(root / "config.yaml").review_uncertainty
-        hints = stored_hints(SessionPaths(paths.key, root), SEGMENT)
-        ratings = segment_assessment(reference, hints, thresholds).ratings
-        runs.append(timed(seed, reference, ratings, thresholds.compression_ratio))
+    runs = _timed_runs(paths, name, references)
     diffs = {
         (a.seed, b.seed): aligned(a, b, end_ms)
         for a, b in itertools.combinations(runs, 2)
@@ -903,12 +1017,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="propose windows for a new hand reference where the seeds deviate most",
     )
+    parser.add_argument(
+        "--with",
+        dest="other",
+        type=asr._variant_arg,
+        help="a second variant: only the oracle and the union across both, per clip",
+    )
     args = parser.parse_args(argv)
+    if args.other and args.suggest:
+        parser.error("--suggest has no meaning with --with")
+    clips = args.clip or denoise.CLIPS
     try:
         paths = load_config(args.config).session_paths(SessionKey.parse(args.session))
-        measure(
-            paths, args.variant, args.seeds, args.clip or denoise.CLIPS, args.suggest
-        )
+        if args.other:
+            measure_cross(paths, (args.variant, args.other), args.seeds, clips)
+        else:
+            measure(paths, args.variant, args.seeds, clips, args.suggest)
     except (SpikeError, ValueError, OSError, DataFileError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

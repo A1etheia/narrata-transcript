@@ -275,6 +275,10 @@ V="base+batched base+batched+ts loud+batched"
   - Sie setzt `without_timestamps`: ein Segment je Stück. Wortzeiten kommen trotzdem aus der Ausrichtung.
 - **`+ts`** schaltet `without_timestamps` ab und gilt nur zusammen mit `+batched`.
 - **`omissions.py --variant <…+batched>`** rechnet die VAD mit den Optionen der Batched-Pipeline und legt sie als `vad-batched.json` ab. Die Merkmale „Fallback-Fenster“ und „dünnes Fenster“ gibt es für solche Läufe nicht, ihre Klasse heißt „entfällt“. „Erklärt“ zählt dort nur Überlappung, kurze und leise Beiträge.
+- **`seeds.py $S --with base+batched [--clip …]`** misst nur das Orakel über zwei Varianten, ohne Segmentvergleich und Regeln; `--suggest` ist dort ein Fehler. Je Referenz, in beiden Richtungen und für jedes Paar aus einem Lauf je Variante:
+  - wie viele Auslassungen des Hauptlaufs der zweite Lauf richtig hat, wie viele davon in Folgen ab 5 Referenzwörtern liegen, wie viele er nur als Ersetzung hat und wie viele auch dort fehlen;
+  - die WER des Orakels und der naiven Vereinigung, mit dem Gewinn in Punkten gegenüber dem Hauptlauf.
+  - Ein Paar mit denselben Wörtern wie ein früheres wird ausgelassen.
 - **`omissions.py --suggest`** schlägt drei sich nicht überlappende 3-min-Fenster für eine Handreferenz an unruhigen Stellen vor. Es liest nur die Diarisierung von Segment 1.
   - Raster 1 min, außerhalb der angegebenen Clips, mindestens mediane Sprachzeit.
   - Rang: Summe der Ränge nach Überlappungszeit und nach Zahl der Turns unter 2 s (gleiche Labels mit höchstens 500 ms Abstand verbunden).

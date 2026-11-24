@@ -294,6 +294,36 @@ Die Wortzahl je Klasse weicht zwischen den Varianten um wenige Wörter ab, weil 
 - **Dringender als Punkt 1, 2 und 5 ist nach diesen Fenstern das entgleiste Stück.** Ein Block von 94 Wörtern wiegt mehr als alle Einwürfe einer Referenz zusammen. Die offene Frage aus der ersten Messung, ob sich ein solches Stück erkennen und einzeln neu dekodieren lässt, entscheidet darüber, ob die Batched-Pipeline überhaupt in Frage kommt.
 - **Die Entscheidung fällt in Chunk 5** und liegt bei der Projektverantwortlichen.
 
+## Orakel: `base` und `base+batched` kombinieren
+
+Die beiden Läufe verlieren ihre Blöcke an verschiedenen Stellen: `base` an C, D und E, `base+batched` an H und I. Gemessen ist deshalb, was ein zweiter Lauf der anderen Variante höchstens zurückbringt (`seeds.py --with`, wie das Orakel in TOOL-102).
+
+- **Orakel:** Für jede Auslassung des Hauptlaufs zählt, ob der zweite Lauf das Wort richtig hat. Die WER des Orakels setzt nur diese richtigen Wörter ein und nichts Falsches. Es ist eine Obergrenze: Ohne Referenz weiß niemand, welche Wörter richtig sind.
+- **Blöcke:** dasselbe, beschränkt auf Auslassungen in Folgen ab 5 Referenzwörtern. Das ist die Obergrenze einer engen Regel, die nur Blöcke füllt.
+- **Naive Vereinigung:** Was der zweite Lauf an einer Stelle mehr hat, kommt dazu, richtig oder falsch.
+
+WER in Prozent, jeweils als Mittel über die drei Seeds von `base`:
+
+| Referenz | `base` | `base+batched` | Hauptlauf `base+batched`, Blöcke aus `base` | Hauptlauf `base+batched`, alle Wörter aus `base` | Hauptlauf `base`, alle Wörter aus `base+batched` | naive Vereinigung (`base+batched` mit `base`) |
+| --- | --- | --- | --- | --- | --- | --- |
+| A | 21,3 | 19,6 | 19,6 | 18,2 | 19,2 | 20,3 |
+| B | 29,8 | 25,4 | 25,3 | 24,8 | 28,4 | 27,8 |
+| C | 30,8 | 25,9 | 25,2 | 23,8 | 25,3 | 26,2 |
+| D | 61,2 | 36,3 | 35,9 | 35,1 | 45,7 | 44,9 |
+| E | 34,0 | 29,0 | 29,0 | 28,1 | 28,6 | 30,0 |
+| F | 28,4 | 26,4 | 25,7 | 25,0 | 26,6 | 26,0 |
+| G | 36,0 | 39,6 | 37,7 | 36,8 | 33,8 | 40,7 |
+| H | 36,5 | 53,6 | 38,4 | 37,4 | 32,4 | 40,1 |
+| I | 27,2 | 33,2 | 25,0 | 24,3 | 24,9 | 26,6 |
+| A bis H zusammen | 33,9 | 31,3 | 29,1 | 28,1 | 29,3 | 31,3 |
+
+- **Die Kombination trägt als Obergrenze.** Mit `base+batched` als Hauptlauf und den Blöcken aus `base` fällt die WER über A bis H von 31,3 % auf 29,1 %, gegenüber `base` allein sind es 4,8 Punkte. Der Gewinn sitzt fast ganz an H (15 Punkte) und I (8 Punkte), an den übrigen Referenzen sind es höchstens 2.
+- **Fast alles Rückholbare liegt in Blöcken.** An H hat `base` 75–78 der 149 fehlenden Wörter richtig, davon 70–74 in Folgen ab 5 Wörtern; an I 49–59 von 124, davon 45–56. Eine Regel, die nur Blöcke füllt, verschenkt gegenüber dem vollen Orakel einen Punkt.
+- **Umgekehrt gilt dasselbe für die Blöcke von `base`.** An D hat `base+batched` 55–87 der 115–166 fehlenden Wörter richtig, an C in zwei von drei Seeds 66 und 79, an E in einem Seed 38. Mit `base` als Hauptlauf bleibt aber dessen Streuung: An D steht das Orakel immer noch bei 45,7 %.
+- **`base+batched` ist der bessere Hauptlauf,** außer an G und H. Dort bleibt die Kombination auch als Orakel 1–2 Punkte über `base`, weil das Orakel nur Auslassungen füllt und die 40 und 43 Einfügungen von `base+batched` stehen lässt.
+- **Die naive Vereinigung lohnt nicht,** wie in TOOL-102. Über A bis H landet sie bei 31,3 % und damit genau bei `base+batched` allein: Was sie an H und I gewinnt, verliert sie an B, D und G durch falsche Wörter. Je nach Seed von `base` kostet sie an D bis zu 22 Punkte.
+- **Offen ist die Regel ohne Referenz.** Das Signal dafür gibt es: An H liegen 77 der 149 Auslassungen von `base+batched` an Stellen, an denen die Diarisierung Sprache hört und der Lauf kein Wort hat. Ob eine Regel „Sprache ohne Wörter über mehrere Sekunden, der zweite Lauf hat dort Text“ die Blöcke trifft, ohne an ruhigen Stellen falsche Wörter einzuschleppen, ist nicht gemessen. Daran ist TOOL-102 mit drei Seeds derselben Variante gescheitert; hier sind die Blöcke größer und die Läufe verschieden geschnitten.
+
 ## Messwerte
 
 Die Tabellen kommen unverändert aus `asr.py score`. Nicht abgedruckt sind die Aufteilung nach Füllwörtern und der Sprecherfehler, der nur für diarisierte Wurzeln (`base`, `loud`) vorliegt.
@@ -547,3 +577,122 @@ Dieselben Läufe wie in den übrigen Tabellen, gemessen an den neuen Fenstern. Z
 | loud+batched#1 | 0.34 | n/a | 4,1 | 4,6 (1,3) |
 | loud+batched#2 | 0.35 | n/a | 4,1 | 4,6 (1,3) |
 | loud+batched#3 | 0.37 | n/a | 4,1 | 4,6 (1,3) |
+
+### Orakel über `base` und `base+batched`
+
+Aus `seeds.py --with base+batched`. Ein Paar mit denselben Wörtern wie ein früheres steht nur einmal da; die drei Seeds von `base+batched` sind identisch.
+
+#### Referenz A
+
+531 Referenzwörter
+
+| Basis | zweiter Lauf | WER | E / A / Ei | Auslassungen: der zweite Lauf hat das Wort richtig | davon in Folgen ab 5 Wörtern | nur als Ersetzung | fehlt auch dort | WER Orakel | Gewinn (Punkte) | WER Vereinigung | Gewinn (Punkte) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| base#1 | base+batched#1 | 21,3% | 65 / 31 / 17 | 10 | 0 | 2 | 19 | 19,4% | 1,9 | 21,1% | 0,2 |
+| base#2 | base+batched#1 | 21,3% | 64 / 31 / 18 | 9 | 0 | 2 | 20 | 19,6% | 1,7 | 21,3% | 0,0 |
+| base#3 | base+batched#1 | 21,3% | 61 / 36 / 16 | 15 | 7 | 3 | 18 | 18,5% | 2,8 | 20,3% | 0,9 |
+| base+batched#1 | base#1 | 19,6% | 60 / 29 / 15 | 7 | 0 | 3 | 19 | 18,3% | 1,3 | 20,5% | −0,9 |
+| base+batched#1 | base#2 | 19,6% | 60 / 29 / 15 | 7 | 0 | 2 | 20 | 18,3% | 1,3 | 20,5% | −0,9 |
+| base+batched#1 | base#3 | 19,6% | 60 / 29 / 15 | 9 | 0 | 2 | 18 | 17,9% | 1,7 | 19,8% | −0,2 |
+
+#### Referenz B
+
+441 Referenzwörter
+
+| Basis | zweiter Lauf | WER | E / A / Ei | Auslassungen: der zweite Lauf hat das Wort richtig | davon in Folgen ab 5 Wörtern | nur als Ersetzung | fehlt auch dort | WER Orakel | Gewinn (Punkte) | WER Vereinigung | Gewinn (Punkte) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| base#1 | base+batched#1 | 25,6% | 61 / 44 / 8 | 6 | 2 | 8 | 30 | 24,3% | 1,4 | 24,3% | 1,4 |
+| base#2 | base+batched#1 | 28,3% | 67 / 42 / 16 | 6 | 2 | 6 | 30 | 27,0% | 1,4 | 27,4% | 0,9 |
+| base#3 | base+batched#1 | 35,4% | 81 / 45 / 30 | 6 | 1 | 7 | 32 | 34,0% | 1,4 | 35,6% | −0,2 |
+| base+batched#1 | base#1 | 25,4% | 70 / 38 / 4 | 4 | 1 | 4 | 30 | 24,5% | 0,9 | 25,4% | 0,0 |
+| base+batched#1 | base#2 | 25,4% | 70 / 38 / 4 | 3 | 0 | 5 | 30 | 24,7% | 0,7 | 27,0% | −1,6 |
+| base+batched#1 | base#3 | 25,4% | 70 / 38 / 4 | 1 | 0 | 5 | 32 | 25,2% | 0,2 | 31,1% | −5,7 |
+
+#### Referenz D
+
+449 Referenzwörter
+
+| Basis | zweiter Lauf | WER | E / A / Ei | Auslassungen: der zweite Lauf hat das Wort richtig | davon in Folgen ab 5 Wörtern | nur als Ersetzung | fehlt auch dort | WER Orakel | Gewinn (Punkte) | WER Vereinigung | Gewinn (Punkte) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| base#1 | base+batched#1 | 49,4% | 77 / 133 / 12 | 66 | 60 | 21 | 46 | 34,7% | 14,7 | 37,0% | 12,5 |
+| base#2 | base+batched#1 | 52,6% | 98 / 115 / 23 | 55 | 49 | 17 | 43 | 40,3% | 12,2 | 43,7% | 8,9 |
+| base#3 | base+batched#1 | 81,5% | 86 / 166 / 114 | 87 | 79 | 30 | 49 | 62,1% | 19,4 | 63,5% | 18,0 |
+| base+batched#1 | base#1 | 36,3% | 87 / 65 / 11 | 6 | 3 | 13 | 46 | 35,0% | 1,3 | 36,5% | −0,2 |
+| base+batched#1 | base#2 | 36,3% | 87 / 65 / 11 | 5 | 2 | 17 | 43 | 35,2% | 1,1 | 40,1% | −3,8 |
+| base+batched#1 | base#3 | 36,3% | 87 / 65 / 11 | 5 | 0 | 11 | 49 | 35,2% | 1,1 | 58,1% | −21,8 |
+
+#### Referenz E
+
+369 Referenzwörter
+
+| Basis | zweiter Lauf | WER | E / A / Ei | Auslassungen: der zweite Lauf hat das Wort richtig | davon in Folgen ab 5 Wörtern | nur als Ersetzung | fehlt auch dort | WER Orakel | Gewinn (Punkte) | WER Vereinigung | Gewinn (Punkte) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| base#1 | base+batched#1 | 29,8% | 62 / 43 / 5 | 10 | 3 | 6 | 27 | 27,1% | 2,7 | 30,1% | −0,3 |
+| base#2 | base+batched#1 | 31,4% | 62 / 46 / 8 | 12 | 3 | 6 | 28 | 28,2% | 3,3 | 30,9% | 0,5 |
+| base#3 | base+batched#1 | 40,7% | 63 / 78 / 9 | 38 | 31 | 11 | 29 | 30,4% | 10,3 | 31,2% | 9,5 |
+| base+batched#1 | base#1 | 29,0% | 61 / 40 / 6 | 3 | 0 | 10 | 27 | 28,2% | 0,8 | 29,5% | −0,5 |
+| base+batched#1 | base#2 | 29,0% | 61 / 40 / 6 | 3 | 0 | 9 | 28 | 28,2% | 0,8 | 30,4% | −1,4 |
+| base+batched#1 | base#3 | 29,0% | 61 / 40 / 6 | 4 | 0 | 7 | 29 | 27,9% | 1,1 | 30,1% | −1,1 |
+
+#### Referenz F
+
+584 Referenzwörter
+
+| Basis | zweiter Lauf | WER | E / A / Ei | Auslassungen: der zweite Lauf hat das Wort richtig | davon in Folgen ab 5 Wörtern | nur als Ersetzung | fehlt auch dort | WER Orakel | Gewinn (Punkte) | WER Vereinigung | Gewinn (Punkte) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| base#1 | base+batched#1 | 27,4% | 74 / 74 / 12 | 8 | 4 | 3 | 63 | 26,0% | 1,4 | 27,1% | 0,3 |
+| base#2 | base+batched#1 | 26,7% | 75 / 71 / 10 | 4 | 0 | 3 | 64 | 26,0% | 0,7 | 26,7% | 0,0 |
+| base#3 | base+batched#1 | 31,0% | 72 / 99 / 10 | 18 | 14 | 10 | 71 | 27,9% | 3,1 | 29,3% | 1,7 |
+| base+batched#1 | base#1 | 26,4% | 63 / 81 / 10 | 11 | 6 | 7 | 63 | 24,5% | 1,9 | 25,7% | 0,7 |
+| base+batched#1 | base#2 | 26,4% | 63 / 81 / 10 | 10 | 6 | 7 | 64 | 24,7% | 1,7 | 25,5% | 0,9 |
+| base+batched#1 | base#3 | 26,4% | 63 / 81 / 10 | 4 | 0 | 6 | 71 | 25,7% | 0,7 | 26,7% | −0,3 |
+
+#### Referenz G
+
+551 Referenzwörter
+
+| Basis | zweiter Lauf | WER | E / A / Ei | Auslassungen: der zweite Lauf hat das Wort richtig | davon in Folgen ab 5 Wörtern | nur als Ersetzung | fehlt auch dort | WER Orakel | Gewinn (Punkte) | WER Vereinigung | Gewinn (Punkte) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| base#1 | base+batched#1 | 39,2% | 108 / 72 / 36 | 16 | 7 | 10 | 46 | 36,3% | 2,9 | 44,1% | −4,9 |
+| base#2 | base+batched#1 | 35,4% | 104 / 70 / 21 | 14 | 6 | 10 | 46 | 32,8% | 2,5 | 43,7% | −8,3 |
+| base#3 | base+batched#1 | 33,4% | 115 / 48 / 21 | 6 | 1 | 6 | 36 | 32,3% | 1,1 | 39,2% | −5,8 |
+| base+batched#1 | base#1 | 39,6% | 104 / 74 / 40 | 12 | 8 | 16 | 46 | 37,4% | 2,2 | 41,6% | −2,0 |
+| base+batched#1 | base#2 | 39,6% | 104 / 74 / 40 | 13 | 8 | 15 | 46 | 37,2% | 2,4 | 41,0% | −1,5 |
+| base+batched#1 | base#3 | 39,6% | 104 / 74 / 40 | 20 | 15 | 18 | 36 | 35,9% | 3,6 | 39,6% | 0,0 |
+
+#### Referenz I
+
+597 Referenzwörter
+
+| Basis | zweiter Lauf | WER | E / A / Ei | Auslassungen: der zweite Lauf hat das Wort richtig | davon in Folgen ab 5 Wörtern | nur als Ersetzung | fehlt auch dort | WER Orakel | Gewinn (Punkte) | WER Vereinigung | Gewinn (Punkte) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| base#1 | base+batched#1 | 26,8% | 78 / 70 / 12 | 11 | 6 | 4 | 55 | 25,0% | 1,8 | 26,3% | 0,5 |
+| base#2 | base+batched#1 | 26,6% | 79 / 66 / 14 | 10 | 7 | 4 | 52 | 25,0% | 1,7 | 26,5% | 0,2 |
+| base#3 | base+batched#1 | 28,3% | 69 / 82 / 18 | 21 | 18 | 5 | 56 | 24,8% | 3,5 | 27,3% | 1,0 |
+| base+batched#1 | base#1 | 33,2% | 61 / 124 / 13 | 49 | 45 | 20 | 55 | 25,0% | 8,2 | 26,3% | 6,9 |
+| base+batched#1 | base#2 | 33,2% | 61 / 124 / 13 | 51 | 46 | 21 | 52 | 24,6% | 8,5 | 26,5% | 6,7 |
+| base+batched#1 | base#3 | 33,2% | 61 / 124 / 13 | 59 | 56 | 9 | 56 | 23,3% | 9,9 | 27,0% | 6,2 |
+
+#### Referenz C
+
+909 Referenzwörter
+
+| Basis | zweiter Lauf | WER | E / A / Ei | Auslassungen: der zweite Lauf hat das Wort richtig | davon in Folgen ab 5 Wörtern | nur als Ersetzung | fehlt auch dort | WER Orakel | Gewinn (Punkte) | WER Vereinigung | Gewinn (Punkte) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| base#1 | base+batched#1 | 27,3% | 111 / 80 / 57 | 5 | 1 | 6 | 69 | 26,7% | 0,6 | 28,4% | −1,1 |
+| base#2 | base+batched#1 | 31,9% | 110 / 156 / 24 | 66 | 56 | 21 | 69 | 24,6% | 7,3 | 27,7% | 4,2 |
+| base#3 | base+batched#1 | 33,3% | 93 / 177 / 33 | 79 | 74 | 23 | 75 | 24,6% | 8,7 | 26,5% | 6,8 |
+| base+batched#1 | base#1 | 25,9% | 91 / 110 / 34 | 22 | 9 | 19 | 69 | 23,4% | 2,4 | 27,3% | −1,4 |
+| base+batched#1 | base#2 | 25,9% | 91 / 110 / 34 | 16 | 4 | 25 | 69 | 24,1% | 1,8 | 25,9% | 0,0 |
+| base+batched#1 | base#3 | 25,9% | 91 / 110 / 34 | 17 | 4 | 18 | 75 | 24,0% | 1,9 | 25,3% | 0,6 |
+
+#### Referenz H
+
+470 Referenzwörter
+
+| Basis | zweiter Lauf | WER | E / A / Ei | Auslassungen: der zweite Lauf hat das Wort richtig | davon in Folgen ab 5 Wörtern | nur als Ersetzung | fehlt auch dort | WER Orakel | Gewinn (Punkte) | WER Vereinigung | Gewinn (Punkte) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| base#1 | base+batched#1 | 37,2% | 73 / 86 / 16 | 21 | 10 | 8 | 57 | 32,8% | 4,5 | 34,5% | 2,8 |
+| base#3 | base+batched#1 | 34,9% | 72 / 73 / 19 | 15 | 12 | 4 | 54 | 31,7% | 3,2 | 34,3% | 0,6 |
+| base+batched#1 | base#1 | 53,6% | 60 / 149 / 43 | 75 | 70 | 17 | 57 | 37,7% | 16,0 | 40,2% | 13,4 |
+| base+batched#1 | base#3 | 53,6% | 60 / 149 / 43 | 78 | 74 | 17 | 54 | 37,0% | 16,6 | 40,0% | 13,6 |
