@@ -4,7 +4,33 @@ Stand 2026-11-23. Bericht zu [TOOL-104](../plans/TOOL-104-asr-research.md), Werk
 
 ## Kurzfassung
 
-Folgt in Chunk 5, wenn Recherche und neue Handreferenz vorliegen. Bis dahin steht das Ergebnis der Messung unter [Ergebnis](#ergebnis).
+**Kein Umsetzungsticket für die Batched-Pipeline allein, kein Messkandidat für sprecherbedingte Erkennung und Sprachtrennung. Drei Kandidaten für eine Messung: Blöcke aus einem zweiten Lauf füllen, Dekodierung je Redebeitrag, ein neues Modell.**
+
+- **Punkt 4, Batched-Pipeline:** Sie trägt Hotwords und Wortzeiten, liefert bei jedem Seed dasselbe und läuft in unter 2 statt 6–7 min je Segment ([Was sie trägt](#was-sie-trägt), [Seeds, Laufzeit, Bewertung](#seeds-laufzeit-bewertung)). An den Referenzen A bis F ist sie besser als `base`. An drei von vier unruhigen Fenstern ist sie schlechter und verliert Blöcke von bis zu 94 Wörtern ([WER an den neuen Fenstern](#wer-an-den-neuen-fenstern)). Über A bis H bleiben 31,3 % gegen 33,9 % WER. Die vorab festgelegte Regel verfehlt sie am Wiederholungsanteil ([Die Regel an A und B](#die-regel-an-a-und-b)).
+- **`base` und `base+batched` verlieren ihre Blöcke an verschiedenen Stellen.** Füllt man die Blöcke von `base+batched` aus `base`, liegt die Obergrenze über A bis H bei 29,1 %, an H und I sind es 15 und 8 Punkte ([Orakel](#orakel-base-und-basebatched-kombinieren)). Eine Regel ohne Referenz ist nicht gemessen.
+- **Punkt 1 und 2, sprecherbedingte Erkennung und Sprachtrennung:** Überlappung trägt 18 % der Auslassungen, realistisch erreichbar wären rund 10 % ([Obergrenzen](#was-punkt-1-2-und-5-höchstens-erreichen)). Kein Kandidat hat einen Beleg für Deutsch oder für weniger Auslassungen im einkanaligen Fernfeld, der Umbau wäre der größte ([Punkt 1](#punkt-1-sprecherbedingte-erkennung), [Punkt 2](#punkt-2-sprachtrennung-vor-der-erkennung)).
+- **Punkt 5, Dekodierung je Redebeitrag:** ohne neues Modell messbar, Obergrenze 16–18 % der Auslassungen, Ausgang offen ([Punkt 5](#punkt-5-dekodierung-je-redebeitrag)).
+- **Punkt 3, neue Modelle:** Für keinen Kandidaten gibt es Werte auf deutscher Meeting- oder Fernfeldsprache. Am ehesten eine Messung wert sind Qwen3-ASR-1.7B und Cohere Transcribe, beide mit hohem Aufwand. Für Bairisch gibt es kein nutzbares lokales Modell ([Punkt 3](#punkt-3-neue-lokale-modelle)).
+- **`loudnorm` (TOOL-109) hält an den neuen Fenstern nicht durchgehend:** `loud` ist an H besser als `base`, an G und I schlechter ([WER an den neuen Fenstern](#wer-an-den-neuen-fenstern)).
+
+### Kandidaten und Übergaben
+
+Entscheidung der Projektverantwortlichen vom 2026-11-24.
+
+| Kandidat | Ticket |
+| --- | --- |
+| Blöcke von `base+batched` aus einem `base`-Lauf füllen, mit einer Regel ohne Referenz | TOOL-108, um den zweiten Lauf und die Referenzen F bis I erweitert |
+| Dekodierung je Redebeitrag über `clip_timestamps` | TOOL-112 |
+| Neues Modell an den Handreferenzen: Qwen3-ASR-1.7B, danach Cohere Transcribe | TOOL-111 |
+
+- Umsetzung der Batched-Pipeline allein: [kein Ticket: Regel verfehlt, an G, H und I schlechter als `base`; als Hauptlauf einer Kombination Teil von TOOL-108]
+- Sprecherbedingte Erkennung (DiCoW und Verwandte): [kein Ticket: Obergrenze rund 10 % der Auslassungen, kein Beleg für Deutsch, größter Umbau]
+- Sprachtrennung vor der Erkennung: [kein Ticket: dieselbe Obergrenze, belegtes Risiko durch Artefakte außerhalb der Überlappung]
+- Großzügigere VAD für die Batched-Pipeline und die Entgleisung von `loud+batched` an E: [kein Ticket: nur von Belang, wenn TOOL-108 oder TOOL-112 die Batched-Pipeline weitertragen; steht dort als Hinweis]
+- Mundart-Modell: [kein Ticket: kein Kandidat und kein Korpus; Beobachtung gehört zu TOOL-111]
+- TOOL-109 (`loudnorm`): Hinweis auf G und I und darauf, dass sich `loud` und `+batched` nicht addieren.
+- TOOL-82 (Parakeet-Zweitlauf): Hinweis auf den Abfall von Parakeet bei Mundart, auf das deutsche Feintuning `primeline/parakeet-primeline` und auf `base+batched` als billigeren Zweitlauf.
+- TOOL-100: Kommentar mit dem Ergebnis für den Reflexionspunkt M9.
 
 ## Punkt 4: die Batched-Pipeline von faster-whisper
 

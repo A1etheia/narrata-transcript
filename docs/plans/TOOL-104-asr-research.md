@@ -122,12 +122,20 @@ TOOL-62 und TOOL-93 haben sechs lokale Modelle verglichen, aber weder die Batche
 - AC: höchstens drei Kandidaten, jeweils als Folge-Ticket oder mit `[kein Ticket: <Grund>]`.
 
 ## Folge-Tickets
-- Messung je Kandidat (höchstens drei): [kein Ticket: die Kandidaten stehen erst nach Chunk 5 fest; die Keys werden dort nachgetragen]
-- Umsetzung der Batched-Pipeline im Backend, falls sie die Regel erfüllt: [kein Ticket: hängt am Ergebnis von Chunk 2 und 4; wird in Chunk 5 angelegt oder mit Grund verworfen]
-- Zusätzliche Handreferenz an unruhigen Stellen: [kein Ticket: Teil dieses Tickets, Rahmen im Epic TOOL-100]
-- TOOL-100: Kommentar mit dem Ergebnis für den Reflexionspunkt M9, in Chunk 5.
-- TOOL-109 (`loudnorm` in der Pipeline): bekommt in Chunk 5 einen Hinweis, falls `loud+batched` anders ausfällt als `base+batched`.
-- TOOL-82 (Parakeet-Zweitlauf): bekommt in Chunk 5 einen Hinweis, falls die Recherche ein Modell findet, das den Zweitlauf besser trägt.
+Stand nach Chunk 5 (2026-11-24), Entscheidung der Projektverantwortlichen:
+
+- Kandidat 1, Blöcke von `base+batched` aus einem `base`-Lauf füllen: TOOL-108, per Kommentar um den zweiten Lauf, das Orakel aus `seeds.py --with` und die Referenzen F bis I erweitert.
+- Kandidat 2, Dekodierung je Redebeitrag über `clip_timestamps`: TOOL-112.
+- Kandidat 3, neues Modell (Qwen3-ASR-1.7B, danach Cohere Transcribe): TOOL-111, per Kommentar.
+- Umsetzung der Batched-Pipeline allein: [kein Ticket: Regel verfehlt, an G, H und I schlechter als `base`; als Hauptlauf einer Kombination Teil von TOOL-108]
+- Sprecherbedingte Erkennung: [kein Ticket: Obergrenze rund 10 % der Auslassungen, kein Beleg für Deutsch, größter Umbau]
+- Sprachtrennung vor der Erkennung: [kein Ticket: dieselbe Obergrenze, belegtes Risiko durch Artefakte außerhalb der Überlappung]
+- Großzügigere VAD für die Batched-Pipeline, Entgleisung von `loud+batched` an E: [kein Ticket: nur von Belang, wenn TOOL-108 oder TOOL-112 die Batched-Pipeline weitertragen; steht dort als Hinweis]
+- Mundart-Modell: [kein Ticket: kein Kandidat und kein Korpus; Beobachtung gehört zu TOOL-111]
+- Zusätzliche Handreferenz an unruhigen Stellen: [kein Ticket: in diesem Ticket erledigt, Referenzen F, G, H und I]
+- TOOL-100: Kommentar mit dem Ergebnis für den Reflexionspunkt M9.
+- TOOL-109 (`loudnorm` in der Pipeline): Kommentar; `loud` ist an G und I schlechter als `base`, `loud` und `+batched` addieren sich nicht.
+- TOOL-82 (Parakeet-Zweitlauf): Kommentar; Parakeet fällt bei Mundart stark ab, `primeline/parakeet-primeline` und `base+batched` als Alternativen für den Zweitlauf.
 
 ## Chunk-Tabelle
 | Chunk | Scope | Clear context after? |
