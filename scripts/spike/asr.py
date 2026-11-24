@@ -1,8 +1,8 @@
 """ASR quality spike (TOOL-93, TOOL-81): Whisper variants on segment 1, one root
 per seed.
 
-    asr.py prepare <group>/<ordinal> <variant>... [--seeds N]
-    asr.py run <group>/<ordinal> <variant>... [--seeds N] [--diarize]
+    asr.py prepare <group>/<ordinal> <variant>... [--seeds N] [--first-seed N]
+    asr.py run <group>/<ordinal> <variant>... [--seeds N] [--first-seed N] [--diarize]
     asr.py score <group>/<ordinal> <variant>... [--seeds N] [--clip ...]
     asr.py windows <group>/<ordinal> <variant> [--seed N]
     asr.py sections <group>/<ordinal> <variant>... [--seeds N] [--against V]
@@ -1402,7 +1402,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("session", help="session key <group>/<ordinal>")
     parser.add_argument("variants", nargs="+", type=_variant_arg)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
-    parser.add_argument("--seeds", type=int, default=1, help="seeds 1..N per variant")
+    parser.add_argument(
+        "--seeds", type=int, default=1, help="the last seed N per variant"
+    )
+    parser.add_argument(
+        "--first-seed", type=int, default=1, help="the first seed (default 1)"
+    )
     parser.add_argument("--seed", type=int, default=1, help="windows: the root to read")
     parser.add_argument("--diarize", action="store_true", help="run: also diarize")
     parser.add_argument("--baseline", default="base")
@@ -1419,7 +1424,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="score: NAME=FILE@H:MM:SS-H:MM:SS (default: pilot clips A and B)",
     )
     args = parser.parse_args(argv)
-    jobs = [(v, n) for v in args.variants for n in range(1, args.seeds + 1)]
+    if args.first_seed > args.seeds:
+        parser.error("--first-seed lies above --seeds")
+    jobs = [
+        (v, n) for v in args.variants for n in range(args.first_seed, args.seeds + 1)
+    ]
     try:
         paths = load_config(args.config).session_paths(SessionKey.parse(args.session))
         if args.command == "prepare":
