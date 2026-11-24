@@ -48,6 +48,8 @@ Folgt in Chunk 5, wenn Recherche und neue Handreferenz vorliegen. Bis dahin steh
 
 **`base+batched` verliert keine Blöcke mehr, ist an allen fünf Referenzen besser als `base` und liefert bei jedem Seed dasselbe. Die vorab festgelegte Regel verfehlt die Variante trotzdem knapp, am Wiederholungsanteil.** `loud+batched` fällt durch, `+ts` bringt nichts.
 
+**Nachtrag nach den neuen Fenstern:** Dieses Ergebnis gilt an den Referenzen A bis E. An drei von vier unruhigen Fenstern ist `base+batched` schlechter als `base` und verliert Blöcke von bis zu 94 Wörtern, siehe [Überlappung und kurze Beiträge an unruhigen Stellen](#überlappung-und-kurze-beiträge-an-unruhigen-stellen).
+
 WER und Auslassungen als Mittel über drei Seeds, aus den Tabellen unter [Messwerte](#messwerte):
 
 | Referenz | `base` | `loud` | `base+batched` | `base+batched+ts` | `loud+batched` | `base+temp0` |
@@ -213,6 +215,85 @@ Schon gemessen und deshalb nicht in den Tabellen: Whisper large-v3-turbo und lar
 - **Punkt 5:** kein neues Modell, mit dem vorhandenen Werkzeug messbar, Ausgang offen.
 - Welche davon einen der höchstens drei Plätze bekommen, entscheidet sich nach der neuen Handreferenz (Chunk 4 und 5).
 
+## Überlappung und kurze Beiträge an unruhigen Stellen
+
+TOOL-101 stand bei Überlappung auf 17 und 52 Referenzwörtern, bei Beiträgen mit 1–3 Wörtern auf 16 und 23. Für eine Entscheidung zu Punkt 1, 2 und 5 hat die Projektverantwortliche vier weitere Fenster abgetippt, an den Stellen mit der meisten Überlappung und den meisten kurzen Beiträgen laut Diarisierung (`omissions.py --suggest`).
+
+| | |
+| --- | --- |
+| Referenz F | Pilotsitzung, 1:40:00–1:43:00, 584 Wörter |
+| Referenz G | Pilotsitzung, 1:31:00–1:34:00, 551 Wörter |
+| Referenz H | zweite Sitzung, 1:38:00–1:41:00, 470 Wörter |
+| Referenz I | Pilotsitzung, 1:38:00–1:41:00, 597 Wörter; überschneidet sich eine Minute mit F |
+
+Die Zahlen dieses Abschnitts kommen aus `omissions.py`, Auslassungen als Mittel über drei Seeds. Die Summen laufen über A bis H. I steht wegen der gemeinsamen Minute mit F daneben und geht in keine Summe ein. Die Klassen überschneiden sich, ihre Anteile lassen sich nicht addieren.
+
+### WER an den neuen Fenstern
+
+Mittel über drei Seeds, bei `base` mit Spanne. Tabellen unter [Messwerte](#neue-fenster-f-g-h-und-i).
+
+| Referenz | `base` | `loud` | `base+batched` | `base+batched+ts` | `loud+batched` |
+| --- | --- | --- | --- | --- | --- |
+| F | 28,4 % (26,7–31,0) | 27,5 % | 26,4 % | 26,7 % | 26,7 % |
+| G | 36,0 % (33,4–39,2) | 42,3 % | 39,6 % | 53,4 % | 35,6 % |
+| H | 36,5 % (34,9–37,2) | 32,8 % | 53,6 % | 34,9 % | 37,2 % |
+| I | 27,2 % (26,6–28,3) | 30,3 % | 33,2 % | 26,3 % | 31,7 % |
+
+- **`base+batched` ist an drei der vier unruhigen Fenster schlechter als jeder `base`-Lauf.** An H fehlen 149 statt 73–86 Wörter, an I 124 statt 66–82. Nur an F ist die Variante besser.
+- **Die Blockverluste sind nicht weg, sie liegen woanders.** Die längste Folge ausgelassener Wörter ist mit `base+batched` an H 94 Wörter (`base`: 15) und an I 48 (`base`: 9–10). An H liegen 77 der 149 Auslassungen an Stellen, an denen die Diarisierung Sprache hört und der Lauf kein Wort hat; die VAD hat dort nur 16 Wörter entfernt. Das Audio kam also beim Decoder an, und ein Stück ist ohne Text oder entgleist zurückgekommen. Ohne Fallback wiederholt es niemand.
+- **Keine Variante ist an allen vier Fenstern die beste.** `+ts` rettet H und I und verliert G, `loud+batched` ist an G am besten und an I schlecht, `loud` hilft an H und schadet an G und I. Die Reihenfolge wechselt von Fenster zu Fenster stärker, als `base` zwischen den Seeds streut.
+- **Die Aussage aus dem [Ergebnis](#ergebnis), `base+batched` sei an allen Referenzen besser und verliere keine Blöcke, gilt an A bis F und nicht an G, H und I.** Sie war an ruhigeren Stellen gemessen.
+
+### Wie viel in den Klassen liegt
+
+`base`, acht Referenzen (A bis H), 4304 Wörter, im Mittel 634 Auslassungen (14,7 %):
+
+| Klasse | Wörter | Anteil an den Wörtern | Auslassungen | je Wort der Klasse | Anteil an allen Auslassungen |
+| --- | --- | --- | --- | --- | --- |
+| Überlappung | 362 | 8,4 % | 112 | 30,9 % | 18 % |
+| Beitrag unter 2 s (Diarisierung) | 610 | 14,2 % | 100 | 16,3 % | 16 % |
+| kein Turn der Diarisierung | 235 | 5,5 % | 60 | 25,7 % | 10 % |
+| Beitrag mit 1–3 Wörtern (Handreferenz) | 152 | 3,5 % | 54 | 35,5 % | 9 % |
+| außerhalb von Überlappung | 3942 | 91,6 % | 522 | 13,2 % | 82 % |
+
+Wörter je Referenz (A / B / C / D / E / F / G / H): Überlappung 17 / 1 / 52 / 38 / 17 / 110 / 83 / 44, Beiträge mit 1–3 Wörtern 16 / 1 / 23 / 38 / 13 / 13 / 5 / 43. Referenz I hat 114 Wörter in Überlappung, davon fehlen 24 %, und 10 in Beiträgen mit 1–3 Wörtern.
+
+- **Die Wortzahl reicht jetzt.** Überlappung steht auf 362 statt 69 Wörtern, Beiträge mit 1–3 Wörtern auf 152 statt 39. Beide liegen über dem Ziel von rund 100, und beide Sitzungen tragen dazu bei.
+- **Der Befund aus TOOL-101 hält.** In Überlappung fehlen 31 % der Wörter, außerhalb 13 %. In Beiträgen mit 1–3 Wörtern fehlen 36 %. Beide Klassen bleiben klein: Überlappung trägt 18 % der Auslassungen, die Kurzbeiträge 9 %.
+- **Auch an den unruhigsten Stellen liegt die Mehrheit außerhalb.** In Überlappung liegen an F 35 % der Auslassungen, an G 20 %, an H 26 %, an I 37 %, bei 9–19 % der Wörter.
+- **Echte Einwürfe sind seltener, als die Diarisierung nahelegt.** Sie zählt an F und G 57 und 55 Beiträge unter 2 s, die Handreferenz enthält dort 13 und 5 Wörter in Beiträgen mit 1–3 Wörtern. Die kurzen Beiträge der Diarisierung sind überwiegend Stücke längerer Sätze derselben Person. Nur H hat mit 43 Wörtern viele Einwürfe.
+
+### Was die Batched-Pipeline dort ändert
+
+Acht Referenzen (A bis H), 4304 Wörter:
+
+| | `base` | `base+batched` |
+| --- | --- | --- |
+| Auslassungen gesamt | 634 (14,7 %) | 586 (13,6 %) |
+| außerhalb von Überlappung, je Wort | 13,2 % | 12,4 % |
+| in Überlappung, je Wort | 30,9 % | 27,9 % |
+| Beitrag unter 2 s, je Wort | 16,3 % | 16,7 % |
+| kein Turn der Diarisierung, je Wort | 25,7 % | 35,8 % |
+| Beitrag mit 1–3 Wörtern, je Wort | 35,5 % | 43,4 % |
+
+Die Wortzahl je Klasse weicht zwischen den Varianten um wenige Wörter ab, weil die Wortzeiten aus den Läufen kommen.
+
+- **Über alle acht Referenzen bleibt von dem Vorsprung der Batched-Pipeline ein Punkt.** An A bis G waren es 11,4 % gegen 14,4 % Auslassungen je Wort; der Block an H nimmt den größten Teil davon zurück.
+- **In kurzen Beiträgen gewinnt sie nichts, bei Einwürfen und bei Wörtern ohne Turn verliert sie.** An D fehlen mit `base+batched` 25 der 38 Wörter in Beiträgen mit 1–3 Wörtern (`base`: 15–21), an H 13 von 43 (`base`: 7–9).
+- **Die engere VAD trifft die Einwürfe.** Von den Wörtern, die die Batched-VAD entfernt, fehlen an den acht Referenzen 55 von 89.
+
+### Was Punkt 1, 2 und 5 höchstens erreichen
+
+| Punkt | zielt auf | Obergrenze mit `base` | Obergrenze mit `base+batched` |
+| --- | --- | --- | --- |
+| 1 und 2 | Überlappung | 18 % der Auslassungen, wenn in Überlappung kein Wort mehr fehlt; 10 %, wenn dort die Rate von außerhalb erreicht wird | 17 % und 9 % |
+| 5 | Beiträge unter 2 s und Einwürfe | 16 % der Auslassungen (Beiträge unter 2 s), 9 % aus Einwürfen mit 1–3 Wörtern | 18 % und 11 % |
+
+- **Punkt 1 und 2 bekommen nach diesen Zahlen keinen Messkandidaten.** Die realistische Obergrenze liegt bei rund 10 % der Auslassungen. Dem stehen der größte Umbau aller Punkte, kein Beleg für Deutsch und bei der Trennung ein belegtes Risiko für die übrigen 92 % der Wörter gegenüber ([Recherche](#punkt-1-sprecherbedingte-erkennung)).
+- **Punkt 5 ist eine Messung wert, weil sie fast nichts kostet,** nicht weil die Obergrenze hoch wäre. Sie setzt dort an, wo `base+batched` schlechter ist als `base`: bei Einwürfen und bei Sprache, die die VAD verwirft. Was die Diarisierung nicht als Turn findet, erreicht auch dieser Weg nicht; dort liegen mit `base+batched` 14 % der Auslassungen. Ohne Fallback bliebe außerdem das Risiko des entgleisten Stücks.
+- **Dringender als Punkt 1, 2 und 5 ist nach diesen Fenstern das entgleiste Stück.** Ein Block von 94 Wörtern wiegt mehr als alle Einwürfe einer Referenz zusammen. Die offene Frage aus der ersten Messung, ob sich ein solches Stück erkennen und einzeln neu dekodieren lässt, entscheidet darüber, ob die Batched-Pipeline überhaupt in Frage kommt.
+- **Die Entscheidung fällt in Chunk 5** und liegt bei der Projektverantwortlichen.
+
 ## Messwerte
 
 Die Tabellen kommen unverändert aus `asr.py score`. Nicht abgedruckt sind die Aufteilung nach Füllwörtern und der Sprecherfehler, der nur für diarisierte Wurzeln (`base`, `loud`) vorliegt.
@@ -294,6 +375,100 @@ Die Tabellen kommen unverändert aus `asr.py score`. Nicht abgedruckt sind die A
 | loud+batched#1 | 0.35 | n/a | 4,4 | 4,7 (1,3) |
 | loud+batched#2 | 0.38 | n/a | 4,3 | 4,6 (1,3) |
 | loud+batched#3 | 0.38 | n/a | 4,3 | 4,6 (1,3) |
+
+### Neue Fenster F, G, H und I
+
+Dieselben Läufe wie in den übrigen Tabellen, gemessen an den neuen Fenstern. Zuerst F und G (Pilotsitzung), dann I (Pilotsitzung), dann H (zweite Sitzung).
+
+| Variante | Seeds | Hotwords | WER F Mittel (Spanne) | Auslassungen F | WER G Mittel (Spanne) | Auslassungen G | Wörter | Wiederholung |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| base | 3 | 48 | 28,4% (26,7%–31,0%) | 74/71/99 | 36,0% (33,4%–39,2%) | 72/70/48 | 33009 (32923–33067) | 0,7% (0,5%–0,8%) |
+| base+temp0 | 3 | 48 | 47,1% (47,1%–47,1%) | 151/151/151 | 75,9% (75,9%–75,9%) | 74/74/74 | 33142 (33142–33142) | 8,9% (8,9%–8,9%) |
+| loud | 3 | 48 | 27,5% (26,7%–27,9%) | 80/80/76 | 42,3% (39,7%–45,0%) | 73/95/87 | 33503 (33218–33672) | 0,6% (0,6%–0,7%) |
+| base+batched | 3 | 48 | 26,4% (26,4%–26,4%) | 81/81/81 | 39,6% (39,6%–39,6%) | 74/74/74 | 32642 (32642–32642) | 1,0% (1,0%–1,0%) |
+| base+batched+ts | 3 | 48 | 26,7% (26,7%–26,7%) | 77/77/77 | 53,4% (53,4%–53,4%) | 107/107/107 | 33134 (33134–33134) | 1,5% (1,5%–1,5%) |
+| loud+batched | 3 | 48 | 26,7% (26,7%–26,7%) | 75/75/75 | 35,6% (35,6%–35,6%) | 59/59/59 | 32886 (32886–32886) | 1,7% (1,7%–1,7%) |
+
+| Lauf | WER F (E/A/Ei) | WER G (E/A/Ei) |
+| --- | --- | --- |
+| base#1 | 27,4% (74/74/12) | 39,2% (108/72/36) |
+| base#2 | 26,7% (75/71/10) | 35,4% (104/70/21) |
+| base#3 | 31,0% (72/99/10) | 33,4% (115/48/21) |
+| base+temp0#1 | 47,1% (59/151/65) | 75,9% (138/74/206) |
+| base+temp0#2 | 47,1% (59/151/65) | 75,9% (138/74/206) |
+| base+temp0#3 | 47,1% (59/151/65) | 75,9% (138/74/206) |
+| loud#1 | 27,9% (71/80/12) | 42,1% (117/73/42) |
+| loud#2 | 27,7% (70/80/12) | 45,0% (104/95/49) |
+| loud#3 | 26,7% (68/76/12) | 39,7% (103/87/29) |
+| base+batched#1 | 26,4% (63/81/10) | 39,6% (104/74/40) |
+| base+batched#2 | 26,4% (63/81/10) | 39,6% (104/74/40) |
+| base+batched#3 | 26,4% (63/81/10) | 39,6% (104/74/40) |
+| base+batched+ts#1 | 26,7% (68/77/11) | 53,4% (120/107/67) |
+| base+batched+ts#2 | 26,7% (68/77/11) | 53,4% (120/107/67) |
+| base+batched+ts#3 | 26,7% (68/77/11) | 53,4% (120/107/67) |
+| loud+batched#1 | 26,7% (63/75/18) | 35,6% (113/59/24) |
+| loud+batched#2 | 26,7% (63/75/18) | 35,6% (113/59/24) |
+| loud+batched#3 | 26,7% (63/75/18) | 35,6% (113/59/24) |
+
+| Variante | Seeds | Hotwords | WER I Mittel (Spanne) | Auslassungen I | Wörter | Wiederholung |
+| --- | --- | --- | --- | --- | --- | --- |
+| base | 3 | 48 | 27,2% (26,6%–28,3%) | 70/66/82 | 33009 (32923–33067) | 0,7% (0,5%–0,8%) |
+| base+temp0 | 3 | 48 | 39,4% (39,4%–39,4%) | 80/80/80 | 33142 (33142–33142) | 8,9% (8,9%–8,9%) |
+| loud | 3 | 48 | 30,3% (30,3%–30,3%) | 60/60/60 | 33503 (33218–33672) | 0,6% (0,6%–0,7%) |
+| base+batched | 3 | 48 | 33,2% (33,2%–33,2%) | 124/124/124 | 32642 (32642–32642) | 1,0% (1,0%–1,0%) |
+| base+batched+ts | 3 | 48 | 26,3% (26,3%–26,3%) | 61/61/61 | 33134 (33134–33134) | 1,5% (1,5%–1,5%) |
+| loud+batched | 3 | 48 | 31,7% (31,7%–31,7%) | 117/117/117 | 32886 (32886–32886) | 1,7% (1,7%–1,7%) |
+
+| Lauf | WER I (E/A/Ei) |
+| --- | --- |
+| base#1 | 26,8% (78/70/12) |
+| base#2 | 26,6% (79/66/14) |
+| base#3 | 28,3% (69/82/18) |
+| base+temp0#1 | 39,4% (84/80/71) |
+| base+temp0#2 | 39,4% (84/80/71) |
+| base+temp0#3 | 39,4% (84/80/71) |
+| loud#1 | 30,3% (74/60/47) |
+| loud#2 | 30,3% (74/60/47) |
+| loud#3 | 30,3% (74/60/47) |
+| base+batched#1 | 33,2% (61/124/13) |
+| base+batched#2 | 33,2% (61/124/13) |
+| base+batched#3 | 33,2% (61/124/13) |
+| base+batched+ts#1 | 26,3% (81/61/15) |
+| base+batched+ts#2 | 26,3% (81/61/15) |
+| base+batched+ts#3 | 26,3% (81/61/15) |
+| loud+batched#1 | 31,7% (59/117/13) |
+| loud+batched#2 | 31,7% (59/117/13) |
+| loud+batched#3 | 31,7% (59/117/13) |
+
+| Variante | Seeds | Hotwords | WER H Mittel (Spanne) | Auslassungen H | Wörter | Wiederholung |
+| --- | --- | --- | --- | --- | --- | --- |
+| base | 3 | 48 | 36,5% (34,9%–37,2%) | 86/86/73 | 28927 (28896–28960) | 0,7% (0,5%–0,9%) |
+| base+temp0 | 3 | 48 | 37,2% (37,2%–37,2%) | 86/86/86 | 27872 (27872–27872) | 9,2% (9,2%–9,2%) |
+| loud | 3 | 48 | 32,8% (32,3%–33,2%) | 66/68/67 | 29878 (29767–30021) | 0,4% (0,4%–0,5%) |
+| base+batched | 3 | 48 | 53,6% (53,6%–53,6%) | 149/149/149 | 29450 (29450–29450) | 1,2% (1,2%–1,2%) |
+| base+batched+ts | 3 | 48 | 34,9% (34,9%–34,9%) | 51/51/51 | 30031 (30031–30031) | 2,6% (2,6%–2,6%) |
+| loud+batched | 3 | 48 | 37,2% (37,2%–37,2%) | 70/70/70 | 29974 (29974–29974) | 1,6% (1,6%–1,6%) |
+
+| Lauf | WER H (E/A/Ei) |
+| --- | --- |
+| base#1 | 37,2% (73/86/16) |
+| base#2 | 37,2% (73/86/16) |
+| base#3 | 34,9% (72/73/19) |
+| base+temp0#1 | 37,2% (73/86/16) |
+| base+temp0#2 | 37,2% (73/86/16) |
+| base+temp0#3 | 37,2% (73/86/16) |
+| loud#1 | 32,3% (71/66/15) |
+| loud#2 | 33,2% (73/68/15) |
+| loud#3 | 32,8% (72/67/15) |
+| base+batched#1 | 53,6% (60/149/43) |
+| base+batched#2 | 53,6% (60/149/43) |
+| base+batched#3 | 53,6% (60/149/43) |
+| base+batched+ts#1 | 34,9% (82/51/31) |
+| base+batched+ts#2 | 34,9% (82/51/31) |
+| base+batched+ts#3 | 34,9% (82/51/31) |
+| loud+batched#1 | 37,2% (76/70/29) |
+| loud+batched#2 | 37,2% (76/70/29) |
+| loud+batched#3 | 37,2% (76/70/29) |
 
 ### Zweite Sitzung, Referenz C
 
