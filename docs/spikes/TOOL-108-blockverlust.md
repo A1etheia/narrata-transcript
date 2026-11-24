@@ -1,6 +1,6 @@
 # TOOL-108 — Blockverlust ohne Referenz von Halluzination trennen
 
-Stand 2026-11-24, Messung je Signal. Regeln, Prüfung an zwei neuen Fenstern und die Entscheidung folgen. Spike-Bericht zu [TOOL-108](../plans/TOOL-108-block-loss.md), Werkzeug: [`scripts/spike/blocks.py`](../../scripts/spike/blocks.py). Neu transkribiert wurden nur die Seeds 4 und 5 von `base`, alles lokal. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel.
+Stand 2026-11-24, Messung je Signal und drei festgeschriebene Regeln. Die Prüfung an zwei neuen Fenstern und die Entscheidung folgen. Spike-Bericht zu [TOOL-108](../plans/TOOL-108-block-loss.md), Werkzeug: [`scripts/spike/blocks.py`](../../scripts/spike/blocks.py). Neu transkribiert wurden nur die Seeds 4 und 5 von `base`, alles lokal. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel.
 
 ## Zwischenstand
 
@@ -11,6 +11,7 @@ Stand 2026-11-24, Messung je Signal. Regeln, Prüfung an zwei neuen Fenstern und
 - **`base+batched` mit `base` als Quelle:** 11,9 Punkte an H und 6,0 an I, sonst kein Block. Ohne Signal kommen 12,5 Punkte Verlust an D dazu; `avg_logprob`, Wort-Confidence, „kein Fallback“ und „Sprache ohne Wörter“ nehmen diesen Block nicht an, Übereinstimmung der `base`-Seeds schon ([`base+batched` als Hauptlauf](#basebatched-mit-base-als-quelle)).
 - **`base` mit `base+batched` als Quelle:** „Sprache ohne Wörter ab 2 s“ bringt 4,2 an C, 6,2 an D und 2,0 an E ohne Verlust. `avg_logprob` nimmt hier jeden Block an, auch einen an G mit 7,1 Punkten Verlust für einen Hauptlauf ([`base` mit `base+batched`](#base-mit-basebatched-als-quelle)).
 - **`loud`:** Unter den `loud`-Seeds reicht kein Block ab 20 Wörtern in eine Referenz. `loud+batched` als Quelle fügt an E 288 falsche Wörter ein; „keine Wiederholung“, Kompression und „Sprache ohne Wörter“ halten sie fern ([`loud`](#loud)).
+- **Drei Regeln sind festgeschrieben.** Regel A (Dekodierwerte der Quelle) erfüllt an A bis I die Go-Regel in allen drei `base`-Paarungen, Regel B (Sprache ohne Wörter) nur über zwei Pipelines hinweg ([Regeln](#regeln)).
 - **Blöcke ab 10 Wörtern** verschlechtern das Bild: An B und G kommen Verluste dazu, und an G hält `avg_logprob` sie nicht mehr fern ([Blöcke ab 10 Wörtern](#blöcke-ab-10-wörtern)).
 
 ## Material und Methode
@@ -354,6 +355,85 @@ Nicht Teil der Go-Regel. Ohne die Zeilen mit Median und die Signale, die nichts 
 - **Kleinere Blöcke sind öfter falsch.** An B sind unter den `base`-Seeds alle 34 Wörter falsch, an G kommen Verluste bis 2,4 Punkte dazu.
 - **`avg_logprob` hält an B und D weiter stand, an G nicht mehr.**
 - **Die Schwelle von 20 Wörtern bleibt.**
+
+## Regeln
+
+Drei Regeln, festgeschrieben nach der Messung je Signal an A bis I und bevor die zwei neuen Fenster abgetippt sind. Die Schwellen sind die der Pipeline. In `blocks.py` stehen sie als `rule_tests`, der Aufruf mit `--rules` zählt nur sie.
+
+| Regel | nimmt einen Block ab 20 Wörtern an, wenn |
+| --- | --- |
+| A, Dekodierwerte der Quelle | der niedrigste `avg_logprob` seiner Passagen über −1 liegt, die höchste `compression_ratio` unter 2,4 und sein Wiederholungsanteil 0 ist |
+| B, Sprache ohne Wörter | die Diarisierung im Block mindestens 2 s Sprache hört, an der der Hauptlauf kein Wort hat (Kandidat aus TOOL-104) |
+| C | A und B zugleich gelten |
+
+- **Warum A drei Signale verbindet:** `avg_logprob` trennt, wenn die Quelle ein `base`- oder `loud`-Lauf ist. Kompression und Wiederholung trennen, wenn die Quelle ein Batched-Lauf ist, dessen `avg_logprob` nichts sagt.
+- **Übereinstimmung mit weiteren Läufen ist keine Regel geworden.** Sie trägt erst mit fünf Seeds und nimmt mit `base+batched` als Hauptlauf an D einen erfundenen Block an.
+
+`base` mit anderen `base`-Seeds, Seeds 1–3:
+
+| Signal | A | B | C | D | E | F | G | H | I |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Regel A: Dekodierwerte der Quelle | – | – | 122/21 · 4,3 (0,0) | 51/14 · 3,4 (0,0) | 28/3 · 2,5 (0,0) | – | – | – | – |
+| Regel B: Sprache ohne Wörter | – | – | 122/21 · 4,3 (0,0) | 10/74 · −5,5 (−11,1) | 28/3 · 2,5 (0,0) | – | – | – | – |
+| Regel C: A und B | – | – | 122/21 · 4,3 (0,0) | – | 28/3 · 2,5 (0,0) | – | – | – | – |
+
+`base` mit anderen `base`-Seeds, Seeds 1–5:
+
+| Signal | A | B | C | D | E | F | G | H | I |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Regel A: Dekodierwerte der Quelle | – | – | 187/56 · 3,2 (0,0) | 192/65 · 7,2 (0,0) | 77/20 · 3,8 (0,0) | 13/7 · 0,4 (0,0) | 21/1 · 0,8 (0,0) | 45/26 · 0,9 (0,0) | – |
+| Regel B: Sprache ohne Wörter | – | – | 178/41 · 3,5 (0,0) | 110/91 · 1,8 (−10,0) | 77/20 · 3,8 (0,0) | – | – | – | – |
+| Regel C: A und B | – | – | 178/41 · 3,5 (0,0) | 141/51 · 5,2 (0,0) | 77/20 · 3,8 (0,0) | – | – | – | – |
+
+`base+batched` mit `base` als Quelle, Seeds 1–3:
+
+| Signal | A | B | C | D | E | F | G | H | I |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Regel A: Dekodierwerte der Quelle | – | – | – | – | – | – | – | 58/9 · 11,9 (11,9) | 38/20 · 6,0 (6,0) |
+| Regel B: Sprache ohne Wörter | – | – | – | – | – | – | – | 58/9 · 11,9 (11,9) | 38/20 · 6,0 (6,0) |
+| Regel C: A und B | – | – | – | – | – | – | – | 58/9 · 11,9 (11,9) | 38/20 · 6,0 (6,0) |
+
+`base` mit `base+batched` als Quelle:
+
+| Signal | A | B | C | D | E | F | G | H | I |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Regel A: Dekodierwerte der Quelle | – | – | 115/17 · 4,2 (0,0) | 112/34 · 6,2 (0,0) | 21/1 · 2,0 (0,0) | – | – | – | – |
+| Regel B: Sprache ohne Wörter | – | – | 115/17 · 4,2 (0,0) | 112/34 · 6,2 (0,0) | 21/1 · 2,0 (0,0) | – | – | – | – |
+| Regel C: A und B | – | – | 115/17 · 4,2 (0,0) | 112/34 · 6,2 (0,0) | 21/1 · 2,0 (0,0) | – | – | – | – |
+
+`loud+batched` mit `loud` als Quelle:
+
+| Signal | A | B | C | D | E | F | G | H | I |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Regel A: Dekodierwerte der Quelle | – | – | – | – | 57/21 · 11,4 (11,4) | – | – | – | 43/48 · 1,3 (1,3) |
+| Regel B: Sprache ohne Wörter | – | – | – | – | 57/21 · 11,4 (11,4) | – | – | – | 43/48 · 1,3 (1,3) |
+| Regel C: A und B | – | – | – | – | 57/21 · 11,4 (11,4) | – | – | – | 43/48 · 1,3 (1,3) |
+
+Unter den `loud`-Seeds und mit `loud+batched` als Quelle nimmt keine Regel einen Block an, der in eine Referenz reicht. Die 288 falschen Wörter an E bleiben draußen.
+
+Über das Segment nimmt Regel A an (Blöcke / Wörter / Zeit in min, Spanne über die Hauptläufe):
+
+| Paarung | Pilotsitzung | zweite Sitzung | zusätzliche Läufe |
+| --- | --- | --- | --- |
+| `base` ← `base`, 3 Seeds | 6–10 / 281–410 / 2,0–3,4 | 21–26 / 881–1165 / 7,2–11,1 | zwei volle Läufe, rund 13 min je Segment |
+| `base` ← `base`, 5 Seeds | 16–21 / 627–1064 / 4,7–8,5 | 26–33 / 1132–1490 / 9,3–12,9 | vier volle Läufe, rund 26 min |
+| `base+batched` ← `base` | 15 / 749 / 6,2 | 10 / 429 / 2,9 | ein voller Lauf, rund 6,5 min |
+| `base` ← `base+batched` | 14–16 / 548–642 / 5,1–5,6 | 25–28 / 1100–1199 / 8,8–10,9 | ein Batched-Lauf, unter 2 min |
+
+### Vorläufiger Stand gegen die Go-Regel
+
+Go nur, wenn eine Regel an mindestens zwei Referenzen 3 Punkte WER gegenüber dem Mittel der Hauptläufe bringt und an keiner mehr als 1 Punkt verliert. F und I zählen zusammen als eine Referenz. Die Regel gilt für die `base`-Paarungen.
+
+| Paarung | Regel A | Regel B | Regel C |
+| --- | --- | --- | --- |
+| `base` ← `base`, 3 Seeds | erfüllt: C 4,3 und D 3,4, kein Verlust | verfehlt: D −5,5 | verfehlt: nur C mit 4,3, E 2,5, an D kein Block |
+| `base` ← `base`, 5 Seeds | erfüllt: C 3,2, D 7,2, E 3,8, kein Verlust | im Mittel erfüllt (C 3,5, E 3,8, D 1,8), aber ein Hauptlauf verliert an D 10,0 Punkte | erfüllt: C 3,5, D 5,2, E 3,8, kein Verlust |
+| `base+batched` ← `base` | erfüllt: H 11,9 und I 6,0 | erfüllt, dieselben Blöcke | erfüllt, dieselben Blöcke |
+| `base` ← `base+batched` | erfüllt: C 4,2 und D 6,2 | erfüllt, dieselben Blöcke | erfüllt, dieselben Blöcke |
+
+- **Regel A erfüllt die Go-Regel in allen drei `base`-Paarungen**, Regel B nur über zwei Pipelines hinweg.
+- **An `loud` ist die Go-Regel nicht erreicht:** Unter den Seeds gibt es an den Referenzen nichts zu gewinnen und nichts zu verlieren. `loud+batched` mit `loud` als Quelle gewinnt nur an E 11,4 Punkte und an I 1,3.
+- **Das ist ein Stand an den Fenstern, an denen die Regeln gebildet wurden.** Die Entscheidung fällt nach der Messung an den zwei neuen Fenstern der zweiten Sitzung.
 
 ## Einschränkungen
 

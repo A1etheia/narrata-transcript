@@ -296,7 +296,7 @@ Das Skript schreibt nichts. Die Konsole bekommt Zähler, Anteile, Fehlerraten un
 
 ```bash
 .venv/bin/python scripts/spike/asr.py run $S base --seeds 5 --first-seed 4
-.venv/bin/python scripts/spike/blocks.py $S [--main base] [--source VARIANTE] [--seeds 3] [--least 20] [--clip NAME=DATEI@H:MM:SS-H:MM:SS]… [--suggest] [--config PATH]
+.venv/bin/python scripts/spike/blocks.py $S [--main base] [--source VARIANTE] [--seeds 3] [--least 20] [--clip NAME=DATEI@H:MM:SS-H:MM:SS]… [--rules] [--suggest] [--config PATH]
 ```
 
 - **`asr.py --first-seed N`** beginnt bei Seed N. Die Wurzeln darunter werden weder neu vorbereitet noch neu transkribiert.
@@ -312,4 +312,8 @@ Das Skript schreibt nichts. Die Konsole bekommt Zähler, Anteile, Fehlerraten un
 - **Angenommene Blöcke:** Bieten mehrere Quellen an derselben Stelle an, zählt der größte Block, den das Signal annimmt.
 - **Über das Segment:** Angebote je Hauptlauf und Quelle, dann je Signal Blöcke, Wörter und Zeit.
 - **Je Referenz und Signal:** Blöcke, die in den Clip reichen; ihre Wörter dort als „füllt eine Auslassung“, „sonst richtig“, „falsch“ und „an unverständlicher Stelle“ (wie R2 in `seeds.py`); die WER des Hauptlaufs ohne und mit den eingesetzten Blöcken, gemessen mit `calibration.align`. Die erste Tabelle fasst über die Hauptläufe zusammen, die zweite zeigt jeden einzeln. Kein Aufruf schreibt ein Transkript.
-- **`--suggest`** schlägt drei sich nicht überlappende 3-min-Fenster für eine Handreferenz vor, an denen ein weiterer Lauf den angebotenen Block auch hat, außerhalb der angegebenen Clips.
+- **Regeln**, nach der Messung je Signal an A bis I festgeschrieben, stehen als letzte Zeilen jeder Tabelle. `--rules` zählt nur sie.
+  - *A, Dekodierwerte der Quelle:* `avg_logprob` über der Schwelle, `compression_ratio` darunter, Wiederholungsanteil 0.
+  - *B, Sprache ohne Wörter:* mindestens 2 s im Block.
+  - *C:* A und B zugleich.
+- **`--suggest`** schlägt drei sich nicht überlappende 3-min-Fenster für eine Handreferenz vor, an denen ein weiterer Lauf den angebotenen Block auch hat, außerhalb der angegebenen Clips. Je Stelle zählt der größte solche Block.

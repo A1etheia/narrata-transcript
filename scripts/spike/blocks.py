@@ -1,7 +1,7 @@
 """Block spike (TOOL-108): is a block another run has more a loss or an invention?
 
     blocks.py <group>/<ordinal> [--main base] [--source base] [--seeds 3]
-              [--least 20] [--clip ...] [--suggest]
+              [--least 20] [--clip ...] [--rules] [--suggest]
 
 Reads the stored runs of `asr.py`, the session's diarization and the hand
 references under `review/calibration/`. Every run of `--main` is the main run
@@ -309,6 +309,30 @@ def signal_tests(
     return tests
 
 
+def _every(*tests: Test) -> Test:
+    def test(found: Values) -> bool | None:
+        results = [one(found) for one in tests]
+        return None if None in results else all(results)
+
+    return test
+
+
+def rule_tests(limits: UncertaintyThresholds) -> list[tuple[str, Test]]:
+    """The rules of the spike. They were fixed after the count per signal at the
+    references A to I and before the windows that test them were typed."""
+    decoder = _every(
+        _test("logprob", lambda v: v > limits.avg_logprob),
+        _test("compression", lambda v: v < limits.compression_ratio),
+        _test("repetition", lambda v: v == 0),
+    )
+    silent = _at_least("silent", LONG_SILENT_MS)
+    return [
+        ("Regel A: Dekodierwerte der Quelle", decoder),
+        ("Regel B: Sprache ohne Wörter", silent),
+        ("Regel C: A und B", _every(decoder, silent)),
+    ]
+
+
 def taken(found: Sequence[Rated], test: Test) -> list[Rated] | None:
     """The offers of one main run a signal accepts, the largest per place; None
     if the signal does not exist for this pairing."""
@@ -384,10 +408,9 @@ def agreed_raster(found: Mapping[Loaded, Sequence[Rated]], end_ms: int) -> list[
     rasters = []
     for own in found.values():
         raster = [0] * -(-end_ms // seeds.RASTER_MS)
-        for one in own:
-            if one.values["agree"]:
-                window = min(one.offer.start_ms // seeds.RASTER_MS, len(raster) - 1)
-                raster[window] += len(one.offer.indices)
+        for one in taken(own, _at_least("agree", 1)) or ():
+            window = min(one.offer.start_ms // seeds.RASTER_MS, len(raster) - 1)
+            raster[window] += len(one.offer.indices)
         rasters.append(raster)
     return [max(counts) for counts in zip(*rasters, strict=True)]
 
@@ -511,6 +534,7 @@ def measure(
     least: int,
     clips: Sequence[HandClip],
     suggest: bool,
+    rules_only: bool,
 ) -> None:
     _, speech, _ = omissions.heard_speech(omissions.diarized(paths))
     mains, sections = load(paths, main_name, count, speech)
@@ -548,9 +572,12 @@ def measure(
     root = asr.shadow_root(paths, main_name, mains[0].run.seed)
     limits = load_config(root / "config.yaml").review_uncertainty
     everything = [one for own in found.values() for one in own]
+    tests = rule_tests(limits)
+    if not rules_only:
+        tests = signal_tests(limits, everything, most_others) + tests
     picks = [
         (label, {main: taken(found[main], test) for main in mains})
-        for label, test in signal_tests(limits, everything, most_others)
+        for label, test in tests
     ]
     print_segment(mains, found, picks, least)
     for clip in clips:
@@ -590,6 +617,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="only propose 3-minute windows for a hand reference where a further "
         "run has the offered block too, outside the clips",
     )
+    parser.add_argument(
+        "--rules",
+        action="store_true",
+        help="count the rules A to C only, without the row per signal",
+    )
     args = parser.parse_args(argv)
     try:
         paths = load_config(args.config).session_paths(SessionKey.parse(args.session))
@@ -601,6 +633,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.least,
             args.clip or denoise.CLIPS,
             args.suggest,
+            args.rules,
         )
     except (SpikeError, ValueError, OSError, DataFileError) as error:
         print(f"error: {error}", file=sys.stderr)
