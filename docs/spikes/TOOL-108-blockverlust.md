@@ -1,10 +1,16 @@
 # TOOL-108 — Blockverlust ohne Referenz von Halluzination trennen
 
-Stand 2026-11-24, Messung je Signal und drei festgeschriebene Regeln. Die Prüfung an zwei neuen Fenstern und die Entscheidung folgen. Spike-Bericht zu [TOOL-108](../plans/TOOL-108-block-loss.md), Werkzeug: [`scripts/spike/blocks.py`](../../scripts/spike/blocks.py). Neu transkribiert wurden nur die Seeds 4 und 5 von `base`, alles lokal. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel.
+Stand 2026-11-26, abgeschlossen: Messung je Signal, drei festgeschriebene Regeln, Prüfung an zwei neuen Fenstern, Entscheidung. Spike-Bericht zu [TOOL-108](../plans/TOOL-108-block-loss.md), Werkzeug: [`scripts/spike/blocks.py`](../../scripts/spike/blocks.py). Neu transkribiert wurden nur die Seeds 4 und 5 von `base`, alles lokal. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel.
 
-## Zwischenstand
+## Ergebnis
 
-**Der `avg_logprob` des Quelllaufs trennt an den Handreferenzen den verlorenen Block vom erfundenen. „Sprache ohne Wörter“ trennt nur zwischen zwei verschiedenen Pipelines.** Eine Entscheidung ist das noch nicht: Je Paarung reichen nur wenige Blöcke in eine Referenz.
+**Go für Regel A mit `base` als Hauptlauf, No-Go für `loud`.** Die Dekodierwerte des Quelllaufs trennen den verlorenen Block vom erfundenen, auch an zwei Fenstern, die nach dem Festschreiben der Regel abgetippt wurden. „Sprache ohne Wörter“ allein trennt nicht ([Entscheidung](#entscheidung)).
+
+- **Regel A an den neuen Fenstern:** mit `base` als Hauptlauf 10,2 bis 11,9 Punkte WER an J und 7,6 bis 9,4 an K, kein Hauptlauf verliert ([Prüfung an J und K](#prüfung-an-j-und-k)).
+- **Regel B an den neuen Fenstern:** Mit fünf Seeds nimmt sie an J für einen Hauptlauf 176 falsche Wörter an und kostet ihn 30,5 Punkte.
+- **Der Hauptlauf entscheidet mehr als die Regel.** `base+batched` und `loud` sind an J und K ohne Blöcke besser als `base` mit Blöcken, und ihnen bietet ein zweiter Lauf dort fast nichts an.
+
+Die Messung an A bis I, an der die Regeln gebildet wurden:
 
 - **`base` mit den anderen `base`-Seeds als Quelle:** Jeder Block ab 20 Wörtern kostet an D im Mittel 8,2 Punkte WER, für einen Hauptlauf 21,2. Nur Blöcke mit `avg_logprob` über −1 bringen an C 4,3, an D 3,4 und an E 2,5 Punkte, und kein Hauptlauf verliert an einer Referenz ([`base` untereinander](#base-mit-anderen-base-seeds)).
 - **Mit fünf Seeds** sind es 3,2 an C, 7,2 an D und 3,8 an E. „In einem weiteren Lauf“ nimmt dann dieselben Blöcke an wie `avg_logprob`; mit drei Seeds verlor es an C einen richtigen Block ([Fünf Seeds](#fünf-seeds)).
@@ -28,6 +34,8 @@ Stand 2026-11-24, Messung je Signal und drei festgeschriebene Regeln. Die Prüfu
 | Referenz G | Pilotsitzung, 1:31:00–1:34:00, 551 Wörter |
 | Referenz H | zweite Sitzung, 1:38:00–1:41:00, 470 Wörter |
 | Referenz I | Pilotsitzung, 1:38:00–1:41:00, 597 Wörter; überschneidet sich eine Minute mit F |
+| Referenz J | zweite Sitzung, 1:23:00–1:26:00, 394 Wörter; abgetippt nach dem Festschreiben der Regeln |
+| Referenz K | zweite Sitzung, 1:30:30–1:33:30, 437 Wörter; abgetippt nach dem Festschreiben der Regeln |
 
 - **Paarung:** Jeder Lauf der Hauptvariante ist einmal Hauptlauf. Quelle sind die anderen Seeds derselben Variante oder die Läufe einer zweiten Variante.
 - **Angebot:** ein Block ab 20 Wörtern in Folge, den die Quelle an einer Stelle mehr hat als der Hauptlauf. Ausrichtung wie in `seeds.py` (TOOL-102), abschnittsweise je 5 Minuten; die Zahl der Angebote je Seed-Paar stimmt mit der Spalte „Blöcke ab 20 Wörtern“ dort überein. Die Schwelle stand vor der Messung fest.
@@ -435,7 +443,89 @@ Go nur, wenn eine Regel an mindestens zwei Referenzen 3 Punkte WER gegenüber de
 - **An `loud` ist die Go-Regel nicht erreicht:** Unter den Seeds gibt es an den Referenzen nichts zu gewinnen und nichts zu verlieren. `loud+batched` mit `loud` als Quelle gewinnt nur an E 11,4 Punkte und an I 1,3.
 - **Das ist ein Stand an den Fenstern, an denen die Regeln gebildet wurden.** Die Entscheidung fällt nach der Messung an den zwei neuen Fenstern der zweiten Sitzung.
 
+## Prüfung an J und K
+
+Zwei Fenster der zweiten Sitzung, abgetippt, nachdem Regeln und Schwellen committet waren. Nichts an `blocks.py` wurde danach geändert.
+
+- **J** liegt dort, wo die `base`-Seeds am stärksten voneinander abweichen (Vorschlag aus TOOL-102, mit fünf Seeds bestätigt).
+- **K** liegt dort, wo die meisten weiteren Läufe denselben Block anbieten (`blocks.py --seeds 5 --suggest`).
+
+| Paarung | Regel | J | K |
+| --- | --- | --- | --- |
+| `base` ← `base`, 3 Seeds | A | 122/28 · 10,2 (0,0) | 111/26 · 7,8 (7,1) |
+| | B | 94/86 · 8,0 (0,0) | 78/19 · 5,4 (0,0) |
+| | C | 94/18 · 8,0 (0,0) | 78/19 · 5,4 (0,0) |
+| `base` ← `base`, 5 Seeds | A | 267/59 · 11,3 (0,0) | 218/51 · 9,4 (6,4) |
+| | B | 175/366 · 0,6 (−30,5) | 166/66 · 6,8 (0,0) |
+| | C | 173/34 · 8,7 (0,0) | 187/41 · 8,1 (0,0) |
+| `base+batched` ← `base`, 3 und 5 Seeds | A | – | – |
+| | B | 7/46 · 0,0 (0,0) | – |
+| | C | – | – |
+| `base` ← `base+batched` | A | 151/16 · 11,9 (0,0) | 106/23 · 7,6 (6,9) |
+| | B | 124/9 · 9,8 (0,0) | 73/17 · 5,2 (0,0) |
+| | C | 124/9 · 9,8 (0,0) | 73/17 · 5,2 (0,0) |
+| `loud` ← `loud` | A | – | 0/3 · −0,2 (−0,7) |
+| | B | 26/12 · 1,9 (0,0) | 0/3 · −0,2 (−0,7) |
+| | C | – | 0/3 · −0,2 (−0,7) |
+| `loud+batched` ← `loud` | A, B, C | – | – |
+| `loud` ← `loud+batched` | A, B, C | 30/4 · 2,5 (0,0) | 1/0 · 0,1 (0,0) |
+
+- **Regel A hält.** Mit `base` als Hauptlauf bringt sie in allen drei Paarungen an beiden Fenstern mehr als 3 Punkte. An K gewinnt jeder Hauptlauf, an J bleibt je Paarung mindestens einer ohne Block.
+- **Regel B hält nicht.** Mit fünf Seeds nimmt sie an J für einen Hauptlauf zwei Blöcke mit 176 falschen Wörtern an, seine WER steigt von 42,9 % auf 73,4 %. Das ist derselbe Fehler wie an D.
+- **Regel C verliert nirgends, gewinnt aber weniger als A:** an J 8,0 bis 9,8 Punkte, an K 5,2 bis 8,1.
+- **Mit `base+batched` als Hauptlauf bietet `base` an J und K keinen brauchbaren Block an.** Regel A nimmt nichts an; der eine Block, den Regel B annimmt, ändert die WER nicht.
+- **`loud` bleibt unter der Schwelle:** höchstens 2,5 Punkte an J. Der kleine Verlust an K (3 Wörter, 0,7 Punkte für einen Hauptlauf) liegt innerhalb der Go-Regel.
+
+WER der Hauptläufe an den neuen Fenstern, ohne und mit den Blöcken von Regel A:
+
+| Hauptlauf | J | K |
+| --- | --- | --- |
+| `base`, Seeds 1–3, Mittel (Spanne) | 74,8 % (64,2–88,8) | 35,5 % (35,2–36,2) |
+| `base` mit Regel A, Quelle `base`-Seeds | 64,6 % (47,5–88,8) | 27,8 % (26,1–29,1) |
+| `base` mit Regel A, Quelle `base+batched` | 62,9 % (41,9–88,8) | 28,0 % (26,5–29,1) |
+| `base+batched` | 37,6 % | 21,5 % |
+| `loud`, Seeds 1–3, Mittel (Spanne) | 35,9 % (32,2–43,4) | 26,5 % (21,3–29,5) |
+| `loud+batched` | 30,2 % | 22,0 % |
+
+- **Die Wahl der Pipeline wiegt schwerer als die Blöcke.** `base+batched` liegt an J 27 Punkte und an K 6 Punkte unter `base` mit Regel A.
+- **An J streuen die `base`-Seeds um 46 Punkte** (42,9 bis 88,8 % über fünf Seeds). Der Lauf mit 88,8 % bekommt mit drei Seeds keinen Block.
+
+## Entscheidung
+
+**`base`-Familie: Go für Regel A.** Die Go-Regel des Tickets verlangt 3 Punkte WER an mindestens zwei Referenzen gegenüber dem Mittel der Hauptläufe und an keiner mehr als 1 Punkt Verlust.
+
+| Paarung | Regel A, Referenzen ab 3 Punkten | größter Verlust eines Hauptlaufs |
+| --- | --- | --- |
+| `base` ← `base`, 3 Seeds | C 4,3, D 3,4, J 10,2, K 7,8 | keiner |
+| `base` ← `base`, 5 Seeds | C 3,2, D 7,2, E 3,8, J 11,3, K 9,4 | keiner |
+| `base` ← `base+batched` | C 4,2, D 6,2, J 11,9, K 7,6 | keiner |
+| `base+batched` ← `base` | H 11,9, I 6,0; an J und K kein Block | keiner |
+
+- **Regel A:** Block ab 20 Wörtern, niedrigster `avg_logprob` seiner Passagen über −1, höchste `compression_ratio` unter 2,4, Wiederholungsanteil 0. Die Schwellen sind die aus `review.uncertainty`.
+- **Regel B ist verworfen.** Unter den `base`-Seeds verliert sie an D im Mittel 5,5 Punkte und kostet an J einen Hauptlauf 30,5.
+- **Regel C ist die vorsichtigere Fassung** und erfüllt an J und K die Go-Regel ebenfalls. Gewählt ist A, weil C an keiner Referenz einen Verlust verhindert, den A zulässt, und weniger gewinnt.
+- **Günstigste Quelle:** Ein Batched-Lauf (unter 2 min je Segment) bringt an C, D, J und K so viel wie zwei weitere volle Läufe (rund 13 min).
+
+**`loud`: No-Go.** Keine Paarung erreicht an zwei Referenzen 3 Punkte. Unter den `loud`-Seeds reicht an A bis I kein Block in eine Referenz, an J und K ist nichts zu gewinnen; `loud+batched` mit `loud` als Quelle gewinnt nur an E. Verloren geht an keiner Referenz mehr als 1 Punkt.
+
+**Was das Go wert ist, hängt am Hauptlauf.** Die Regel behebt einen Fehler von `base`, den `base+batched` und `loud` an J und K kaum machen. Bleibt `base` Hauptlauf, lohnt die Umsetzung. Wird nach TOOL-109 `loud` oder ein Batched-Lauf Hauptlauf, ist vorher neu zu messen, ob ein zweiter Lauf dort noch etwas anbietet.
+
+**Leitplanke:** Wörter aus einem anderen Lauf sind Alternativen an der Stelle. Das ASR-Ergebnis des Hauptlaufs bleibt unverändert, kein Schritt setzt einen Block ein.
+
+## Übergaben
+
+- **Umsetzung von Regel A** samt der Frage, wie das Referenzformat mehrere Läufe und Alternativen trägt — TOOL-114.
+- **Nur das auffällige Stück neu dekodieren** statt eines zweiten vollen Laufs — TOOL-113.
+- **„Sprache ohne Wörter“ als Review-Hinweis:** Als Annahmeregel für Blöcke taugt das Signal nicht (D, J). Messwerte als Kommentar an TOOL-107.
+- **Parakeet-Zweitlauf:** Regel A beruht auf Dekodierwerten von Whisper. Ein Block aus Parakeet braucht ein eigenes Signal; „Sprache ohne Wörter“ reicht dafür nicht. Kommentar an TOOL-82.
+- **`loud`:** No-Go und die WER an J und K als Kommentar an TOOL-109.
+- **Epic:** Ergebnis als Kommentar an TOOL-100.
+- **Großzügigere VAD und `loud+batched` an E** — [kein Ticket: An J und K liegt `loud+batched` ohne Blöcke vorn; die Frage gehört zur Wahl des Hauptlaufs in TOOL-109].
+
 ## Einschränkungen
+
+- **J und K sind nach Abweichung und Übereinstimmung der `base`-Seeds ausgesucht.** Sie zeigen Stellen, an denen `base` Blöcke verliert, keinen Durchschnitt der Sitzung. Für `loud` und die Batched-Läufe sind sie keine ausgesuchten Stellen.
+- **Beide neuen Fenster liegen in der zweiten Sitzung**, viereinhalb Minuten auseinander.
 
 - **Wenige Blöcke je Referenz.** Mit fünf Seeds reichen unter `avg_logprob` 6 angenommene Blöcke in C, 5 in D und 2 in E, über alle fünf Hauptläufe. Ein einzelner Block entscheidet über mehrere Punkte.
 - **Die Schwellen sind die der Pipeline und nicht an diesen Fenstern gewählt.** Welche Signale in eine Regel kommen, wird aber an diesen Fenstern entschieden. Die zwei neuen Fenster der zweiten Sitzung prüfen die Regeln unabhängig.
