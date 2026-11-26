@@ -3,7 +3,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from transcript.audio_tools import AudioToolError, check_audio_tools
+from transcript.audio_tools import (
+    AudioToolError,
+    ToolInfo,
+    check_audio_tools,
+    has_filter,
+)
 
 
 def write_stub(directory: Path, name: str, body: str) -> None:
@@ -74,6 +79,41 @@ class CheckAudioToolsTest(unittest.TestCase):
         tools = self.check()
 
         self.assertEqual(tools.ffmpeg.version, "custom build 2026")
+
+
+class HasFilterTest(unittest.TestCase):
+    LISTING = (
+        "Filters:\n"
+        "  T.. = Timeline support\n"
+        " ... loudnorm          A->A       EBU R128 loudness normalization\n"
+        " T.. volume            A->A       Change input volume.\n"
+    )
+
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.bin = Path(directory.name)
+
+    def ffmpeg(self, body: str) -> ToolInfo:
+        write_stub(self.bin, "ffmpeg", body)
+        return ToolInfo("ffmpeg", self.bin / "ffmpeg", "6.1.1")
+
+    def test_finds_a_listed_filter_by_its_name(self) -> None:
+        tool = self.ffmpeg(f"cat <<'EOF'\n{self.LISTING}EOF")
+
+        self.assertTrue(has_filter(tool, "loudnorm"))
+        self.assertTrue(has_filter(tool, "volume"))
+
+    def test_a_word_of_a_description_is_no_filter(self) -> None:
+        tool = self.ffmpeg(f"cat <<'EOF'\n{self.LISTING}EOF")
+
+        self.assertFalse(has_filter(tool, "loudness"))
+        self.assertFalse(has_filter(tool, "Timeline"))
+
+    def test_failing_or_missing_ffmpeg_has_no_filter(self) -> None:
+        self.assertFalse(has_filter(self.ffmpeg("exit 1"), "loudnorm"))
+        missing = ToolInfo("ffmpeg", self.bin / "nowhere", "6.1.1")
+        self.assertFalse(has_filter(missing, "loudnorm"))
 
 
 if __name__ == "__main__":

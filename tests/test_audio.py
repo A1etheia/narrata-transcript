@@ -27,6 +27,15 @@ from transcript.config import Config
 from transcript.session import SessionKey
 
 
+def failing_ffmpeg(
+    directory: Path, tools: AudioTools, body: str, version: str = "x"
+) -> AudioTools:
+    """`tools` with an ffmpeg stub that prints an error line and runs `body`."""
+    write_stub(directory, "ffmpeg", f"echo 'boom: Invalid data' >&2\n{body}")
+    stub = ToolInfo("ffmpeg", directory / "ffmpeg", version)
+    return dataclasses.replace(tools, ffmpeg=stub)
+
+
 @needs_media
 class MediaTestCase(unittest.TestCase):
     def setUp(self) -> None:
@@ -178,6 +187,31 @@ class ExtractTest(MediaTestCase):
             ["audio.json", "segment-01.wav"],
         )
 
+    def test_new_extraction_removes_level_filtered_copies(self) -> None:
+        info = probe(synth(self.dir / "talk.wav", *sine(seconds=1)), self.tools)
+        self.extract_one(info)
+        self.paths.level_dir.mkdir()
+        self.paths.level_wav(1).write_bytes(b"of the previous extraction")
+        self.paths.level_record(1).write_text("{}", encoding="utf-8")
+
+        self.extract_one(info)
+
+        self.assertEqual(
+            sorted(path.name for path in self.paths.audio_dir.iterdir()),
+            ["audio.json", "segment-01.wav"],
+        )
+
+    def test_failed_extraction_keeps_level_filtered_copies(self) -> None:
+        info = probe(synth(self.dir / "talk.wav", *sine(seconds=1)), self.tools)
+        self.extract_one(info)
+        self.paths.level_dir.mkdir()
+        self.paths.level_wav(1).write_bytes(b"of the previous extraction")
+
+        with self.assertRaises(AudioError):
+            extract([info], self.paths, self.config, self.failing_ffmpeg("exit 1"))
+
+        self.assertTrue(self.paths.level_wav(1).is_file())
+
     def test_configured_format_is_used(self) -> None:
         config = dataclasses.replace(
             self.config, audio_sample_rate=22050, audio_channels=2
@@ -287,10 +321,7 @@ class ExtractTest(MediaTestCase):
         self.assertEqual(list(self.paths.audio_dir.iterdir()), [])
 
     def failing_ffmpeg(self, body: str) -> AudioTools:
-        """ffmpeg stub that prints an error line and runs `body`."""
-        write_stub(self.dir, "ffmpeg", f"echo 'boom: Invalid data' >&2\n{body}")
-        stub = ToolInfo("ffmpeg", self.dir / "ffmpeg", "x")
-        return dataclasses.replace(self.tools, ffmpeg=stub)
+        return failing_ffmpeg(self.dir, self.tools, body)
 
 
 class ExtractedTest(unittest.TestCase):
