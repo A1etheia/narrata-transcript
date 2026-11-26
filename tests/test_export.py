@@ -17,13 +17,14 @@ from transcript.export import (
     _REVIEW_STATUS,
     UNLABELLED,
     ExportError,
+    _pipeline,
     build,
     compose,
     write_export,
 )
 from transcript.manifest import Manifest
 from transcript.reference import Passage, ReferenceTranscript
-from transcript.report import report_json
+from transcript.report import Pipeline, Used, report_json
 from transcript.speakers import SpeakerAssignment
 from transcript.working import WorkingError, write_working
 from transcript.working import compose as compose_working
@@ -467,6 +468,23 @@ class FileTest(_KnownSession):
 class MappingTest(unittest.TestCase):
     def test_every_settling_status_has_a_contract_status(self) -> None:
         self.assertEqual(set(_REVIEW_STATUS), set(SETTLED))
+
+
+class ConfigHashTest(unittest.TestCase):
+    def hashed(self, settings: dict[str, Any]) -> str:
+        used = Used({"backend_id": "fake", "model": "fake", "settings": settings}, (1,))
+        pipeline = Pipeline("0", (used,), (), (), "snapshot", "1.0")
+        return _pipeline(pipeline, "snapshot")["config_hash"]
+
+    def test_a_level_filter_changes_the_hash(self) -> None:
+        """The contract has no field for the filter; the hash tells runs apart."""
+        entry = {"chain": "loudnorm=I=-16:TP=-1.5:LRA=11", "ffmpeg": "6.1.1"}
+        plain = {"beam_size": 5}
+
+        filtered = self.hashed({**plain, "level_filter": entry})
+
+        self.assertNotEqual(filtered, self.hashed(plain))
+        self.assertEqual(filtered, self.hashed({"level_filter": entry, **plain}))
 
 
 if __name__ == "__main__":

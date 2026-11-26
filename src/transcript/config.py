@@ -40,7 +40,18 @@ _PATHS_KEYS = {"root"}
 _SEGMENTATION_KEYS = {"length_seconds", "overlap_seconds"}
 _AUDIO_KEYS = {"sample_rate", "channels"}
 _AUDIO_CHANNELS = (1, 2)
-_ASR_KEYS = {"model", "device", "compute_type", "beam_size", "retries", "hotwords"}
+_ASR_KEYS = {
+    "model",
+    "device",
+    "compute_type",
+    "beam_size",
+    "retries",
+    "hotwords",
+    "level_filter",
+}
+# asr.level_filter: `loudnorm` is `transcript.level.FILTER` (TOOL-109)
+LevelFilter = Literal["none", "loudnorm"]
+LEVEL_FILTERS: tuple[LevelFilter, ...] = get_args(LevelFilter)
 _DIARIZATION_KEYS = {"model", "device", "retries", "min_turn_ms"}
 _MIN_TURN_RANGE = (0, 10_000)  # ms
 _NARRATA_KEYS = {"url", "groups", "recent_sessions", "archive_limit"}
@@ -170,6 +181,8 @@ class Config:
     asr_retries: int = 2  # further attempts after a retryable failure
     # False: no keyword biasing at all; True still holds back a short list (TOOL-81)
     asr_hotwords: bool = True
+    # one of LEVEL_FILTERS: what the recognition hears, the diarization never
+    asr_level_filter: LevelFilter = "none"
     # Hugging Face name or local model directory, loaded from the local cache only
     diarization_model: str = "pyannote/speaker-diarization-community-1"
     diarization_device: str = "auto"  # one of _DEVICES; auto prefers cuda
@@ -192,6 +205,11 @@ class Config:
 
     def session_paths(self, key: SessionKey) -> SessionPaths:
         return SessionPaths(key, self.root)
+
+    @property
+    def asr_levels(self) -> bool:
+        """Whether the recognition hears level-normalised audio (`asr.level_filter`)."""
+        return self.asr_level_filter != "none"
 
 
 def load_config(path: Path) -> Config:
@@ -248,6 +266,9 @@ def load_config(path: Path) -> Config:
     hotwords = asr.get("hotwords", Config.asr_hotwords)
     if not isinstance(hotwords, bool):
         raise _invalid(path, "asr.hotwords", "must be true or false")
+    level_filter = _choice(
+        path, asr, "asr", "level_filter", Config.asr_level_filter, LEVEL_FILTERS
+    )
 
     diarization = _section(path, data, "diarization", _DIARIZATION_KEYS)
     diarization_model = diarization.get("model", Config.diarization_model)
@@ -341,6 +362,7 @@ def load_config(path: Path) -> Config:
         asr_beam_size=beam_size,
         asr_retries=retries,
         asr_hotwords=hotwords,
+        asr_level_filter=level_filter,
         diarization_model=diarization_model,
         diarization_device=diarization_device,
         diarization_retries=diarization_retries,
@@ -378,6 +400,7 @@ def format_config(config: Config) -> str:
                 "beam_size": config.asr_beam_size,
                 "retries": config.asr_retries,
                 "hotwords": config.asr_hotwords,
+                "level_filter": config.asr_level_filter,
             },
             "diarization": {
                 "model": config.diarization_model,

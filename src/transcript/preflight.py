@@ -13,9 +13,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Protocol
 
-from transcript import audio, audio_tools, knowledge, manifest, narrata, speaker_player
+from transcript import (
+    audio,
+    audio_tools,
+    knowledge,
+    level,
+    manifest,
+    narrata,
+    speaker_player,
+)
 from transcript.asr.backend import Backend, BackendError, BackendIdentity, BackendInfo
-from transcript.asr.backend import identity as backend_identity
 from transcript.asr.whisper import LIBRARY_HINT, WhisperBackend, preload_cuda_libraries
 from transcript.config import DOTENV, Config, ConfigError, load_config
 from transcript.diarization.pyannote import PyannoteDiarizer
@@ -25,7 +32,12 @@ from transcript.narrata_client import NarrataClientError, read_token
 from transcript.reference import load_reference
 from transcript.session import SessionKey, SessionPaths
 from transcript.timecode import format_ms
-from transcript.transcription import TranscriptionError, check_audio, reusable
+from transcript.transcription import (
+    TranscriptionError,
+    check_audio,
+    reusable,
+    run_identity,
+)
 
 Level = Literal["ok", "warning", "error"]
 
@@ -95,7 +107,8 @@ def run(
     config = _check_config(findings, config_path)
     if config is None:
         return findings
-    asr = _check_asr(findings, config, probes)
+    asr = _check_asr(findings, config, probes, tools)
+    _check_level(findings, config, tools)
     if diarize:
         _check_diarization(findings, config, probes)
     if key is not None:
@@ -170,7 +183,12 @@ def _check_config(findings: list[Finding], path: Path) -> Config | None:
     return config
 
 
-def _check_asr(findings: list[Finding], config: Config, probes: Probes) -> _Asr | None:
+def _check_asr(
+    findings: list[Finding],
+    config: Config,
+    probes: Probes,
+    tools: audio_tools.AudioTools | None,
+) -> _Asr | None:
     """The model from the local cache and the device, without loading the model.
 
     On cuda also the libraries the runtime loads only at the first segment;
@@ -178,7 +196,7 @@ def _check_asr(findings: list[Finding], config: Config, probes: Probes) -> _Asr 
     """
     try:
         backend = probes.asr(config)
-        found = backend_identity(backend)
+        found = run_identity(backend, tools if config.asr_levels else None)
     except BackendError as error:
         findings.append(Finding("error", "asr", str(error)))
         return None
@@ -206,6 +224,27 @@ def _check_asr(findings: list[Finding], config: Config, probes: Probes) -> _Asr 
             )
         )
     return _Asr(found, backend.capabilities.keyword_biasing)
+
+
+def _check_level(
+    findings: list[Finding], config: Config, tools: audio_tools.AudioTools | None
+) -> None:
+    """With the level filter switched on: that this ffmpeg has it."""
+    if not config.asr_levels or tools is None:
+        return  # without ffmpeg `audio-tools` already carries the error
+    ffmpeg = tools.ffmpeg
+    if audio_tools.has_filter(ffmpeg, level.FILTER):
+        message = f"{level.CHAIN} before the recognition, ffmpeg {ffmpeg.version}"
+        findings.append(Finding("ok", "level", message))
+    else:
+        findings.append(
+            Finding(
+                "error",
+                "level",
+                f"ffmpeg {ffmpeg.version} ({ffmpeg.path}) lacks the {level.FILTER} "
+                "filter; asr.level_filter: none runs without it",
+            )
+        )
 
 
 def _check_diarization(findings: list[Finding], config: Config, probes: Probes) -> None:
@@ -292,6 +331,8 @@ def _check_disk(
     needed = round(
         seconds * config.audio_sample_rate * config.audio_channels * _PCM_BYTES
     )
+    if config.asr_levels:
+        needed *= 2  # a filtered copy of every WAV
     where = _existing_ancestor(paths.work_dir)
     try:
         free = probes.disk_free(where)

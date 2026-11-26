@@ -4,9 +4,11 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from test_reference import KEY, MANIFEST, SECRET, SEGMENT
 
+from transcript import level
 from transcript.asr import (
     AudioInputError,
     BackendError,
@@ -19,11 +21,13 @@ from transcript.asr import (
     TranscriptionRequest,
 )
 from transcript.asr.fake import FAKE_INFO, FakeBackend
-from transcript.audio import sha256_file
+from transcript.audio import AudioError, sha256_file
+from transcript.audio_tools import AudioTools, ToolInfo
 from transcript.reference import ReferenceError, load_reference
 from transcript.retry import SegmentFailure
 from transcript.session import SessionPaths
 from transcript.transcription import (
+    LEVEL_SETTING,
     SegmentOutcome,
     TranscriptionError,
     transcribe_session,
@@ -530,6 +534,140 @@ class TranscribeSessionTest(unittest.TestCase):
 
         self.assertEqual(self.statuses(run), ["reused", "transcribed", "reused"])
         self.assertEqual([r.audio.name for r in backend.requests], ["segment-02.wav"])
+
+
+def audio_tools(version: str = "6.1.1") -> AudioTools:
+    tool = ToolInfo("ffmpeg", Path("ffmpeg"), version)
+    return AudioTools(ffmpeg=tool, ffprobe=tool)
+
+
+class LevelFilterTest(unittest.TestCase):
+    """The level filter as the session run uses it; ffmpeg itself is replaced."""
+
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.paths = SessionPaths(KEY, Path(directory.name))
+        self.paths.audio_dir.mkdir(parents=True)
+        for segment in SEGMENTS:
+            self.paths.segment_wav(segment.index).write_bytes(b"RIFF fake audio")
+        self.filtered: list[tuple[int, int, str]] = []  # index, frames, version
+        self.backend_loaded_at_filter: list[int] = []
+        patcher = mock.patch.object(level, "ensure", self.ensure)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def ensure(self, paths, index, frames, tools) -> level.Levelled:
+        self.filtered.append((index, frames, tools.ffmpeg.version))
+        self.backend_loaded_at_filter.append(self.backend.load_calls)
+        paths.level_dir.mkdir(exist_ok=True)
+        paths.level_wav(index).write_bytes(b"RIFF filtered audio")
+        return level.Levelled(paths.level_wav(index), 1.5)
+
+    def run_session(self, tools: AudioTools | None = None, **options: Any):
+        self.backend = session_backend()
+        return transcribe_session(
+            self.paths, MANIFEST_3, self.backend, "de", level_tools=tools, **options
+        )
+
+    def statuses(self, run) -> list[str]:
+        return [outcome.status for outcome in run.outcomes]
+
+    def test_backend_hears_the_filtered_copy_made_before_loading(self) -> None:
+        run = self.run_session(audio_tools())
+
+        self.assertEqual(self.statuses(run), ["transcribed"] * 3)
+        self.assertEqual(
+            [request.audio for request in self.backend.requests],
+            [self.paths.level_wav(segment.index) for segment in SEGMENTS],
+        )
+        self.assertEqual(
+            self.filtered,
+            [(segment.index, segment.frames, "6.1.1") for segment in SEGMENTS],
+        )
+        self.assertEqual(self.backend_loaded_at_filter, [0, 0, 0])
+
+    def test_stored_settings_name_chain_and_ffmpeg_version(self) -> None:
+        run = self.run_session(audio_tools())
+
+        entry = {"chain": level.CHAIN, "ffmpeg": "6.1.1"}
+        stored = load_reference(self.paths, 1).asr.settings
+        self.assertEqual(stored, {**SETTINGS, LEVEL_SETTING: entry})
+        self.assertEqual(run.identity.settings, stored)
+
+    def test_without_a_filter_nothing_is_added_and_the_segment_wav_is_heard(
+        self,
+    ) -> None:
+        run = self.run_session()
+
+        self.assertEqual(self.filtered, [])
+        self.assertEqual(self.backend.requests[0].audio, self.paths.segment_wav(1))
+        self.assertEqual(load_reference(self.paths, 1).asr.settings, SETTINGS)
+        self.assertEqual(run.identity.settings, SETTINGS)
+
+    def test_rerun_with_the_same_filter_reuses_without_filtering(self) -> None:
+        self.run_session(audio_tools())
+        self.filtered.clear()
+
+        run = self.run_session(audio_tools())
+
+        self.assertEqual(self.statuses(run), ["reused"] * 3)
+        self.assertEqual(self.filtered, [])
+        self.assertEqual(self.backend.load_calls, 0)
+
+    def test_switching_the_filter_on_or_off_transcribes_again(self) -> None:
+        self.run_session()
+
+        switched_on = self.run_session(audio_tools())
+        switched_off = self.run_session()
+
+        self.assertEqual(self.statuses(switched_on), ["transcribed"] * 3)
+        self.assertEqual(self.statuses(switched_off), ["transcribed"] * 3)
+
+    def test_another_ffmpeg_version_transcribes_again(self) -> None:
+        self.run_session(audio_tools())
+
+        run = self.run_session(audio_tools("7.0"))
+
+        self.assertEqual(self.statuses(run), ["transcribed"] * 3)
+
+    def test_only_segments_to_transcribe_are_filtered(self) -> None:
+        self.run_session(audio_tools(), indices={1, 3})
+        self.filtered.clear()
+
+        run = self.run_session(audio_tools())
+
+        self.assertEqual(self.statuses(run), ["reused", "transcribed", "reused"])
+        self.assertEqual([index for index, _, _ in self.filtered], [2])
+
+    def test_levelled_gets_each_copy(self) -> None:
+        seen: list[tuple[int, bool]] = []
+
+        self.run_session(
+            audio_tools(),
+            levelled=lambda index, copy: seen.append((index, copy.reused)),
+        )
+
+        self.assertEqual(seen, [(1, False), (2, False), (3, False)])
+
+    def test_failing_filter_ends_the_run_before_loading_and_keeps_results(
+        self,
+    ) -> None:
+        self.run_session()
+        before = self.paths.reference(1).read_bytes()
+
+        def failing(paths, index, frames, tools):
+            raise AudioError("segment-01.wav: level filter failed (boom)")
+
+        with (
+            mock.patch.object(level, "ensure", failing),
+            self.assertRaises(TranscriptionError) as caught,
+        ):
+            self.run_session(audio_tools())
+
+        self.assertIn("segment 1: segment-01.wav: level filter", str(caught.exception))
+        self.assertEqual(self.backend.load_calls, 0)
+        self.assertEqual(self.paths.reference(1).read_bytes(), before)
 
 
 if __name__ == "__main__":

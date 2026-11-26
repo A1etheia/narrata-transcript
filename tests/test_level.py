@@ -14,7 +14,7 @@ from test_audio import failing_ffmpeg
 from transcript import level
 from transcript.audio import AudioError
 from transcript.audio_tools import AudioTools, ToolInfo
-from transcript.config import Config
+from transcript.config import LEVEL_FILTERS, Config
 from transcript.session import SessionKey
 
 RATE = 16000
@@ -34,6 +34,12 @@ def peak(path: Path) -> int:
 
 
 class SettingsTest(unittest.TestCase):
+    def test_the_filter_is_the_one_the_config_can_switch_on(self) -> None:
+        self.assertEqual(LEVEL_FILTERS, ("none", level.FILTER))
+        self.assertFalse(Config(language="de", root=Path("/data")).asr_levels)
+        on = Config(language="de", root=Path("/data"), asr_level_filter=level.FILTER)
+        self.assertTrue(on.asr_levels)
+
     def test_settings_name_chain_and_ffmpeg_version(self) -> None:
         tool = ToolInfo("ffmpeg", Path("ffmpeg"), "6.1.1")
 

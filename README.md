@@ -47,7 +47,7 @@ Vor einem langen Lauf prüft `transcript doctor`, ob alles bereitsteht. Ohne Ses
 
 - die Aufnahmen in `input/`, jede per ffprobe geprüft
 - ob `work/` und `output/` beschreibbar sind
-- Platz für die Arbeits-WAVs, solange sie fehlen
+- Platz für die Arbeits-WAVs, solange sie fehlen; mit `asr.level_filter: loudnorm` das Doppelte, und ob ffmpeg den Filter `loudnorm` kennt
 - der gespeicherte Narrata-Kontext oder, wenn er fehlt, `narrata.url`, `narrata.groups` und ein Token (ohne Netzwerkaufruf)
 - ob der Wissens-Snapshot gültig und aktuell ist
 - ob `audio.json`, Manifest und gespeicherte Transkripte zueinander und zu den Aufnahmen passen; `audio.json` wird nur über Dateiname und Größe verglichen
@@ -254,6 +254,12 @@ Die Konsole zeigt pro Segment, sobald es fertig ist, den Status mit Laufzeit, Za
 
 - **Wiederaufnahme:** Ein fertiges Segment bleibt stehen, wenn Backend, Modell, Revision, Einstellungen und Snapshot-Kennung gleich sind, die erkannte Sprache zu `language` passt und das Backend dieselben Keywords bekommen hat (`reused`). Gekappte Keywords zählen als dieselben, solange die genutzten in derselben Reihenfolge unter den aktuellen stehen, auch wenn keine ankamen, weil die Liste zu kurz war. Neue Begriffe kommen mit einem neuen Snapshot, und dessen Kennung löst die Neutranskription aus. Ein Backend ohne Keyword-Unterstützung ignoriert sie, für die Wiederaufnahme zählen sie dann nicht. `hotwords` und `hotword_min_tokens` stehen in den Einstellungen; Transkripte von vor TOOL-81 haben sie nicht und werden deshalb einmal neu transkribiert, rund 7 min pro Sitzung auf der GPU. Ein abgebrochener Lauf macht beim nächsten Aufruf mit den offenen Segmenten weiter. Sind alle Segmente fertig, lädt Whisper gar nicht. Hat sich das Modell geändert, werden die betroffenen Segmente neu transkribiert.
 - **Vor dem Laden geprüft:** Fehlende Runtime, ein Modell, das nicht im Cache liegt, eine fehlende GPU, ein Segment, das nicht im Manifest steht, ein fehlendes WAV oder ein unlesbares Ergebnis brechen ab, bevor das Modell lädt. Ohne `--no-diarize` gilt das auch für pyannote.
+- **Pegelausgleich (TOOL-109), noch nicht Default:** Mit `asr.level_filter: loudnorm` hört die Erkennung eine pegelnormalisierte Kopie des Segments (`loudnorm=I=-16:TP=-1.5:LRA=11`, zwei ffmpeg-Durchgänge: messen, dann mit den Messwerten normalisieren). Ob der Filter Default wird, entscheidet die Messung in TOOL-109.
+  - **Ablage:** `audio/level/segment-NN.wav`, gleich lang wie das Roh-WAV, daneben `segment-NN.json` mit Kette, ffmpeg-Version, SHA-256 des Roh-WAV, Messwerten und Filterzeit. Das Roh-WAV wird nur gelesen.
+  - **Wer was liest:** nur die Erkennung die Kopie. Diarisierung und Hörproben lesen weiter das Roh-WAV.
+  - **Wann der Filter läuft:** vor dem Laden des Modells, nur für Segmente, die neu erkannt werden, knapp 5 min je 5-Stunden-Segment auf der CPU. Die Konsole meldet je Segment `level filter loudnorm: filtered in 290 s` oder `reused`.
+  - **Wiederaufnahme:** Eine Kopie mit passendem Protokoll wird wiederverwendet. Kette und ffmpeg-Version stehen als `level_filter` in `asr.settings`; ein Wechsel des Schalters oder der ffmpeg-Version lässt die Transkripte neu entstehen, `process` verlangt dafür `--redo transcribe`.
+  - **Fehler:** Scheitert der Filter oder ist das Segment still, bricht der Befehl vor dem Laden ab. Er fällt nie stillschweigend auf das Roh-WAV zurück.
 - **`--force`:** Rechnet auch passende Ergebnisse neu. Die Sprecher-Labels fallen dabei weg; die Diarisierung im selben Lauf setzt sie aus der gespeicherten Rohform ohne Modell wieder.
 - **Vorübergehender Fehler** (`ResourceError` bei Speichermangel, `BackendRuntimeError`): Das Segment wird mit dem schon geladenen Modell nach 5 s erneut versucht, höchstens `asr.retries`-mal (Default 2, höchstens 5). Gelingt ein Versuch, zählt das Segment als `transcribed`.
 - **Dauerhafter Fehler** (`AudioInputError`, `BackendUnavailableError`, `UnsupportedCapabilityError`): wird nicht wiederholt, ein zweiter Versuch käme zum selben Ergebnis.
@@ -731,6 +737,7 @@ Die Einstellungen stehen in `config/config.yaml`. Die Datei ist lokal und nicht 
 | `asr.beam_size` | nein | `5` | Strahlbreite der Suche; VAD, Wortzeiten und `condition_on_previous_text: false` sind fest |
 | `asr.retries` | nein | `2` | weitere Versuche pro Segment nach `ResourceError` oder `BackendRuntimeError`, `0` bis `5`; `0` schaltet die Wiederholung ab |
 | `asr.hotwords` | nein | `true` | Keywords aus dem Snapshot als Hotwords an Whisper, nur bei Turbo-Modellen; eine Liste unter 110 Tokens geht auch bei `true` nicht an Whisper ([TOOL-81](docs/spikes/TOOL-81-hotwords.md)); `false` schaltet die Hotwords ganz ab |
+| `asr.level_filter` | nein | `none` | Pegelausgleich vor der Erkennung: `none` oder `loudnorm` (zweistufig, Kopie unter `audio/level/`); die Diarisierung liest immer das Roh-WAV; ein Wechsel lässt gespeicherte Transkripte neu entstehen ([Spracherkennung](#spracherkennung)) |
 | `diarization.model` | nein | `pyannote/speaker-diarization-community-1` | Modellname auf Hugging Face oder ein lokales Verzeichnis mit `config.yaml`; nur aus dem lokalen Cache |
 | `diarization.device` | nein | `auto` | wie `asr.device` |
 | `diarization.retries` | nein | `2` | wie `asr.retries` |
@@ -788,6 +795,7 @@ work/beispielgruppe/042/
   manifest.json                Gruppe, Ordinal, play_session_id, Sitzungsdatum, Zustimmung, Segmente mit absoluten Zeiten
   narrata/                     transcription-context.json (Rohantwort von Narrata), snapshot.json (Wissens-Snapshot), diagnosis.json (Diagnose)
   audio/                       segment-NN.wav (Arbeitsformat, eine pro Aufnahme), audio.json (Audio-Metadaten)
+    level/                     segment-NN.wav und .json: pegelnormalisierte Kopie mit Protokoll, nur mit asr.level_filter
   asr/                         segment-NN.json (Referenztranskript), segment-NN.raw.json (Backend-Rohantwort)
   diarization/                 segment-NN.json (Sprecher-Turns von pyannote)
   review/                      segment-NN.hints.json (Review-Hinweise aus dem Wissen), segment-NN.uncertainty.json (Unsicherheitsbewertung), candidates.json (Review-Kandidaten der Session), decisions.json (Review-Entscheidungen), review.csv (Review-CSV), asr-variant-suggestions.json (Hörfehler-Vorschläge)

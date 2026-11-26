@@ -190,6 +190,7 @@ Unter `work/beispielgruppe/042/`, alles lokal und nicht im Repo (Baum: README [S
 | Pfad | Bedeutung | von Hand? |
 | --- | --- | --- |
 | `audio/segment-NN.wav`, `audio/audio.json` | Arbeitsaudio je Aufnahme, Metadaten | nein |
+| `audio/level/segment-NN.wav`, `audio/level/segment-NN.json` | pegelnormalisierte Kopie für die Erkennung und ihr Protokoll, nur mit `asr.level_filter: loudnorm` | nein |
 | `narrata/transcription-context.json` | Rohantwort von Narrata | nein |
 | `narrata/snapshot.json`, `narrata/diagnosis.json` | eingefrorenes Wissen, Prüfbefunde | nein |
 | `manifest.json` | Segmente mit Session-Zeitachse, Zustimmung | nein |
