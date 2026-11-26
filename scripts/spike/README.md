@@ -283,3 +283,37 @@ V="base+batched base+batched+ts loud+batched"
   - Raster 1 min, außerhalb der angegebenen Clips, mindestens mediane Sprachzeit.
   - Rang: Summe der Ränge nach Überlappungszeit und nach Zahl der Turns unter 2 s (gleiche Labels mit höchstens 500 ms Abstand verbunden).
   - Ausgabe: Fenster, Überlappung in Sekunden, kurze Turns, Anteil Sprache, Zahl der Labels.
+
+# Block-Spike (TOOL-108)
+
+Misst, ob sich ohne Handreferenz erkennen lässt, wann ein Block, den ein zweiter Lauf mehr hat, ein Verlust des Hauptlaufs ist und wann der zweite Lauf ihn erfunden hat. `blocks.py` liest die Läufe von `asr.py`, die Diarisierung der Sitzung und die Handreferenzen. Plan: [`TOOL-108`](../../docs/plans/TOOL-108-block-loss.md), Bericht: `docs/spikes/TOOL-108-blockverlust.md`.
+
+## Datenschutz
+
+Das Skript schreibt nichts. Die Konsole bekommt Zähler, Anteile, Fehlerraten und Zeiten, nie Text, Tokens, Namen oder Sprecher-Labels. `--suggest` gibt nur Fenstergrenzen und Zähler aus.
+
+## Ablauf
+
+```bash
+.venv/bin/python scripts/spike/asr.py run $S base --seeds 5 --first-seed 4
+.venv/bin/python scripts/spike/blocks.py $S [--main base] [--source VARIANTE] [--seeds 3] [--least 20] [--clip NAME=DATEI@H:MM:SS-H:MM:SS]… [--rules] [--suggest] [--config PATH]
+```
+
+- **`asr.py --first-seed N`** beginnt bei Seed N. Die Wurzeln darunter werden weder neu vorbereitet noch neu transkribiert.
+- **Voraussetzung:** Die Wurzeln beider Varianten sind transkribiert, Segment 1 der Sitzung ist diarisiert. Ohne Modell und ohne GPU.
+- **Paarung:** Jeder Lauf von `--main` ist einmal Hauptlauf. Quelle sind die Läufe von `--source`, ohne diese Angabe die anderen Seeds von `--main`. Eine Batched-Variante wird nur mit Seed 1 gelesen, weil ihre Seeds Wort für Wort gleich sind.
+- **Angebot:** ein Block ab `--least` Wörtern in Folge, den die Quelle an einer Stelle mehr hat als der Hauptlauf. Ausrichtung wie in `seeds.py`, je Seed-Paar einer Variante dieselbe.
+- **Signale je Angebot**, alle ohne Handreferenz. Die Schwellen sind die aus `review.uncertainty` der Variante; für die Dekodierwerte gibt es eine zweite Zeile mit dem Median über alle Angebote des Aufrufs.
+  - *Quelle:* höchste `compression_ratio`, niedrigster `avg_logprob` und höchste `no_speech_prob` der Passagen des Blocks; kein Wort des Blocks in einem Fallback-Fenster; mittlere Wort-Confidence; Wiederholungsanteil 0.
+  - *Hauptlauf:* Lücke zwischen den Wörtern um die Stelle; Länge des Worts vor der Lücke; dünnes Dekodierfenster.
+  - *Sprache ohne Wörter:* Zeit im Block, in der die Diarisierung Sprache hört und der Hauptlauf kein Wort hat (wie in `omissions.py`), ab 2 s.
+  - *In einem weiteren Lauf:* Ein Lauf außer Hauptlauf und Quelle hat mindestens die Hälfte der Blockwörter in derselben Reihenfolge, höchstens 5 s neben dem Block.
+  - Fallback und dünnes Fenster gibt es für Batched-Läufe nicht, die Zeile heißt dann „entfällt“.
+- **Angenommene Blöcke:** Bieten mehrere Quellen an derselben Stelle an, zählt der größte Block, den das Signal annimmt.
+- **Über das Segment:** Angebote je Hauptlauf und Quelle, dann je Signal Blöcke, Wörter und Zeit.
+- **Je Referenz und Signal:** Blöcke, die in den Clip reichen; ihre Wörter dort als „füllt eine Auslassung“, „sonst richtig“, „falsch“ und „an unverständlicher Stelle“ (wie R2 in `seeds.py`); die WER des Hauptlaufs ohne und mit den eingesetzten Blöcken, gemessen mit `calibration.align`. Die erste Tabelle fasst über die Hauptläufe zusammen, die zweite zeigt jeden einzeln. Kein Aufruf schreibt ein Transkript.
+- **Regeln**, nach der Messung je Signal an A bis I festgeschrieben, stehen als letzte Zeilen jeder Tabelle. `--rules` zählt nur sie.
+  - *A, Dekodierwerte der Quelle:* `avg_logprob` über der Schwelle, `compression_ratio` darunter, Wiederholungsanteil 0.
+  - *B, Sprache ohne Wörter:* mindestens 2 s im Block.
+  - *C:* A und B zugleich.
+- **`--suggest`** schlägt drei sich nicht überlappende 3-min-Fenster für eine Handreferenz vor, an denen ein weiterer Lauf den angebotenen Block auch hat, außerhalb der angegebenen Clips. Je Stelle zählt der größte solche Block.

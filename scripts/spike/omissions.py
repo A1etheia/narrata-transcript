@@ -354,7 +354,7 @@ class ClipResult:
     silent_share: float  # of the clip's time
 
 
-def silence(reference: ReferenceTranscript, context: Context) -> Ranges:
+def silence(reference: ReferenceTranscript, speech: Ranges) -> Ranges:
     """Where the diarization hears speech and the run has no word."""
     words = Ranges.union(
         (
@@ -364,7 +364,7 @@ def silence(reference: ReferenceTranscript, context: Context) -> Ranges:
         ),
         bridge_ms=BRIDGE_WORDS_MS,
     )
-    return context.speech.minus(words).longer(BRIDGE_WORDS_MS)
+    return speech.minus(words).longer(BRIDGE_WORDS_MS)
 
 
 def clip_turns(clip: HandClip, context: Context, audio: Audio) -> ClipTurns:
@@ -745,9 +745,7 @@ def measure(
         after = raw.get("raw", {}).get("info", {}).get("duration_after_vad")
         if after is None or abs(after - vad.total / 1000) > VAD_TOLERANCE_S:
             raise SpikeError(f"{name}#{seed}: VAD ranges do not match the run's")
-    quiet = {
-        seed: silence(reference, context) for seed, reference in references.items()
-    }
+    quiet = {seed: silence(reference, speech) for seed, reference in references.items()}
     print_segment(quiet, context.speech.total, vad, asr._end_ms(paths))
     # the level of what Whisper heard: the filtered copy for a filtered variant
     wav = asr.chain_wav(paths, asr.variant(name).chain)

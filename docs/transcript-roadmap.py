@@ -20,7 +20,7 @@ START = dt.date(2026, 11, 23)  # a Monday: the week the open work is planned fro
 FROM = dt.date(2026, 11, 23)  # first day counted; working days before it are skipped
 WORKDAYS = [0, 1, 3]  # Mon, Tue, Thu -> 3 dev-days per week
 PAUSES = [(dt.date(2026, 12, 21), dt.date(2027, 1, 3))]  # inclusive ranges, no work
-GENERATED = "2026-11-24"
+GENERATED = "2026-11-26"
 
 # (phase title, milestone sentence, [(key, title, dev-days, note)])
 P = [
@@ -130,6 +130,7 @@ P = [
         ("TOOL-102", "Spike: Vereinigung mehrerer Seeds gegen Auslassungen messen", 1.0, "erledigt: `docs/spikes/TOOL-102-seed-vereinigung.md`; Ergebnis No-Go für R1 bis R3, keine Umsetzungstickets; Folgefrage Blockverlust gegen Halluzination in TOOL-108"),
         ("TOOL-103", "Spike: Pegelausgleich vor der Erkennung messen", 1.0, "erledigt: `docs/spikes/TOOL-103-pegelausgleich.md`; Ergebnis Go mit Vorbehalt für `loudnorm`, Umsetzung in TOOL-109 (aus TOOL-103: Bewertung auf gefiltertem Audio neu kalibrieren; Diarisierung auf Roh-WAV oder gefiltertem WAV entscheiden)"),
         ("TOOL-104", "Recherche: sprecherbedingte Dekodierung, neue lokale Modelle, Batched-Pipeline", 1.0, "erledigt: `docs/spikes/TOOL-104-recherche-auslassungen.md`; drei Kandidaten für eine Messung (TOOL-108, TOOL-112, TOOL-111)"),
+        ("TOOL-108", "Spike: Blockverlust ohne Referenz von Halluzination trennen", 1.0, "erledigt: `docs/spikes/TOOL-108-blockverlust.md`; Go für Regel A (Dekodierwerte des Quelllaufs) mit `base` als Hauptlauf, No-Go für `loud`; Umsetzung samt Formatfrage in TOOL-114, Neu-Dekodieren nur des auffälligen Stücks in TOOL-113; nach TOOL-109 neu messen, falls `loud` oder ein Batched-Lauf Hauptlauf wird"),
         ("TOOL-105", "Messung: Sitzung mit geänderter Aufnahme am Tisch gegen eine Handreferenz", 0.5, "braucht die Gruppe, Hardware und einen Spielabend, das Datum ist deshalb nur ein Platzhalter; wenn möglich mit dem bisherigen Mikrofon parallel aufnehmen; Handreferenz von der Projektverantwortlichen (20–30 min); aus TOOL-60 und TOOL-93: Mikrofon-Empfehlung bisher nur dokumentiert; aus TOOL-101: Reihenfolge und Begründung im Kommentar an TOOL-100"),
     ]),
 ]

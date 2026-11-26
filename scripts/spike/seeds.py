@@ -71,6 +71,8 @@ class Run:
     spoken: Ranges  # the time of all passages
     flagged: Ranges  # the time of the passages not rated `confident`
     squeezed: Ranges  # passages at or above the compression ratio for repetition
+    ends: tuple[int, ...]  # per token: the end of its word
+    confidences: tuple[float | None, ...]  # per token: of its word
 
 
 def timed(
@@ -81,6 +83,8 @@ def timed(
 ) -> Run:
     tokens: list[str] = []
     starts: list[int] = []
+    ends: list[int] = []
+    confidences: list[float | None] = []
     passages: list[int] = []
     spans: dict[int, tuple[int, int]] = {}
     squeezed: list[tuple[int, int]] = []
@@ -98,6 +102,8 @@ def timed(
                 continue
             tokens += found
             starts += [start] * len(found)
+            ends += [word.end_ms if word.end_ms is not None else start] * len(found)
+            confidences += [word.confidence] * len(found)
             passages += [passage.index] * len(found)
     levels = {rating.passage: rating.level for rating in ratings}
     return Run(
@@ -111,6 +117,8 @@ def timed(
         Ranges.union(spans.values()),
         Ranges.union(s for p, s in spans.items() if levels[p] != "confident"),
         Ranges.union(squeezed),
+        tuple(ends),
+        tuple(confidences),
     )
 
 
@@ -299,11 +307,12 @@ def print_segment(runs: Sequence[Run], pairs: Sequence[Pair]) -> None:
     print()
 
 
-def print_suggestions(found: Sequence[int], clips: Sequence[HandClip]) -> None:
+def print_suggestions(
+    found: Sequence[int], clips: Sequence[HandClip], counted: str = "abweichende Wörter"
+) -> None:
     """Times and counts only."""
     print(
-        f"| Vorschlag ({SUGGEST_MS // 60_000} min) | abweichende Wörter | "
-        "größtes 30-s-Fenster |"
+        f"| Vorschlag ({SUGGEST_MS // 60_000} min) | {counted} | größtes 30-s-Fenster |"
     )
     print("| --- | --- | --- |")
     for start, tokens, peak in suggestions(found, clips):
