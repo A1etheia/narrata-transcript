@@ -12,7 +12,9 @@ level, decoding windows with temperature fallback, audio the VAD removed,
 stability over the seeds and speech without words. The only file it writes is
 `work/<s>/experiments/asr/vad.json`, the speech ranges of the VAD as numbers
 (`vad-batched.json` for a `+batched` variant, whose runs have no decoding
-windows). `--suggest` reads the diarization alone and proposes the 3-minute
+windows). A `+clips` variant ran without VAD: the clips of its root stand in
+for the VAD's ranges, so "removed by the VAD" counts the words outside every
+clip (TOOL-112). `--suggest` reads the diarization alone and proposes the 3-minute
 windows with the most overlap and short turns for a new hand reference
 (TOOL-104).
 
@@ -34,6 +36,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 import asr
+import clips as turn_clips
 import denoise
 import numpy as np
 from denoise import RATE, SEGMENT, HandClip, SpikeError, _pct
@@ -46,8 +49,8 @@ from transcript.session import SessionKey, SessionPaths
 from transcript.timecode import format_clock, frames_to_ms
 
 # thresholds fixed in the plan, before any count was seen
-JOIN_TURNS_MS = 500  # same-label turns this close are one turn (TOOL-96)
-SHORT_TURN_MS = 2_000
+JOIN_TURNS_MS = turn_clips.JOIN_MS  # same-label turns this close are one (TOOL-96)
+SHORT_TURN_MS = turn_clips.MIN_MS
 LONG_TURN_MS = 10_000
 QUIET_DB = 6.0  # a turn this far below the loudest speaker is quiet
 BRIDGE_WORDS_MS = 1_000  # a pause between words up to this is not missing speech
@@ -286,9 +289,15 @@ def vad_speech(paths: SessionPaths, name: str) -> Ranges:
 
     Computed once per set of options on the WAV the variant's roots link, and
     cached as numbers: next to the filtered copy, or for the raw WAV where
-    TOOL-101 put it.
+    TOOL-101 put it. A `+clips` variant has no VAD: what it decoded are the clips
+    of its root, the same for every seed.
     """
     spec = asr.variant(name)
+    if spec.clips is not None:
+        stored = asr._read_json(asr.shadow_root(paths, name, 1) / asr.CLIPS_FILE)
+        if "clips" not in stored:
+            raise SpikeError(f"{name}: no clips, run prepare")
+        return Ranges.union(tuple(span) for span in stored["clips"])
     settings = spec.asr
     if settings.get("vad_filter") is False:
         raise SpikeError(f"{name}: runs without VAD")
@@ -598,12 +607,16 @@ def _ranks(speakers: Sequence[str]) -> dict[str, int]:
 
 
 def print_segment(
-    found: Mapping[int, Ranges], speech_ms: int, vad: Ranges, end_ms: int
+    found: Mapping[int, Ranges],
+    speech_ms: int,
+    vad: Ranges,
+    end_ms: int,
+    kept: str = "VAD",
 ) -> None:
     print("## Segment")
     print()
     print(
-        f"VAD: {asr._decimal(vad.total / 60_000)} min von "
+        f"{kept}: {asr._decimal(vad.total / 60_000)} min von "
         f"{asr._decimal(end_ms / 60_000)} min behalten"
     )
     print()
@@ -746,7 +759,8 @@ def measure(
         if after is None or abs(after - vad.total / 1000) > VAD_TOLERANCE_S:
             raise SpikeError(f"{name}#{seed}: VAD ranges do not match the run's")
     quiet = {seed: silence(reference, speech) for seed, reference in references.items()}
-    print_segment(quiet, context.speech.total, vad, asr._end_ms(paths))
+    kept = "VAD" if asr.variant(name).clips is None else "Abschnitte der Diarisierung"
+    print_segment(quiet, context.speech.total, vad, asr._end_ms(paths), kept)
     # the level of what Whisper heard: the filtered copy for a filtered variant
     wav = asr.chain_wav(paths, asr.variant(name).chain)
     for clip in clips:
