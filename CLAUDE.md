@@ -24,6 +24,10 @@ scripts/check --fix  # vorher automatisch korrigieren
 `blockReadsOutsideWorkingDirectories` ist aktiv; Befehle, deren Pfade der Parser nicht prüfen kann, lösen eine Rückfrage aus. Deshalb:
 - Kein `cd … &&` / `cd …;` vor Befehlen. Die Shell startet im Projektordner; relative oder absolute Pfade direkt verwenden.
 - Keine Python- oder Shell-Heredocs (`python3 - <<'EOF'`) zum Bearbeiten von Dateien. Dateien mit Read/Edit/Write lesen und ändern.
+- Kein `sed -i`, Textänderungen nur mit Edit. `sed -n` zum Lesen ist erlaubt.
+- Keine Shell-Variablen (`V=…; $V/ruff`) und keine Command-Substitution (`$(ls …)`, Backticks). Pfade immer ausgeschrieben, z. B. `/home/sabine/dev/workspace/narrata-transcript/.venv/bin/ruff check .`. Variablen und Substitutionen kann der Parser nicht prüfen, deshalb fragt er nach, und daran ändert auch eine Allow-Regel nichts.
+- Lange Ketten mit `;` lieber in mehrere einzelne Bash-Aufrufe aufteilen. Jeder Teil muss für sich auf der Allowlist stehen.
+- Dateien in `site-packages` mit dem Read-Tool und dem konkreten Pfad lesen, nicht per `sed` mit Glob oder `$(ls …)` (Pfad z. B. über `ls -d` ermitteln).
 - Dateien lieber mit dem Read-Tool lesen als mit `cat`; suchen mit `grep -n` und expliziten Pfaden.
 - Temporäre Dateien nur im Scratchpad der aktuellen Sitzung, nie in dem einer früheren.
 - Diese Regeln gelten auch für Subagents (Explore usw.) und gehören in deren Prompt.
