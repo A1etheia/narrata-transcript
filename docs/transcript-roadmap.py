@@ -20,7 +20,7 @@ START = dt.date(2026, 11, 23)  # a Monday: the week the open work is planned fro
 FROM = dt.date(2026, 11, 23)  # first day counted; working days before it are skipped
 WORKDAYS = [0, 1, 3]  # Mon, Tue, Thu -> 3 dev-days per week
 PAUSES = [(dt.date(2026, 12, 21), dt.date(2027, 1, 3))]  # inclusive ranges, no work
-GENERATED = "2026-11-26"
+GENERATED = "2026-11-27"
 
 # (phase title, milestone sentence, [(key, title, dev-days, note)])
 P = [
@@ -131,8 +131,8 @@ P = [
         ("TOOL-103", "Spike: Pegelausgleich vor der Erkennung messen", 1.0, "erledigt: `docs/spikes/TOOL-103-pegelausgleich.md`; Ergebnis Go mit Vorbehalt für `loudnorm`, Umsetzung in TOOL-109 (aus TOOL-103: Bewertung auf gefiltertem Audio neu kalibrieren; Diarisierung auf Roh-WAV oder gefiltertem WAV entscheiden)"),
         ("TOOL-104", "Recherche: sprecherbedingte Dekodierung, neue lokale Modelle, Batched-Pipeline", 1.0, "erledigt: `docs/spikes/TOOL-104-recherche-auslassungen.md`; drei Kandidaten für eine Messung (TOOL-108, TOOL-112, TOOL-111)"),
         ("TOOL-108", "Spike: Blockverlust ohne Referenz von Halluzination trennen", 1.0, "erledigt: `docs/spikes/TOOL-108-blockverlust.md`; Go für Regel A (Dekodierwerte des Quelllaufs) mit `base` als Hauptlauf, No-Go für `loud`; Umsetzung samt Formatfrage in TOOL-114, Neu-Dekodieren nur des auffälligen Stücks in TOOL-113; nach TOOL-109 neu messen, falls `loud` oder ein Batched-Lauf Hauptlauf wird"),
-        ("TOOL-109", "Pegelausgleich mit zweistufigem `loudnorm` vor der Erkennung", 1.0, "läuft; Umsetzung aus TOOL-103 (größter gemessener Effekt, WER an D 61,2 % auf 36,7 %); danach TOOL-108 und TOOL-114 neu messen, falls `loud` Hauptlauf wird"),
-        ("TOOL-112", "Spike: Dekodierung je Redebeitrag über `clip_timestamps` messen", 1.0, "aus TOOL-104; trifft die Einwürfe mit 1–3 Wörtern; entscheidet über den Hauptlauf, deshalb vor TOOL-113 und TOOL-114"),
+        ("TOOL-109", "Pegelausgleich mit zweistufigem `loudnorm` vor der Erkennung", 1.0, "erledigt: PR #83; Umsetzung aus TOOL-103 (größter gemessener Effekt, WER an D 61,2 % auf 36,7 %); danach TOOL-108 und TOOL-114 neu messen, falls `loud` Hauptlauf wird"),
+        ("TOOL-112", "Spike: Dekodierung je Redebeitrag über `clip_timestamps` messen", 1.0, "erledigt: `docs/spikes/TOOL-112-redebeitrag.md`; Ergebnis No-Go, `norm` bleibt Hauptlauf, keine Umsetzungstickets; Obergrenze eines Zusatzlaufs je Redebeitrag 19 % der Auslassungen, Auswahlregel in TOOL-114"),
         ("TOOL-113", "Spike: auffälliges Stück mit Fallback neu dekodieren statt zweitem vollen Lauf", 1.0, "aus TOOL-104 und TOOL-108; nach TOOL-112; günstigere Alternative zu TOOL-114"),
         ("TOOL-114", "Blöcke aus einem zweiten Lauf als Alternative anbieten (Regel A aus TOOL-108)", 1.0, "Go aus TOOL-108; nach TOOL-112 und TOOL-113, damit der Hauptlauf feststeht"),
         ("TOOL-107", "Spike: Hinweis „Sprache ohne Wörter“ gegen `gap` und `sparse` messen", 1.0, "aus TOOL-101; unabhängiges Signal für dieselben verlorenen Blöcke"),

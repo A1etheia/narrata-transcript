@@ -340,3 +340,48 @@ Wie beim ASR-Spike: Wurzeln und gefiltertes Audio liegen nur unter `work/<gruppe
 - **Reihenfolge:** Seed 1 läuft zuerst. `prepare` für die Seeds ab 2 verlinkt dessen gefilterte Kopie samt Protokoll; `transcribe` verwendet sie wieder und meldet `level filter loudnorm: reused`. Ohne Kopie von Seed 1 filtert jede Wurzel selbst, knapp 5 min je Segment.
 - **Diarisierung:** Mit `--diarize` liest sie das Roh-WAV der Wurzel, wie in der Pipeline. Bei `loud` las sie das gefilterte WAV.
 - **Aus einem Worktree:** `--config` braucht eine Konfiguration mit absolutem `paths.root` des Hauptcheckouts, und `PYTHONPATH=src` stellt sicher, dass der Code des Worktrees läuft.
+
+# Redebeitrag-Spike (TOOL-112)
+
+Misst, ob die Batched-Pipeline weniger Wörter auslässt, wenn sie statt der Sprachabschnitte ihrer VAD die Turns der gespeicherten Diarisierung dekodiert (`clip_timestamps`). Die Abschnitte sind Modifikatoren in `asr.py`, die Regeln stehen in `clips.py`. Plan: [`TOOL-112`](../../docs/plans/TOOL-112-clip-timestamps.md), Bericht: `docs/spikes/TOOL-112-redebeitrag.md`.
+
+## Datenschutz
+
+Wie beim ASR-Spike: Wurzeln und `clips.json` liegen nur unter `work/<gruppe>/<ordinal>/experiments/asr/`. `clips.json` enthält Zeiten in ms, die Parameter und einen Hash, keine Labels. Die Konsole bekommt Zähler, Anteile und Zeiten, nie Text, Namen oder Sprecher-Labels.
+
+## Ablauf
+
+```bash
+V="base+batched+clips base+batched+clips+join base+batched+clips+join+pad base+batched+clips+join+pad+min base+batched+clips+pack"
+.venv/bin/python scripts/spike/asr.py prepare $S $V
+.venv/bin/python scripts/spike/asr.py run $S $V
+.venv/bin/python scripts/spike/asr.py score $S base base+batched norm loud+batched $V [--clip NAME=DATEI@H:MM:SS-H:MM:SS]…
+.venv/bin/python scripts/spike/omissions.py $S --variant base+batched+clips --seeds 1 [--clip …]
+```
+
+Für das Audio, das die Pipeline seit TOOL-109 bekommt, dieselben Varianten mit `loud` statt `base`.
+
+## Varianten
+
+Alle setzen `+batched` voraus; `+join`, `+pad`, `+min` und `+pack` gelten nur zusammen mit `+clips`.
+
+| Modifikatoren nach `+batched` | Abschnitte |
+| --- | --- |
+| `+clips` | ein Abschnitt je exklusivem Turn der Diarisierung |
+| `+clips+join` | Turns gleichen Labels mit höchstens 500 ms Abstand verbunden |
+| `+clips+join+pad` | dazu 400 ms Polster je Seite |
+| `+clips+join+pad+min` | dazu Mindestlänge 2 s |
+| `+clips+pack` | verbunden und gepolstert, dann über Labels hinweg bis 30 s gepackt |
+
+- **Quelle:** die exklusiven Turns der Diarisierung von Segment 1 in der Hauptwurzel der Sitzung, gerechnet auf dem Roh-WAV. `base` und `loud` dekodieren deshalb dieselben Abschnitte.
+- **Polster:** nur in freie Lücken und höchstens bis zur Mitte der Lücke zum Nachbarn. Abschnitte überschneiden sich nie, sonst stünden Wörter doppelt im Transkript.
+- **Mindestlänge:** Ein Abschnitt unter 2 s geht im näheren Nachbarn auf, wenn die Lücke höchstens 1 s beträgt und beide zusammen höchstens 30 s lang sind. Sonst bleibt er stehen; kein Abschnitt wird verworfen.
+- **Packen:** Aufeinanderfolgende Abschnitte werden zusammengelegt, solange die Lücke höchstens 2 s beträgt und die Spanne höchstens 30 s.
+- **Teilen:** Die Batched-Pipeline dekodiert von einem Abschnitt nur die ersten 30 s. Längere werden deshalb geteilt:
+  - an der größten Lücke zwischen den Turns im Abschnitt;
+  - ohne Lücke an der Pause der Batched-VAD auf dem Roh-WAV, die der Mitte am nächsten liegt (`vad-batched.json`);
+  - sonst in gleich lange Teile.
+- **`prepare`** schreibt `clips.json` in die Wurzel und bricht ab, wenn die Abschnitte nicht sortiert und überschneidungsfrei sind, einer über 30 s lang ist oder ein Turn nicht gedeckt wird. Ausgegeben werden Zahl, Median, Anteil unter 2 s und Summe der Abschnitte. Die Sitzung muss diarisiert sein.
+- **`run`** übergibt die Abschnitte als `clip_timestamps`; die VAD entfällt. Parameter (`clips`) und Hash (`clips_sha`) stehen in `asr.settings`. Schreibt `prepare` andere Abschnitte, passt der Hash nicht mehr und die Wurzel gilt als veraltet.
+- **Laufzeit:** Jeder Abschnitt kostet einen Encoder-Durchgang. Mit rund 5000 Abschnitten braucht ein Segment von 5 Stunden gut 10 Minuten, `base+batched` unter 2.
+- **`omissions.py --variant <…+clips…>`** liest statt einer VAD die Abschnitte der Wurzel von Seed 1. „Von der VAD entfernt“ zählt dort die Wörter außerhalb aller Abschnitte. „Fallback-Fenster“ und „dünnes Fenster“ heißen wie bei `+batched` „entfällt“.
