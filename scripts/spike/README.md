@@ -413,3 +413,30 @@ Das Skript schreibt nichts. Die Konsole bekommt Zähler, Anteile, Fehlerraten un
   - *längste Folge ausgelassener Wörter* und wie viele davon in einem Stück liegen.
 - **Wortzeit:** eine Zeit je Referenzwort wie in `omissions.py`, hier als Median über alle geladenen Läufe, die das Wort erkannt haben.
 - **Zuletzt** je Stellenart und Referenz das Mittel der Hauptläufe für beide Obergrenzen.
+
+# Hinweis-Spike (TOOL-107)
+
+Misst, was ein Hinweis „Sprache ohne Wörter“ über das hinaus zeigt, was die Bewertung mit `gap` und `sparse` schon zeigt, und was er an markierter Zeit kostet. `hint.py` liest die Läufe von `asr.py`, die Diarisierung der Sitzung und die Handreferenzen. Plan: [`TOOL-107`](../../docs/plans/TOOL-107-speech-without-words.md), Bericht: `docs/spikes/TOOL-107-sprache-ohne-woerter.md`.
+
+## Datenschutz
+
+Die Konsole bekommt Zähler, Anteile und Zeiten, nie Text, Tokens, Namen oder Sprecher-Labels. `--sample` schreibt als einzige Datei `review/calibration/hint-sample.txt` der Sitzung: Zeitfenster und leere Zeilen zum Abtippen. Eine vorhandene Datei wird nie ersetzt. Die Datei bleibt unter `work/`; ihre Zeitfenster und ihr Text gehören nicht in einen Bericht.
+
+## Ablauf
+
+```bash
+.venv/bin/python scripts/spike/hint.py $S [--variant norm] [--seeds 3] [--clip NAME=DATEI@H:MM:SS-H:MM:SS]… [--config PATH]
+.venv/bin/python scripts/spike/hint.py $S --sample 10 [--clip …]
+.venv/bin/python scripts/spike/hint.py $S --sampled
+```
+
+- **Voraussetzung:** Die Wurzeln der Variante sind transkribiert, Segment 1 der Sitzung ist diarisiert. Ohne Modell und ohne GPU, wenige Sekunden.
+- **Passagen und Bewertung im Speicher:** Jeder Lauf wird mit der Diarisierung der Sitzung am Sprecherwechsel geteilt (`diarization.min_turn_ms`) und mit den Schwellen aus `--config` bewertet, ohne Wissens-Hinweise. So sind auch Läufe vergleichbar, die ohne Diarisierung gespeichert sind, und die Kopie der Schwellen in der Schattenwurzel spielt keine Rolle. Als Kontrolle steht die markierte Zeit der gespeicherten Fassung von Seed 1 daneben.
+- **Stelle:** Die Diarisierung hört Sprache, und der Lauf hat dort kein Wort (wie in `omissions.py`). Variiert werden die Mindestlänge (1 / 2 / 3 s) und die Brücke zwischen zwei Wörtern (0,5 / 1 / 2 s), dazu einmal die Wortlänge auf 1 s gekappt. Die Go-Regel gilt an 2 s mit 1 s Brücke.
+  - Eine Brücke bis zur Mindestlänge ändert nichts: Eine Stelle liegt immer in einer einzigen Pause zwischen zwei Wörtern. Eine längere Brücke lässt nur die Stellen in Pausen übrig, die länger sind als sie.
+- **Was die Bewertung an einer Stelle schon zeigt**, in dieser Reihenfolge: die Pause, die ein `gap`-Grund nennt; eine Passage mit `sparse`; eine aus anderem Grund markierte Passage; nur `confident`-Passagen; keine Passage, die Stelle liegt zwischen zweien.
+- **Neu markierte Passagen:** die `confident`-Passagen, die eine Stelle berührt, oder, wenn sie keine berührt, die davor und die danach. „Zuwachs“ ist ihre Zeit an der Zeit aller Passagen, in Punkten.
+- **Je Referenz und Lauf:** Auslassungen mit Wortzeit an einer `gap`-Pause, in einer `sparse`-Passage, in einer Stelle und in einer neu markierten Passage; die längste Folge ausgelassener Wörter und ihr Teil in einer Stelle; die Referenzwörter in den Stellen und wie viele davon fehlen. Wortzeit wie in `omissions.py`, Median über die Läufe der Variante.
+- **Zuletzt** je Einstellung die Summe über die Referenzen des Aufrufs, je Referenz das Mittel der Läufe. Die Go-Regel zählt über beide Sitzungen; die Summen der beiden Aufrufe werden addiert.
+- **`--sample N`** zieht mit festem Zufallswert N Stellen (2 s, 1 s Brücke) aus Seed 1, die kein Fenster aus `--clip` berühren, und schreibt je Stelle ein Zeitfenster mit 3 s Rand.
+- **`--sampled`** zählt aus, was getippt wurde: „Sprache fehlt“, wenn gegen die Wörter des Laufs im Fenster mindestens 2 getippte Wörter ausgelassen sind; „keine Sprache“, wenn das so vermerkt ist; sonst „Sprache vom Lauf erkannt“.
