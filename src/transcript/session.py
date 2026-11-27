@@ -116,6 +116,22 @@ class SessionPaths:
         return self.audio_dir / "audio.json"
 
     @property
+    def level_dir(self) -> Path:
+        """Level-normalised copies of the segment WAVs (TOOL-109).
+
+        A directory of its own: `segment_wavs` must not find them.
+        """
+        return self.audio_dir / "level"
+
+    def level_wav(self, index: int) -> Path:
+        """The `index`-th segment after the level filter, same length as the raw WAV."""
+        return self.level_dir / f"{segment_name(index)}.wav"
+
+    def level_record(self, index: int) -> Path:
+        """How `level_wav(index)` was made; without it the WAV is not reused."""
+        return self.level_dir / f"{segment_name(index)}.json"
+
+    @property
     def asr_dir(self) -> Path:
         return self.work_dir / "asr"
 

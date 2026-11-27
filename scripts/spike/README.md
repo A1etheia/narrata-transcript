@@ -317,3 +317,26 @@ Das Skript schreibt nichts. Die Konsole bekommt Zähler, Anteile, Fehlerraten un
   - *B, Sprache ohne Wörter:* mindestens 2 s im Block.
   - *C:* A und B zugleich.
 - **`--suggest`** schlägt drei sich nicht überlappende 3-min-Fenster für eine Handreferenz vor, an denen ein weiterer Lauf den angebotenen Block auch hat, außerhalb der angegebenen Clips. Je Stelle zählt der größte solche Block.
+
+# Hauptlauf-Messung (TOOL-109)
+
+Misst den Pegelausgleich der Pipeline selbst (`asr.level_filter: loudnorm`) an den Handreferenzen A bis K, als Grundlage für die Wahl des Hauptlaufs. Die Variante `norm` ist eine Basis in `asr.py`. Plan: [`TOOL-109`](../../docs/plans/TOOL-109-level-filter.md), Bericht: [`docs/spikes/TOOL-109-hauptlauf.md`](../../docs/spikes/TOOL-109-hauptlauf.md).
+
+## Datenschutz
+
+Wie beim ASR-Spike: Wurzeln und gefiltertes Audio liegen nur unter `work/<gruppe>/<ordinal>/experiments/asr/`. Die Konsole bekommt Zähler, Anteile, Pegel und Zeiten, nie Text, Namen oder Sprecher-Labels.
+
+## Ablauf
+
+```bash
+.venv/bin/python scripts/spike/asr.py prepare $S norm --seeds 1
+.venv/bin/python scripts/spike/asr.py run $S norm --seeds 1 --diarize
+.venv/bin/python scripts/spike/asr.py prepare $S norm --first-seed 2 --seeds 3
+.venv/bin/python scripts/spike/asr.py run $S norm --first-seed 2 --seeds 3
+.venv/bin/python scripts/spike/asr.py score $S base loud norm base+batched loud+batched --seeds 3 [--clip NAME=DATEI@H:MM:SS-H:MM:SS]…
+```
+
+- **`norm` gegen `loud`:** `loud` filtert in `prepare` und verlinkt das gefilterte WAV als Segment, die Pipeline weiß davon nichts. `norm` verlinkt das Roh-WAV und schaltet in der `config.yaml` der Wurzel `asr.level_filter: loudnorm` ein. `transcribe` filtert dann selbst nach `audio/level/` der Wurzel, und Kette und ffmpeg-Version stehen in `asr.settings`.
+- **Reihenfolge:** Seed 1 läuft zuerst. `prepare` für die Seeds ab 2 verlinkt dessen gefilterte Kopie samt Protokoll; `transcribe` verwendet sie wieder und meldet `level filter loudnorm: reused`. Ohne Kopie von Seed 1 filtert jede Wurzel selbst, knapp 5 min je Segment.
+- **Diarisierung:** Mit `--diarize` liest sie das Roh-WAV der Wurzel, wie in der Pipeline. Bei `loud` las sie das gefilterte WAV.
+- **Aus einem Worktree:** `--config` braucht eine Konfiguration mit absolutem `paths.root` des Hauptcheckouts, und `PYTHONPATH=src` stellt sicher, dass der Code des Worktrees läuft.

@@ -27,6 +27,7 @@ from transcript import (
     export,
     hints,
     knowledge,
+    level,
     lock,
     manifest,
     narrata,
@@ -778,6 +779,8 @@ def _transcribe(
             progress=_print_outcome,
             retries=config.asr_retries,
             knowledge_snapshot_id=snapshot_id,
+            level_tools=_level_tools(config),
+            levelled=_print_levelled,
         )
     except (
         ValueError,
@@ -785,6 +788,7 @@ def _transcribe(
         DataFileError,
         BackendError,
         TranscriptionError,
+        audio_tools.AudioToolError,
     ) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
@@ -1577,6 +1581,18 @@ def _max_speakers(
     if limit is not None:
         print(f"{key}: speaker limit {limit} from attendance")
     return limit
+
+
+def _level_tools(config: Config) -> audio_tools.AudioTools | None:
+    """ffmpeg for the level filter; None when `asr.level_filter` is `none`."""
+    if not config.asr_levels:
+        return None
+    return audio_tools.check_audio_tools()
+
+
+def _print_levelled(index: int, copy: level.Levelled) -> None:
+    how = "reused" if copy.reused else f"filtered in {copy.seconds:.0f} s"
+    print(f"  {index}. level filter {level.FILTER}: {how}", flush=True)
 
 
 def _print_outcome(outcome: SegmentOutcome) -> None:

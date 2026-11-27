@@ -15,11 +15,15 @@ Error messages, logs and summaries name the session, segment, backend, files
 and error classes, never transcript text or keywords.
 """
 
+import dataclasses
 import logging
 import time
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
+from transcript import level
 from transcript.asr import (
     Backend,
     BackendError,
@@ -29,6 +33,8 @@ from transcript.asr import (
     opened,
     transcribe,
 )
+from transcript.audio import AudioError
+from transcript.audio_tools import AudioTools
 from transcript.manifest import Manifest, Segment
 from transcript.reference import (
     ReferenceError,
@@ -45,6 +51,7 @@ _logger = logging.getLogger(__name__)
 
 OUTCOME_STATUSES = ("transcribed", "reused", "failed", "open")
 DONE_STATUSES = ("transcribed", "reused")  # a stored result counts
+LEVEL_SETTING = "level_filter"  # key in `asr.settings`, present only with a filter
 
 
 class TranscriptionError(Exception):
@@ -104,26 +111,34 @@ def transcribe_session(
     retries: int = 0,
     sleep: Callable[[float], None] = time.sleep,
     knowledge_snapshot_id: str | None = None,
+    level_tools: AudioTools | None = None,
+    levelled: Callable[[int, level.Levelled], None] | None = None,
 ) -> SessionRun:
     """Transcribe the selected segments of `manifest`, all of them by default.
 
     A stored transcribed result is reused, unless `force`, when backend, model,
-    revision and settings match the backend's identity, it was made with the
-    same `knowledge_snapshot_id` (`None` for none) and the same `keywords`
-    (see `_same_keywords`) and, with `language` set, the detected language
-    matches it. Everything else is transcribed in manifest
+    revision and settings match the run's identity (`run_identity`), it was
+    made with the same `knowledge_snapshot_id` (`None` for none) and the same
+    `keywords` (see `_same_keywords`) and, with `language` set, the detected
+    language matches it. Everything else is transcribed in manifest
     order with the backend loaded once. A retryable `BackendError` from one
     segment is tried again up to `retries` times, each failed attempt logged;
     the last error is recorded as `failed` and the run goes on. One from
     loading leaves the remaining segments `open`. `progress` gets each outcome
     as it is known.
 
+    With `level_tools` the backend hears the level-normalised copy of each
+    segment it transcribes (`transcript.level`), made or reused before the
+    backend loads; `levelled` gets each copy as it is ready. Without, it hears
+    the segment WAV.
+
     Raises before loading: a `BackendError` when the backend cannot run, a
-    `TranscriptionError` for an unknown segment or missing audio, and a
-    `ReferenceError` for an unreadable stored result unless `force`.
+    `TranscriptionError` for an unknown segment, missing audio or a level
+    filter that failed, and a `ReferenceError` for an unreadable stored result
+    unless `force`.
     """
     report = progress or _ignore
-    found = identity(backend)
+    found = run_identity(backend, level_tools)
     segments = _selected(manifest, indices)
     for segment in segments:
         check_audio(paths, segment.index)
@@ -150,11 +165,18 @@ def transcribe_session(
         else:
             pending.append((segment, transcribed))
 
+    # every filtered copy before the backend loads: ffmpeg takes minutes
+    heard = [
+        (segment, keep_existing, _heard(paths, segment, level_tools, levelled))
+        for segment, keep_existing in pending
+    ]
+    input_settings = _input_settings(level_tools)
+
     load_error = None
-    if pending:
+    if heard:
         try:
             with opened(backend):
-                for segment, keep_existing in pending:
+                for segment, keep_existing, audio in heard:
                     outcome = _run(
                         paths,
                         manifest,
@@ -166,6 +188,8 @@ def transcribe_session(
                         retries,
                         sleep,
                         knowledge_snapshot_id,
+                        audio=audio,
+                        input_settings=input_settings,
                     )
                     outcomes[segment.index] = outcome
                     report(outcome)
@@ -193,15 +217,19 @@ def _run(
     retries: int,
     sleep: Callable[[float], None],
     knowledge_snapshot_id: str | None,
+    *,
+    audio: Path,
+    input_settings: Mapping[str, Any],
 ) -> SegmentOutcome:
-    """Transcribe `segment` with the loaded `backend` and write the result.
+    """Transcribe `audio` of `segment` with the loaded `backend` and write the result.
 
-    The last `BackendError` after the retries becomes a `failed` outcome and a
-    failed reference, unless `keep_existing`: a transcribed result is never
-    replaced by a failure.
+    `input_settings` say how `audio` was made from the segment WAV and join the
+    backend's settings in the stored result. The last `BackendError` after the
+    retries becomes a `failed` outcome and a failed reference, unless
+    `keep_existing`: a transcribed result is never replaced by a failure.
     """
     request = TranscriptionRequest(
-        audio=paths.segment_wav(segment.index),
+        audio=audio,
         language=language,
         keywords=tuple(keywords),
     )
@@ -229,8 +257,11 @@ def _run(
             attempts=done.attempts,
         )
     assert done.result is not None
+    result = dataclasses.replace(
+        done.result, settings={**done.result.settings, **input_settings}
+    )
     reference = from_backend_result(
-        done.result,
+        result,
         backend,
         manifest,
         segment,
@@ -239,6 +270,46 @@ def _run(
     )
     write_reference(paths, reference, done.result.raw)
     return _outcome(reference, "transcribed", done.attempts)
+
+
+def run_identity(backend: Backend, level_tools: AudioTools | None) -> BackendIdentity:
+    """What decides a run's results before `load`: the backend's identity and,
+    with `level_tools`, the level filter its audio goes through.
+
+    Every failure of the backend arrives as a `BackendError`.
+    """
+    found = identity(backend)
+    return BackendIdentity(
+        found.info, {**found.settings, **_input_settings(level_tools)}
+    )
+
+
+def _heard(
+    paths: SessionPaths,
+    segment: Segment,
+    level_tools: AudioTools | None,
+    levelled: Callable[[int, level.Levelled], None] | None,
+) -> Path:
+    """The audio the backend gets for `segment`: its WAV, or with `level_tools`
+    the level-normalised copy, made here unless a stored one fits."""
+    if level_tools is None:
+        return paths.segment_wav(segment.index)
+    try:
+        copy = level.ensure(paths, segment.index, segment.frames, level_tools)
+    except AudioError as error:
+        raise TranscriptionError(
+            f"{paths.key} segment {segment.index}: {error}"
+        ) from error
+    if levelled is not None:
+        levelled(segment.index, copy)
+    return copy.path
+
+
+def _input_settings(level_tools: AudioTools | None) -> dict[str, Any]:
+    """Without a filter nothing is added, so results from before TOOL-109 fit."""
+    if level_tools is None:
+        return {}
+    return {LEVEL_SETTING: level.settings(level_tools)}
 
 
 def _selected(manifest: Manifest, indices: Collection[int] | None) -> list[Segment]:

@@ -81,6 +81,7 @@ class LoadConfigTest(unittest.TestCase):
             asr_beam_size=3,
             asr_retries=0,
             asr_hotwords=False,
+            asr_level_filter="loudnorm",
             diarization_model="/models/pyannote",
             diarization_device="cpu",
             diarization_retries=5,
@@ -174,6 +175,9 @@ class LoadConfigTest(unittest.TestCase):
             ("hotwords: 1", "asr.hotwords"),
             ("hotwords: 'false'", "asr.hotwords"),
             ("hotwords: null", "asr.hotwords"),
+            ("level_filter: dynaudnorm", "asr.level_filter"),
+            ("level_filter: false", "asr.level_filter"),
+            ("level_filter: null", "asr.level_filter"),
         ):
             with self.subTest(text=text):
                 self.assert_rejected(
@@ -183,6 +187,11 @@ class LoadConfigTest(unittest.TestCase):
     def test_hotwords_default_to_on_and_can_be_switched_off(self) -> None:
         self.assertTrue(self.load(MINIMAL).asr_hotwords)
         self.assertFalse(self.load(MINIMAL + "asr:\n  hotwords: false\n").asr_hotwords)
+
+    def test_level_filter_defaults_to_loudnorm_and_can_be_switched_off(self) -> None:
+        self.assertEqual(self.load(MINIMAL).asr_level_filter, "loudnorm")
+        switched = self.load(MINIMAL + "asr:\n  level_filter: none\n")
+        self.assertEqual(switched.asr_level_filter, "none")
 
     def test_retries_default_to_two_and_are_read(self) -> None:
         defaults = self.load(MINIMAL)

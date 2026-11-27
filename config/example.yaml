@@ -39,6 +39,12 @@ asr:
   # Eine Liste unter 110 Tokens geht auch bei true nicht an Whisper, weil sie
   # Sprache auslassen lässt (TOOL-81). false schaltet die Hotwords ganz ab.
   hotwords: true
+  # Pegelausgleich vor der Erkennung (TOOL-109): loudnorm (Default) oder none.
+  # loudnorm schreibt je Segment eine gefilterte Kopie nach audio/level/
+  # (zwei ffmpeg-Durchgänge, knapp 5 min je 5-Stunden-Segment). Die Erkennung
+  # liest die Kopie, die Diarisierung weiter das Roh-WAV. Ein Wechsel lässt
+  # gespeicherte Transkripte neu entstehen.
+  level_filter: loudnorm
 
 # Sprecher-Diarisierung: pyannote, nur aus dem lokalen Modell-Cache.
 # Einrichtung, einmaliger Download und Hardware siehe README, Abschnitt „Diarisierung“.
@@ -94,14 +100,14 @@ review:
   uncertainty:
     # Ein Wort unter word_low gilt als unsicher; eines unter word_very_low macht die
     # Passage mindestens needs_review.
-    word_low: 0.5
+    word_low: 0.8
     word_very_low: 0.2
     # Anteil unsicherer Wörter einer Passage für needs_review bzw. uncertain.
     low_share_review: 0.2
     low_share_uncertain: 0.5
     # Segmentsignale von Whisper: ab no_speech_prob, bis avg_logprob, ab compression_ratio.
     no_speech_prob: 0.6
-    avg_logprob: -1.0
+    avg_logprob: -0.5
     compression_ratio: 2.4
     # Hinweise auf ausgelassene Wörter: längste Pause zwischen zwei Wörtern in ms
     # und Mindestzahl Wörter pro Sekunde.

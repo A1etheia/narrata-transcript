@@ -5,12 +5,12 @@ import unittest
 from pathlib import Path
 
 from media import TOOLS, needs_media, sine, synth
-from test_audio_tools import working_stub
+from test_audio_tools import working_stub, write_stub
 from test_narrata import CHARACTER, NAME, context, encoded
 from test_narrata import participant as participant_json
 from test_reference import KEY, minimal
 
-from transcript import preflight
+from transcript import level, preflight
 from transcript.asr.backend import BackendInfo, BackendUnavailableError
 from transcript.asr.fake import FakeBackend
 from transcript.audio import extract, find_recordings, probe
@@ -20,9 +20,12 @@ from transcript.manifest import build_manifest
 from transcript.narrata import store_context
 from transcript.reference import AsrInfo, SegmentRef, write_reference
 from transcript.session import SessionPaths
+from transcript.transcription import LEVEL_SETTING
 
 ASR_INFO = BackendInfo(backend_id="fake", model="tiny", model_version="abc123")
 DIARIZATION_INFO = BackendInfo(backend_id="pyannote", model="fake-diarization")
+LEVEL_ON = "asr:\n  level_filter: loudnorm\n"
+LEVEL_OFF = "asr:\n  level_filter: none\n"  # the tests run without ffmpeg filtering
 
 
 class FakeDiarizer:
@@ -70,7 +73,7 @@ class PreflightTestCase(unittest.TestCase):
         self.free_bytes = 10**12
         self.player: Path | None = Path("/opt/fake/ffplay")
 
-    def write_config(self, extra: str = "") -> None:
+    def write_config(self, extra: str = LEVEL_OFF) -> None:
         self.config.write_text(
             f"language: de\npaths:\n  root: {self.root}\n{extra}", encoding="utf-8"
         )
@@ -249,6 +252,50 @@ class EnvironmentTest(PreflightTestCase):
         findings = self.run_preflight()
 
         self.assertEqual(self.levels(findings, "config"), ["error"])
+
+    def test_no_level_filter_is_not_mentioned(self) -> None:
+        self.assertEqual(self.by_check(self.run_preflight(), "level"), [])
+
+    def test_level_filter_is_checked_by_default(self) -> None:
+        self.write_config("")
+
+        self.assertEqual(self.levels(self.run_preflight(), "level"), ["error"])
+
+    def test_level_filter_this_ffmpeg_lacks_is_an_error(self) -> None:
+        self.write_config(LEVEL_ON)
+
+        findings = self.run_preflight()
+
+        (found,) = self.by_check(findings, "level")
+        self.assertEqual(found.level, "error")
+        self.assertIn("lacks the loudnorm filter", found.message)
+        self.assertIn("asr.level_filter: none", found.message)
+
+    def test_level_filter_this_ffmpeg_has_is_named_with_its_version(self) -> None:
+        self.write_config(LEVEL_ON)
+        listing = " ... loudnorm          A->A       EBU R128 loudness normalization"
+        write_stub(
+            self.bin,
+            "ffmpeg",
+            'case "$1" in -version) echo "ffmpeg version 6.1.1";; '
+            f'*) echo "{listing}";; esac',
+        )
+
+        findings = self.run_preflight()
+
+        (found,) = self.by_check(findings, "level")
+        self.assertEqual(found.level, "ok")
+        self.assertIn("loudnorm=I=-16:TP=-1.5:LRA=11", found.message)
+        self.assertIn("ffmpeg 6.1.1", found.message)
+
+    def test_level_filter_without_ffmpeg_adds_no_second_error(self) -> None:
+        self.write_config(LEVEL_ON)
+        (self.bin / "ffmpeg").unlink()
+
+        findings = self.run_preflight()
+
+        self.assertEqual(self.levels(findings, "audio-tools"), ["error"])
+        self.assertEqual(self.by_check(findings, "level"), [])
 
 
 @needs_media
@@ -603,6 +650,51 @@ class SessionTest(PreflightTestCase):
         findings = self.preflight()
 
         self.assertIn("consent", self.message(findings, "resume", "warning"))
+
+    def level_entry(self) -> dict[str, str]:
+        """`asr.settings` of a result made with the level filter of this ffmpeg."""
+        assert TOOLS is not None
+        return level.settings(TOOLS)
+
+    def test_transcript_from_before_the_filter_is_transcribed_again(self) -> None:
+        self.prepared()
+        self.extract()
+        self.reference()
+        self.write_config(LEVEL_ON)
+
+        findings = self.preflight()
+
+        self.assertEqual(self.levels(findings, "level"), ["ok"])
+        self.assertIn(
+            "1 are transcribed again", self.message(findings, "resume", "warning")
+        )
+
+    def test_transcript_made_with_the_filter_is_reusable(self) -> None:
+        self.prepared()
+        self.extract()
+        self.reference(settings={"device": "cuda", LEVEL_SETTING: self.level_entry()})
+        self.write_config(LEVEL_ON)
+
+        self.assertEqual(self.problems(self.preflight()), [])
+
+    def test_transcript_made_with_the_filter_is_stale_without_it(self) -> None:
+        self.prepared()
+        self.extract()
+        self.reference(settings={"device": "cuda", LEVEL_SETTING: self.level_entry()})
+
+        findings = self.preflight()
+
+        self.assertIn(
+            "1 are transcribed again", self.message(findings, "resume", "warning")
+        )
+
+    def test_filtered_copies_double_the_room_the_wavs_need(self) -> None:
+        self.prepared()
+        self.free_bytes = 50_000  # one second of audio needs 32 000
+
+        self.assertEqual(self.levels(self.preflight(), "disk"), ["ok"])
+        self.write_config(LEVEL_ON)
+        self.assertEqual(self.levels(self.preflight(), "disk"), ["error"])
 
 
 def _tree(root: Path) -> dict[str, tuple[bytes, int]]:

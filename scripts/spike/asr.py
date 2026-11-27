@@ -12,7 +12,9 @@ A variant is a hotword base (`base`, `pchw`, `nohw`, `nohw-hp`, `kw<N>`,
 `neutral9`, `neutral`) or a level-normalising base with all hotwords (TOOL-103:
 `dyn`, `dynx`, `comp`, `loud`, `spn`, each also as `<name>-hp` behind a high-pass;
 `prepare` records offset, gain range and clipping of the filtered WAV in
-`filter.json`), followed by modifiers joined with `+`, e.g.
+`filter.json`; TOOL-109: `norm`, the raw WAV with the pipeline's own
+`asr.level_filter: loudnorm`, whose seeds above 1 link the filtered copy of seed
+1), followed by modifiers joined with `+`, e.g.
 `nohw+vad-t35+beam10`. `+fill` appends everyday words to the list until the
 token budget is full. `+guard` keeps the pipeline's guard, which passes no list
 under 110 tokens; without it every variant gets its list as given, so
@@ -262,6 +264,11 @@ LEVELLERS = {
 for _name, _leveller in LEVELLERS.items():
     BASES[_name] = Variant(chain=Chain(before=_leveller))
     BASES[f"{_name}-hp"] = Variant(chain=Chain(before=f"{denoise._HP},{_leveller}"))
+# TOOL-109: the level filter of the pipeline itself. The root links the raw WAV
+# and switches `asr.level_filter` on, so `transcribe` filters as it ships; `loud`
+# stays as the comparison that filters in `prepare`.
+LEVEL_FILTER = "level_filter"  # the `asr.*` key of the root's config
+BASES["norm"] = Variant(config={LEVEL_FILTER: "loudnorm"})
 # what `prepare` checks on a filtered WAV against the raw one (TOOL-103)
 CHECK_PLACES = (0.1, 0.5, 0.9)  # where in the segment
 CHECK_MS = 60_000
@@ -349,7 +356,12 @@ def variant(name: str) -> Variant:
     elif TIMESTAMPS in mods:
         raise SpikeError(f"{name}: +{TIMESTAMPS} needs +{BATCHED}")
     return dataclasses.replace(
-        base, model=model, asr=asr, config=config, fill=fill, guard=guard
+        base,
+        model=model,
+        asr=asr,
+        config={**base.config, **config},
+        fill=fill,
+        guard=guard,
     )
 
 
@@ -414,7 +426,10 @@ def prepare(paths: SessionPaths, name: str, seed: int, config_path: Path) -> Non
     )
     settings = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     settings.setdefault("paths", {})["root"] = str(root)
-    settings.setdefault("asr", {}).update(model=spec.model, **spec.config)
+    # every root names the filter: the default is on, and only `norm` measures it
+    settings.setdefault("asr", {}).update(
+        model=spec.model, **{LEVEL_FILTER: "none", **spec.config}
+    )
     budget = dict.fromkeys(DEFAULT_KEYWORD_BUDGET, 0)  # every type, for pchw
     if spec.pc_only:
         settings.setdefault("knowledge", {})["keyword_budget"] = budget
@@ -431,6 +446,8 @@ def prepare(paths: SessionPaths, name: str, seed: int, config_path: Path) -> Non
             f"entries ({pc} pc)"
         )
     _link_audio(paths, shadow, spec.chain, label)
+    if seed > 1 and LEVEL_FILTER in spec.config:
+        _share_level(SessionPaths(paths.key, shadow_root(paths, name, 1)), shadow)
 
 
 def _link_audio(
@@ -476,6 +493,25 @@ def _link_audio(
         return
     target.unlink(missing_ok=True)
     os.link(source, target)  # never written by the pipeline
+
+
+def _share_level(first: SessionPaths, shadow: SessionPaths) -> None:
+    """Link the filtered copy the pipeline made in the root of seed 1, if any.
+
+    The record names the raw WAV, so `transcribe` reuses the copy; without one
+    the root filters for itself.
+    """
+    wav, record = first.level_wav(SEGMENT), first.level_record(SEGMENT)
+    if not wav.is_file() or not record.is_file():
+        return
+    shadow.level_dir.mkdir(parents=True, exist_ok=True)
+    for source, target in (
+        (wav, shadow.level_wav(SEGMENT)),
+        (record, shadow.level_record(SEGMENT)),
+    ):
+        if not (target.is_file() and os.path.samefile(source, target)):
+            target.unlink(missing_ok=True)
+            os.link(source, target)  # read by the pipeline, replaced, never changed
 
 
 def chain_wav(paths: SessionPaths, chain: Chain) -> Path:
@@ -920,8 +956,12 @@ def transcribed(paths: SessionPaths, name: str, seed: int) -> ReferenceTranscrip
         **spec.config,
         **keyword_settings(spec),
     }
+    # the pipeline stores the filter's chain and ffmpeg version, not the config value
+    filtered = wanted.pop(LEVEL_FILTER, None) is not None
     if any(settings.get(k) != v for k, v in wanted.items()):
         raise SpikeError(f"{label}: transcript lacks the variant's seed or model")
+    if (LEVEL_FILTER in settings) != filtered:
+        raise SpikeError(f"{label}: transcript and variant differ in the level filter")
     for key, value in spec.asr.items():
         stored = settings.get(key)
         if isinstance(value, Mapping):

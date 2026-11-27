@@ -4,7 +4,12 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from transcript.audio_tools import AudioToolError, AudioTools, check_audio_tools
+from transcript.audio_tools import (
+    AudioToolError,
+    AudioTools,
+    check_audio_tools,
+    has_filter,
+)
 
 try:
     TOOLS: AudioTools | None = check_audio_tools()
@@ -38,13 +43,7 @@ def flite_missing() -> str:
     """Why speech cannot be synthesized here, or "" if ffmpeg has flite."""
     if TOOLS is None:
         return "ffmpeg is needed to synthesize speech"
-    filters = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-filters"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    return "" if " flite " in filters else "ffmpeg lacks the flite filter"
+    return "" if has_filter(TOOLS.ffmpeg, "flite") else "ffmpeg lacks the flite filter"
 
 
 def speech(text: str, voice: str = "kal") -> list[str]:

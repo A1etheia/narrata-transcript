@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import subprocess
 import tempfile
 import wave
@@ -30,7 +31,7 @@ SUPPORTED_CONTAINERS = frozenset({MP4_CONTAINER, "mp3", "wav"})
 _PROBE_TIMEOUT_SECONDS = 60
 # A larger gap between ffprobe's duration and the extracted samples means lost audio.
 _DURATION_TOLERANCE_SECONDS = 0.5
-_WAV_CODEC = "pcm_s16le"
+WAV_CODEC = "pcm_s16le"
 METADATA_FORMAT_VERSION = 2
 _HASH_CHUNK_BYTES = 1 << 20
 _ZONE_IDENTIFIER = ":Zone.Identifier"
@@ -200,6 +201,8 @@ def extract(
     for stale in paths.segment_wavs():
         if stale not in current:
             stale.unlink()
+    # filtered copies of the WAVs just replaced (TOOL-109)
+    shutil.rmtree(paths.level_dir, ignore_errors=True)
 
     _logger.info(
         "%s: extracted %d segment(s), %d ms at %d Hz, %d channel(s)",
@@ -238,13 +241,13 @@ def _extract_one(
         "-ar",
         str(config.audio_sample_rate),
         "-c:a",
-        _WAV_CODEC,
+        WAV_CODEC,
         "-f",
         "wav",
         str(tmp_wav),
     ]
     try:
-        _run(tools.ffmpeg, args, info.path, timeout=None)
+        run_tool(tools.ffmpeg, args, info.path, timeout=None)
     except AudioError as error:
         raise AudioError(f"{info.path.name}: extraction failed ({error})") from error
 
@@ -276,7 +279,7 @@ def _metadata(
     return {
         "format_version": METADATA_FORMAT_VERSION,
         "output_format": {
-            "codec": _WAV_CODEC,
+            "codec": WAV_CODEC,
             "sample_rate": config.audio_sample_rate,
             "channels": config.audio_channels,
         },
@@ -318,9 +321,14 @@ def sha256_file(path: Path) -> str:
 
 def wav_frames(path: Path) -> tuple[int, int]:
     """Frame count and sample rate from the WAV header; frames are the exact length."""
+    return wav_shape(path)[:2]
+
+
+def wav_shape(path: Path) -> tuple[int, int, int]:
+    """Frame count, sample rate and channels from the WAV header."""
     try:
         with wave.open(str(path), "rb") as wav:
-            return wav.getnframes(), wav.getframerate()
+            return wav.getnframes(), wav.getframerate(), wav.getnchannels()
     except (OSError, wave.Error, EOFError) as error:
         raise AudioError(f"extracted WAV is unreadable ({error})") from error
 
@@ -328,7 +336,7 @@ def wav_frames(path: Path) -> tuple[int, int]:
 def _read_probe(path: Path, tools: AudioTools) -> dict[str, Any]:
     args = ["-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)]
     try:
-        result = _run(tools.ffprobe, args, path, _PROBE_TIMEOUT_SECONDS)
+        result = run_tool(tools.ffprobe, args, path, _PROBE_TIMEOUT_SECONDS)
     except AudioError as error:
         raise AudioError(
             f"{path.name}: damaged or not a media file ({error})"
@@ -339,7 +347,7 @@ def _read_probe(path: Path, tools: AudioTools) -> dict[str, Any]:
         raise AudioError(f"{path.name}: ffprobe returned unreadable output") from error
 
 
-def _run(
+def run_tool(
     tool: ToolInfo, args: list[str], path: Path, timeout: float | None
 ) -> subprocess.CompletedProcess[str]:
     """Run an audio tool on `path`; failures become `AudioError` with ffmpeg's reason."""

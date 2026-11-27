@@ -46,6 +46,24 @@ def check_audio_tools(search_path: str | None = None) -> AudioTools:
     return AudioTools(ffmpeg=found["ffmpeg"], ffprobe=found["ffprobe"])
 
 
+def has_filter(ffmpeg: ToolInfo, name: str) -> bool:
+    """Whether this ffmpeg build lists the filter `name`; False if it cannot say."""
+    try:
+        result = subprocess.run(
+            [str(ffmpeg.path), "-hide_banner", "-filters"],
+            capture_output=True,
+            text=True,
+            timeout=_VERSION_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    if result.returncode != 0:
+        return False
+    # a line reads ` T.. loudnorm   A->A   EBU R128 loudness normalization`
+    return any(line.split()[1:2] == [name] for line in result.stdout.splitlines())
+
+
 def _probe(name: str, search_path: str | None) -> ToolInfo:
     location = shutil.which(name, path=search_path)
     if location is None:
