@@ -1,11 +1,12 @@
 # TOOL-107 — Hinweis „Sprache ohne Wörter“ gegen `gap` und `sparse`
 
-Stand 2026-11-27, Messung an den gespeicherten Läufen abgeschlossen, Hörstichprobe gezogen und noch nicht abgetippt, Entscheidung offen. Bericht zu [TOOL-107](../plans/TOOL-107-speech-without-words.md), Werkzeug: [`scripts/spike/hint.py`](../../scripts/spike/hint.py). Es wurde nichts neu transkribiert, alles lief lokal. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel, keine Zeitfenster der Stichprobe.
+Stand 2026-11-27, Messung und Hörstichprobe abgeschlossen, Entscheidung: Go mit bewusster Abweichung, Umsetzung in TOOL-116. Bericht zu [TOOL-107](../plans/TOOL-107-speech-without-words.md), Werkzeug: [`scripts/spike/hint.py`](../../scripts/spike/hint.py). Es wurde nichts neu transkribiert, alles lief lokal. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel, keine Zeitfenster der Stichprobe.
 
 ## Ergebnis
 
-**Nach der vorab festgelegten Regel steht der Hinweis auf No-Go: Punkt 1 ist knapp verfehlt.** Mit dem Hinweis liegen 20,0 Auslassungen mehr an einer gezeigten Stelle als mit `gap` und `sparse` allein (verlangt: mindestens 20), das sind 40,8 % mehr (verlangt: mindestens 50 %). Die Kosten sind klein. Die Hörstichprobe steht noch aus ([Stand gegen die Go-Regel](#stand-gegen-die-go-regel)).
+**Nach der vorab festgelegten Regel wäre der Hinweis ein No-Go, weil Punkt 1 knapp verfehlt ist. Die Projektverantwortliche hat sich trotzdem für ein Go entschieden.** Mit dem Hinweis liegen 20,0 Auslassungen mehr an einer gezeigten Stelle als mit `gap` und `sparse` allein (verlangt: mindestens 20), das sind 40,8 % mehr (verlangt: mindestens 50 %). Treffsicherheit und Kosten sind erfüllt ([Stand gegen die Go-Regel](#stand-gegen-die-go-regel), [Entscheidung](#entscheidung)).
 
+- **Treffsicherheit:** In der Hörstichprobe fehlt an 19 von 20 Stellen wirklich Sprache ([Hörstichprobe](#hörstichprobe)).
 - **Kosten:** Der Hinweis markiert 9 bis 11 bisher `confident`-Passagen je Segment neu, das sind 0,3 und 0,4 Punkte markierte Zeit ([Segment](#segment)).
 - **Wo die Stellen liegen:** Rund vier von fünf Stellen ab 2 s liegen zwischen zwei Passagen, wo heute keine Regel hinsieht. Nur 2,7 und 10,3 der 34,3 und 52,3 Stellen je Segment fallen in eine Pause, die `gap` schon nennt.
 - **Nutzen an den Referenzen:** Der Zuwachs kommt aus zwei Referenzen, C (9 Auslassungen je Seed) und J (15 in zwei von drei Seeds), dazu eine an A. An den anderen acht Referenzen zeigt der Hinweis nichts ([Referenzen](#referenzen)).
@@ -124,12 +125,12 @@ Die Zeile „beide“ ist die Summe der beiden Aufrufe.
 | Punkt | verlangt | gemessen | Stand |
 | --- | --- | --- | --- |
 | 1, Zusatznutzen | mindestens 50 % mehr Auslassungen an einer gezeigten Stelle und mindestens 20 mehr | 69,0 statt 49,0: 20,0 mehr, 40,8 % | absolut erreicht, relativ verfehlt |
-| 2, Treffsicherheit | an mindestens der Hälfte der beantworteten Stellen fehlt Sprache | Stichprobe gezogen, nicht abgetippt | offen |
+| 2, Treffsicherheit | an mindestens der Hälfte der beantworteten Stellen fehlt Sprache | 19 von 20 Stellen (95 %) | erfüllt |
 | 3, Kosten | höchstens 2 Punkte markierte Zeit je Sitzung | 0,3 und 0,4 Punkte | erfüllt |
 
 - **Punkt 1 ist knapp und hängt an zwei Referenzen.** Die 20,0 sind 1 (A), 9 (C) und 10 (J, Mittel aus 15 / 0 / 15). Ein Seed mehr oder weniger mit dem Block an J verschiebt beide Zahlen.
 - **Die 49,0 für `gap` und `sparse` sind großzügig gezählt:** `sparse` gilt für die ganze Passage, auch wenn sie den Ort nicht nennt. An J in Seed 1 sind das allein 43.
-- **Nach der Regel ist das ein No-Go**, weil alle drei Punkte gelten müssen. Die Stichprobe kann daran nichts ändern; sie beantwortet aber die Frage des Tickets, ob an den Stellen über das Segment wirklich Sprache fehlt.
+- **Nach der Regel ist das ein No-Go**, weil alle drei Punkte gelten müssen. Die [Hörstichprobe](#hörstichprobe) ändert daran nichts; sie zeigt aber, dass der Hinweis dort, wo er anschlägt, fast immer recht hat.
 
 ## Variation
 
@@ -181,8 +182,29 @@ Stellen ab 2 s mit 1 s Brücke, Mittel über drei Läufe.
 
 ## Hörstichprobe
 
-- **Gezogen:** je Sitzung 10 Stellen ab 2 s aus `norm#1`, mit festem Zufallswert, außerhalb der Fenster A bis K. Die Zeitfenster (Stelle mit 3 s Rand) stehen in `review/calibration/hint-sample.txt` der jeweiligen Sitzung.
-- **Offen:** Die Projektverantwortliche tippt je Fenster ab, was gesagt wird, oder vermerkt „keine Sprache“. `hint.py --sampled` zählt danach aus; das Ergebnis kommt in diesen Abschnitt.
+Je Sitzung 10 Stellen ab 2 s aus `norm#1`, mit festem Zufallswert gezogen, außerhalb der Fenster A bis K. Die Projektverantwortliche hat am 2026-11-27 je Fenster (Stelle mit 3 s Rand je Seite, aus dem Roh-WAV) abgetippt, was gesagt wird. „Sprache fehlt“ heißt: Gegen die Wörter des Laufs im Fenster sind mindestens 2 getippte Wörter ausgelassen.
+
+| Sitzung | Stelle liegt | Stellen | Sprache fehlt | keine Sprache | Sprache vom Lauf erkannt | unbeantwortet | getippte Wörter | davon im Lauf ausgelassen |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Pilotsitzung | in einer `gap`-Pause | 2 | 2 | 0 | 0 | 0 | 31 | 21 |
+| Pilotsitzung | zwischen zwei Passagen | 8 | 7 | 0 | 1 | 0 | 133 | 77 |
+| Pilotsitzung | gesamt | 10 | 9 | 0 | 1 | 0 | 164 | 98 |
+| zweite Sitzung | in einer `gap`-Pause | 2 | 2 | 0 | 0 | 0 | 20 | 18 |
+| zweite Sitzung | zwischen zwei Passagen | 8 | 8 | 0 | 0 | 0 | 157 | 103 |
+| zweite Sitzung | gesamt | 10 | 10 | 0 | 0 | 0 | 177 | 121 |
+
+- **An 19 von 20 Stellen fehlt Sprache** (95 %). An keiner hört die Diarisierung nur Lachen, Geräusche oder Musik. Die offene Frage des Tickets ist damit beantwortet: Das Signal trifft auch außerhalb der Referenzen.
+- **Von 341 getippten Wörtern hat der Lauf 219 nicht** (64 %), rund 11 je Fenster. Die Zahl gilt für das ganze Fenster von 9 bis 20 s und enthält gewöhnliche Auslassungen am Rand; sie überschätzt, was allein in der Stelle fehlt.
+- **Die Stichprobe ist klein:** 20 von 84 Stellen in `norm#1` (32 und 52), ein Seed.
+
+## Entscheidung
+
+**2026-11-27, Projektverantwortliche: Go mit bewusster Abweichung von der Go-Regel.** Der Hinweis wird als zusätzlicher Grund in die Bewertung aufgenommen, mit der Einstellung der Regel (Stellen ab 2 s, Brücke 1 s). Umsetzung in TOOL-116.
+
+- **Begründung:** Der Hinweis hat an 19 von 20 gehörten Stellen recht, kostet 0,3 und 0,4 Punkte markierte Zeit und sieht dorthin, wo heute keine Regel hinsieht (zwischen zwei Passagen). Er ersetzt nichts: Transkripttext, bestehende Regeln und Schwellen bleiben.
+- **In Kauf genommen:** Punkt 1 der vorab festgelegten Regel ist verfehlt (40,8 % statt 50 %). An den elf Referenzen zeigt der Hinweis nur an C und J etwas, und Blockverluste ohne Zeitlücke sieht er nicht.
+- **Nicht entschieden:** die gekappte Wortlänge. Sie zeigt mehr, ist aber nachträglich gewählt, und die Stichprobe stammt aus den Stellen ohne Kappung. TOOL-116 prüft sie mit einer eigenen kleinen Stichprobe.
+- **Offen für die Umsetzung:** an welcher Passage der Grund steht, wenn die Stelle zwischen zweien liegt; wie er ohne Diarisierung unter `missing` steht; woher die Bewertung die Sprachbereiche der Diarisierung bekommt; ob Narrata ihn als Marker zeigt (Contract, IOA-1214).
 
 ## Grenzen
 

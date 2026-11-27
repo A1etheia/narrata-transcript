@@ -106,8 +106,9 @@ Nach dem Ticket ist gemessen, ob der Hinweis „die Diarisierung hört Sprache, 
 - AC: Go nur nach der vorab festgelegten Regel, sonst begründetes No-Go; bei Go ein Umsetzungsticket; ohne Stichprobe sagt der Bericht, dass die Treffsicherheit außerhalb der Referenzen offen ist.
 
 ## Folge-Tickets
-- Umsetzung des Hinweises in der Bewertung: [kein Ticket: entsteht in Chunk 3 nur bei Go, der Key wird dort nachgetragen]
-- TOOL-100: Kommentar mit dem Ergebnis in Chunk 3.
+- Umsetzung des Hinweises in der Bewertung: TOOL-116, angelegt am 2026-11-27 im Epic TOOL-100 nach dem Go mit bewusster Abweichung. Es trägt die Fragen nach `missing` ohne Diarisierung, nach Stellen zwischen zwei Passagen, nach den Sprachbereichen im Referenzformat und nach dem Contract-Marker.
+- Gekappte Wortlänge als Variante: TOOL-116, als Prüfpunkt mit eigener Stichprobe.
+- TOOL-100: Kommentar vom 2026-11-27 mit dem Ergebnis.
 - Beschreibung von TOOL-107 nennt noch `base` an A, B, C: [kein Ticket: Kommentar vom 2026-11-27 zum neuen Zuschnitt am Ticket selbst]
 - Schattenwurzeln tragen eine alte Kopie der Schwellen: [kein Ticket: betrifft nur Spike-Skripte, `hint.py` liest die Schwellen aus `--config`; im Bericht unter „Grenzen“ vermerkt]
 - Roadmap führt TOOL-107 mit Datum 23.11.2026: [kein Ticket: `/close-ticket` aktualisiert die Roadmap]
