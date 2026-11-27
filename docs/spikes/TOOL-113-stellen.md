@@ -1,6 +1,6 @@
 # TOOL-113 — Auffällige Stellen neu dekodieren: Stufe 1 an A bis K
 
-Stand 2026-11-27, Stufe 1 gemessen, Entscheidung am Stufentor offen. Bericht zu [TOOL-113](../plans/TOOL-113-redecode-spots.md), Werkzeug: [`scripts/spike/spots.py`](../../scripts/spike/spots.py) und [`scripts/spike/blocks.py`](../../scripts/spike/blocks.py). Kein Lauf wurde neu transkribiert, alles lokal. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel.
+Stand 2026-11-27, abgeschlossen: No-Go nach Stufe 1, Stufe 2 entfällt ([Entscheidung](#entscheidung)). Bericht zu [TOOL-113](../plans/TOOL-113-redecode-spots.md), Werkzeug: [`scripts/spike/spots.py`](../../scripts/spike/spots.py) und [`scripts/spike/blocks.py`](../../scripts/spike/blocks.py). Kein Lauf wurde neu transkribiert, alles lokal. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel.
 
 ## Kurzfassung
 
@@ -11,7 +11,7 @@ Stand 2026-11-27, Stufe 1 gemessen, Entscheidung am Stufentor offen. Bericht zu 
 - **Der größte Blockverlust wird nicht gefunden:** Die 29 Wörter am Stück an G (Seed 2) liegen an keiner auffälligen Stelle. Die 38 Wörter an J (Seed 1) liegen ganz in einem Stück ([Je Hauptlauf](#je-hauptlauf)).
 - **Regel A mit `norm` als Hauptlauf** bringt an J 2,5 Punkte im Mittel (7,6 für den einen Hauptlauf mit Blockverlust), sonst nichts; kein Hauptlauf verliert mehr als 0,7 Punkte ([Regel A mit `norm`](#regel-a-mit-norm-als-hauptlauf)).
 - **Kosten wären klein:** Die Stücke umfassen 3,7 bis 13,8 min Audio je Segment von knapp 5 Stunden ([Stellen und Stücke](#stellen-und-stücke)).
-- **Stand am Stufentor:** No-Go ohne Stufe 2; die Entscheidung liegt bei der Projektverantwortlichen ([Stufentor](#stufentor)).
+- **Entscheidung vom 2026-11-27:** No-Go ohne Stufe 2. Es wurde nichts neu dekodiert ([Entscheidung](#entscheidung)).
 
 ## Material und Methode
 
@@ -160,7 +160,7 @@ Referenz J, 394 Referenzwörter:
 | S2: dazu Passagen mit schlechten Dekodierwerten | norm#3 | 32,2% | 56 | 24 | 6,1 | 13 | 3,3 | 16 | 16 |
 
 - **J ist der Fall, für den der Weg gedacht ist:** Seed 1 verliert 38 Wörter am Stück, alle liegen in einem S2-Stück, und ein anderer Lauf hat 45 der 59 Auslassungen in den Stücken richtig. Für diesen einen Lauf wären bis zu 15,0 Punkte möglich.
-- **An G greifen die Signale am falschen Lauf.** Seed 2 hat mit 95 Auslassungen und 29 am Stück den größten Verlust, aber keine davon liegt an einer auffälligen Stelle. Die 43 Auslassungen in einem Stück gehören zu Seed 1, dessen längste Folge 14 Wörter hat.
+- **An G markieren die Signale den falschen Lauf.** Seed 2 hat mit 95 Auslassungen und 29 am Stück den größten Verlust, aber keine davon liegt an einer auffälligen Stelle. Die 43 Auslassungen in einem Stück gehören zu Seed 1, dessen längste Folge 14 Wörter hat.
 - **„Sprache ohne Wörter“ sieht die Blöcke nur teilweise:** an J 20 der 38 Wörter, an G keines.
 
 ## Regel A mit `norm` als Hauptlauf
@@ -198,6 +198,18 @@ Nach dem ersten Punkt des Stufentors heißt das: **No-Go ohne Stufe 2.**
 
 - **Was dagegen spräche:** G liegt mit 2,6 Punkten knapp unter der Schwelle, und für den einzelnen Hauptlauf mit Blockverlust wären an J bis zu 15,0 Punkte möglich, doppelt so viel wie Regel A dort bringt (7,6).
 - **Was dafür spricht:** Die harte Obergrenze ist großzügig gerechnet, kein falsches Wort zählt mit. Das Orakel aus fünf anderen Läufen erreicht an G 1,2 Punkte. Der größte Blockverlust an G wird von keinem der Signale gefunden.
+
+## Entscheidung
+
+**No-Go, entschieden von der Projektverantwortlichen am 2026-11-27.** Sie folgt dem [Stufentor](#stand-gegen-das-stufentor): Die harte Obergrenze erreicht nur an J 3 Punkte, Punkt 1 der Go-Regel ist damit unerreichbar.
+
+- **Stufe 2 entfällt.** Kein Stück wurde neu dekodiert; die Tabellenzeile „Hauptlauf mit neu dekodierten Stücken“ aus dem Ticket gibt es deshalb nicht. An ihrer Stelle steht die harte Obergrenze, über der kein Ergebnis des Neu-Dekodierens liegen könnte.
+- **Kein Umsetzungsticket.** Die Pipeline ändert sich nicht.
+- **Werkzeug:** `spots.py` bleibt als Messwerkzeug unter `scripts/spike/`.
+- **In Kauf genommen:** der Blockverlust einzelner Läufe an J (bis zu 15,0 Punkte für einen Hauptlauf) und an G.
+- **Übergaben:**
+  - TOOL-114 bekommt Regel A mit `norm` als Hauptlauf: an J 2,5 Punkte im Mittel, sonst nichts; die Go-Regel aus TOOL-108 wird in keiner Paarung erreicht.
+  - TOOL-100 bekommt das Ergebnis.
 
 ## Einschränkungen
 

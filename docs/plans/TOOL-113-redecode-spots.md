@@ -122,9 +122,10 @@ Der Hauptlauf `norm` verliert in einzelnen Seeds noch Blöcke (G 29 Wörter am S
 - AC: Go nur nach der vorab festgelegten Regel, sonst begründetes No-Go; bei Go ein Umsetzungsticket.
 
 ## Folge-Tickets
-- Umsetzung des Neu-Dekodierens in der Pipeline: [kein Ticket: entsteht nur bei Go, Chunk 5 legt es an und trägt den Key nach]
-- TOOL-114 (Blöcke aus einem zweiten Lauf): Kommentar mit Regel A bei `norm` als Hauptlauf aus Chunk 2 und dem Ergebnis des Spikes.
-- TOOL-100: Kommentar mit dem Ergebnis.
+- Umsetzung des Neu-Dekodierens in der Pipeline: [kein Ticket: No-Go vom 2026-11-27 nach Stufe 1]
+- Chunk 3 und 4 (Stufe 2): [kein Ticket: entfallen nach dem Stufentor]
+- TOOL-114 (Blöcke aus einem zweiten Lauf): Kommentar vom 2026-11-27 mit Regel A bei `norm` als Hauptlauf und dem Ergebnis des Spikes.
+- TOOL-100: Kommentar vom 2026-11-27 mit dem Ergebnis.
 - Beschreibung von TOOL-113 nennt noch den Batched-Lauf: [kein Ticket: Kommentar vom 2026-11-27 zum neuen Zuschnitt am Ticket selbst]
 - Roadmap führt TOOL-113 mit Datum 23.11.2026: [kein Ticket: `/close-ticket` aktualisiert die Roadmap]
 
