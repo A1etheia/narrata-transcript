@@ -21,6 +21,11 @@ under 110 tokens; without it every variant gets its list as given, so
 `base+guard` is the pipeline as shipped. `+batched` decodes with faster-whisper's
 `BatchedInferencePipeline`, one chunk of at most 30 s per VAD range and no
 temperature fallback; `+batched+ts` lets it sample timestamp tokens (TOOL-104).
+`+batched+clips` gives it the turns of the session's stored diarization instead
+of its VAD's ranges, one clip per turn; `+join` joins same-label turns, `+pad`
+widens the clips into the free gaps, `+min` merges short clips into a neighbour
+and `+pack` packs joined and padded clips across labels up to 30 s (TOOL-112,
+`clips.py`). `prepare` writes them to `clips.json` in the root.
 `kw<N>` passes the first N snapshot
 keywords; `neutral9` and `neutral` pass fixed everyday words instead of the
 snapshot's, 9 or as many as fit the token budget (TOOL-81). Two ways change the keywords: `pchw` builds the
@@ -63,6 +68,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+import clips as turn_clips
 import denoise
 import numpy as np
 import yaml
@@ -115,6 +121,11 @@ class Variant:
     def batched(self) -> bool:
         """Decoded by the BatchedInferencePipeline, not the sequential loop."""
         return BATCH_SIZE in self.asr
+
+    @property
+    def clips(self) -> Mapping[str, int] | None:
+        """The parameters of its clips from the diarization, None: the VAD's."""
+        return self.asr.get(CLIPS)
 
 
 # Everyday German words with no tie to a game or a group: a prompt of the same
@@ -287,10 +298,31 @@ GUARD = "guard"
 BATCHED = "batched"
 TIMESTAMPS = "ts"
 BATCH_SIZE = "batch_size"  # the setting that marks a batched run
+# TOOL-112: the batched pipeline decodes clips cut from the turns of the stored
+# diarization instead of its VAD's ranges. The setting holds the parameters of
+# `clips.build`; it never reaches the library, which gets the clips themselves
+CLIPS = "clips"
+CLIPS_FILE = "clips.json"  # in the root, written by `prepare`
+CLIPS_SHA = "clips_sha"  # in `asr.settings`: the clips the run decoded
+CLIP_SHAPES: dict[str, Mapping[str, int]] = {
+    "join": {"join_ms": turn_clips.JOIN_MS},
+    "pad": {"pad_ms": turn_clips.PAD_MS},
+    "min": {"min_ms": turn_clips.MIN_MS, "min_gap_ms": turn_clips.MIN_GAP_MS},
+}
+# packs clips that are joined and padded already
+CLIP_SHAPES["pack"] = {
+    **CLIP_SHAPES["join"],
+    **CLIP_SHAPES["pad"],
+    "pack_gap_ms": turn_clips.PACK_GAP_MS,
+}
+# modifier -> the modifier it builds on
+NEEDS = {TIMESTAMPS: BATCHED, CLIPS: BATCHED, **dict.fromkeys(CLIP_SHAPES, CLIPS)}
 # one factor each; stage 3 adds models
 MODIFIERS: dict[str, Mapping[str, object]] = {
     BATCHED: {BATCH_SIZE: 8},  # the library's default
     TIMESTAMPS: {"without_timestamps": False},
+    CLIPS: {CLIPS: {"max_ms": turn_clips.MAX_MS}},
+    **{name: {CLIPS: shape} for name, shape in CLIP_SHAPES.items()},
     "novad": {"vad_filter": False},
     "vad-t35": {"vad_parameters": {"threshold": 0.35}},
     "vad-pad800": {"vad_parameters": {"speech_pad_ms": 800}},
@@ -353,8 +385,9 @@ def variant(name: str) -> Variant:
             raise SpikeError(f"{name}: unknown modifier {mod!r}, one of {known}")
     if BATCHED in mods:
         asr.setdefault("without_timestamps", True)  # the library's default, recorded
-    elif TIMESTAMPS in mods:
-        raise SpikeError(f"{name}: +{TIMESTAMPS} needs +{BATCHED}")
+    for mod in mods:
+        if NEEDS.get(mod, mod) not in mods:
+            raise SpikeError(f"{name}: +{mod} needs +{NEEDS[mod]}")
     return dataclasses.replace(
         base,
         model=model,
@@ -448,6 +481,37 @@ def prepare(paths: SessionPaths, name: str, seed: int, config_path: Path) -> Non
     _link_audio(paths, shadow, spec.chain, label)
     if seed > 1 and LEVEL_FILTER in spec.config:
         _share_level(SessionPaths(paths.key, shadow_root(paths, name, 1)), shadow)
+    if spec.clips is not None:
+        _write_clips(paths, root, spec.clips, label)
+
+
+def _write_clips(
+    paths: SessionPaths, root: Path, params: Mapping[str, int], label: str
+) -> None:
+    """The root's clips from the session's stored diarization, as numbers.
+
+    The turns come from the raw WAV for every base, and a long turn is cut at a
+    pause of the batched VAD on the raw WAV, so `base` and `loud` decode the same
+    clips.
+    """
+    import omissions  # it imports this module
+
+    run = diarization.load_run(paths, SEGMENT)
+    if run is None:
+        raise SpikeError(f"{label}: segment {SEGMENT} of the session is not diarized")
+    speech = omissions.vad_speech(paths, f"base+{BATCHED}")
+    pauses = list(zip(speech.ends, speech.starts[1:], strict=False))
+    found = turn_clips.build(run.exclusive_turns, params, _end_ms(paths), pauses)
+    (root / CLIPS_FILE).write_text(
+        json.dumps(turn_clips.record(found, params)), encoding="utf-8"
+    )
+    lengths = sorted(clip.length for clip in found)
+    short = sum(length < turn_clips.MIN_MS for length in lengths)
+    print(
+        f"{label}: {len(found)} clips from {len(run.exclusive_turns)} turns, median "
+        f"{lengths[len(lengths) // 2] / 1000:.1f} s, {_pct(short / len(found))} under "
+        f"{turn_clips.MIN_MS // 1000} s, {sum(lengths) / 60_000:.1f} min"
+    )
 
 
 def _link_audio(
@@ -626,7 +690,10 @@ def run(paths: SessionPaths, name: str, seed: int, diarize: bool) -> int:
         "keywords": keyword_settings(spec),
         "asr": dict(spec.asr),
         "guard": spec.guard,
+        "clips_file": None if spec.clips is None else str(root / CLIPS_FILE),
     }
+    if spec.clips is not None and not (root / CLIPS_FILE).is_file():
+        raise SpikeError(f"{name}#{seed}: no clips, run prepare again")
     command = [sys.executable, str(Path(__file__).resolve()), _WITH_VARIANT]
     command += [json.dumps(options), "transcribe", str(paths.key)]
     command += ["--segment", str(SEGMENT), "--config", str(config)]
@@ -722,7 +789,9 @@ def _cli_with_variant(options: str, argv: Sequence[str]) -> int:
 
     spec = json.loads(options)
     seed = spec["seed"]
-    whisper.FIXED_SETTINGS.update(merge(whisper.FIXED_SETTINGS, spec["asr"]))
+    # the parameters of the clips are recorded, the library gets the clips
+    passed = {k: v for k, v in spec["asr"].items() if k != CLIPS}
+    whisper.FIXED_SETTINGS.update(merge(whisper.FIXED_SETTINGS, passed))
     # The variants measure short lists, so the pipeline's TOOL-81 guard stays off
     # and its settings key stays out, which keeps earlier roots reusable; `+guard`
     # runs the pipeline as shipped and records the threshold.
@@ -748,6 +817,11 @@ def _cli_with_variant(options: str, argv: Sequence[str]) -> int:
     # the batched pipeline takes its settings as the sequential call would
     batched = BATCH_SIZE in spec["asr"]
     extra = {"seed": seed, "hotwords": spec["hotwords"], **changed}
+    clips = None
+    if spec.get("clips_file"):
+        stored = _read_json(Path(spec["clips_file"]))
+        clips = [{"start": s / 1000, "end": e / 1000} for s, e in stored["clips"]]
+        extra.update({CLIPS: spec["asr"][CLIPS], CLIPS_SHA: stored["sha"]})
 
     backend = whisper.WhisperBackend
     original_prepare, original_transcribe = backend._prepare, backend.transcribe
@@ -764,7 +838,7 @@ def _cli_with_variant(options: str, argv: Sequence[str]) -> int:
         model = self._model
         if not batched or model is None:
             return original_transcribe(self, request)
-        self._model = _Batched(model)
+        self._model = _Batched(model, clips)
         try:
             return original_transcribe(self, request)
         finally:
@@ -777,13 +851,20 @@ def _cli_with_variant(options: str, argv: Sequence[str]) -> int:
 
 class _Batched:
     """Stands in for the loaded model while the backend transcribes: the same
-    call and the same tokenizer, decoded by the batched pipeline."""
+    call and the same tokenizer, decoded by the batched pipeline. With `clips`
+    it decodes those ranges, in seconds, instead of its VAD's."""
 
-    def __init__(self, model) -> None:
+    def __init__(self, model, clips: Sequence[Mapping[str, float]] | None) -> None:
         from faster_whisper import BatchedInferencePipeline
 
         self.hf_tokenizer = model.hf_tokenizer
-        self.transcribe = BatchedInferencePipeline(model).transcribe
+        self._pipeline = BatchedInferencePipeline(model)
+        self._clips = clips
+
+    def transcribe(self, audio, **settings):
+        if self._clips is not None:
+            settings["clip_timestamps"] = self._clips
+        return self._pipeline.transcribe(audio, **settings)
 
 
 # --- score --------------------------------------------------------------------------
@@ -956,6 +1037,10 @@ def transcribed(paths: SessionPaths, name: str, seed: int) -> ReferenceTranscrip
         **spec.config,
         **keyword_settings(spec),
     }
+    if spec.clips is not None:  # the clips `prepare` last wrote for this root
+        wanted[CLIPS_SHA] = _read_json(shadow_root(paths, name, seed) / CLIPS_FILE).get(
+            "sha"
+        )
     # the pipeline stores the filter's chain and ffmpeg version, not the config value
     filtered = wanted.pop(LEVEL_FILTER, None) is not None
     if any(settings.get(k) != v for k, v in wanted.items()):
