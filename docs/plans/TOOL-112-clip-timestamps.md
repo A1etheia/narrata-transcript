@@ -119,11 +119,12 @@
 - AC: Spike-Dokument mit Go/No-Go nach der vorab festgelegten Regel; benannt, was der Weg nicht erreicht; bei Go ein Umsetzungsticket.
 
 ## Folge-Tickets
-- Umsetzung der Dekodierung je Redebeitrag in der Pipeline: [kein Ticket: entsteht nur bei Go, in Chunk 4 nach der Entscheidung]
-- TOOL-113 (auffälliges Stück neu dekodieren): Kommentar mit dem Hauptlauf und den Blockverlusten der neuen Varianten.
-- TOOL-114 (Blöcke aus einem zweiten Lauf): Kommentar mit dem Hauptlauf.
-- TOOL-100: Kommentar mit dem Ergebnis.
-- Großzügigere VAD für die Batched-Pipeline (offen aus TOOL-104): [kein Ticket: `+clips+pack` misst die Abdeckung mit; der Bericht sagt, ob die Frage damit erledigt ist]
+- Umsetzung der Dekodierung je Redebeitrag in der Pipeline: [kein Ticket: No-Go vom 2026-11-27, `norm` bleibt Hauptlauf]
+- Lauf je Redebeitrag als Zusatzlauf nur für kurze Beiträge: [kein Ticket: Obergrenze 19 % der Auslassungen, die Auswahlregel ist die Frage von TOOL-114; Befund dort kommentiert]
+- TOOL-113 (auffälliges Stück neu dekodieren): Kommentar vom 2026-11-27 mit dem Hauptlauf und den Blockverlusten der neuen Varianten.
+- TOOL-114 (Blöcke aus einem zweiten Lauf): Kommentar vom 2026-11-27 mit dem Hauptlauf und der Obergrenze eines Zusatzlaufs.
+- TOOL-100: Kommentar vom 2026-11-27 mit dem Ergebnis.
+- Großzügigere VAD für die Batched-Pipeline (offen aus TOOL-104): [kein Ticket: erledigt; `+clips+pack` dekodiert 18 bis 21 min mehr als die VAD der Pipeline und verliert trotzdem Blöcke]
 - Roadmap führt TOOL-109 noch als „läuft“: [kein Ticket: `/close-ticket` aktualisiert die Roadmap]
 
 ## Chunk-Tabelle

@@ -1,6 +1,20 @@
 # TOOL-112 — Dekodierung je Redebeitrag über `clip_timestamps`: Messung an A bis K
 
-Stand 2026-11-27, Messung abgeschlossen; Auswertung nach der Go-Regel und Entscheidung folgen. Bericht zu [TOOL-112](../plans/TOOL-112-clip-timestamps.md), Werkzeug: [`scripts/spike/asr.py`](../../scripts/spike/asr.py), [`scripts/spike/clips.py`](../../scripts/spike/clips.py) und [`scripts/spike/omissions.py`](../../scripts/spike/omissions.py). Neu transkribiert wurden 28 Läufe, alles lokal. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel.
+Stand 2026-11-27, abgeschlossen: No-Go, `norm` bleibt Hauptlauf ([Entscheidung](#entscheidung)). Bericht zu [TOOL-112](../plans/TOOL-112-clip-timestamps.md), Werkzeug: [`scripts/spike/asr.py`](../../scripts/spike/asr.py), [`scripts/spike/clips.py`](../../scripts/spike/clips.py) und [`scripts/spike/omissions.py`](../../scripts/spike/omissions.py). Neu transkribiert wurden 28 Läufe, alles lokal. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel.
+
+## Kurzfassung
+
+**Nach der vorab festgelegten Regel erfüllt keine der fünf Varianten auf `loudnorm`-Audio einen der vier Punkte vollständig. Die Dekodierung je Redebeitrag lässt an A bis K nicht weniger aus als `norm`.**
+
+- **Auslassungen:** 607 bis 722 gegen 584,3 bei `norm`. Nur die gepackte Variante liegt unter `loud+batched` (628) ([Auslassungen](#auslassungen)).
+- **Einwürfe mit 1–3 Wörtern:** 34,9 bis 46,9 % gegen 34,3 % bei `norm`. Auf Rohaudio ist ein Stück je Turn besser als `base` und `base+batched` ([Nach Klassen](#nach-klassen)).
+- **Einziger klarer Gewinn:** In Beiträgen unter 2 s laut Diarisierung fehlen mit einem Stück je Turn 10,8 bis 11,5 % der Wörter gegen 13,4 % ([Nach Klassen](#nach-klassen)).
+- **Preis dafür:** rund doppelt so viele Einfügungen und eine WER von 39,5 bis 41,1 % gegen 30,2 % ([WER](#wer), [Einfügungen und Wiederholung](#einfügungen-und-wiederholung)).
+- **Packen bis 30 s** kommt `norm` im Mittel am nächsten (30,7 %), verliert aber an H 77 Wörter am Stück und entgleist an G ([Längste Folge](#längste-folge-ausgelassener-wörter), [WER](#wer)).
+- **Seeds und Laufzeit:** Die Seeds sind gleich; ein Lauf braucht 2,3 bis 11 min je Segment ([Seeds](#seeds), [Laufzeit und Speicher](#laufzeit-und-speicher)).
+- **Als Zusatzlauf** hat ein Lauf je Redebeitrag höchstens 19 % der Auslassungen von `norm` richtig; ohne Auswahlregel verschlechtert er die WER an zehn von elf Referenzen ([Als Zusatzlauf zum Hauptlauf](#als-zusatzlauf-zum-hauptlauf)).
+- **Die Regel je Variante** steht unter [Regeltabelle](#regeltabelle), die Grenzen des Wegs unter [Was der Weg nicht erreicht](#was-der-weg-nicht-erreicht).
+- **Entscheidung vom 2026-11-27:** No-Go. `norm` bleibt Hauptlauf ([Entscheidung](#entscheidung)).
 
 ## Material und Methode
 
@@ -372,3 +386,86 @@ Abweichung vom Ticket wie im Plan begründet: Drei Seeds liefen nur für `+clips
 | `loud+batched+clips+join` | 34464 / 34464 / 34464 | ja / ja | 30973 / 30973 / 30973 | ja / ja |
 
 Die Seeds sind Wort für Wort und Zeit für Zeit gleich. Die übrigen Varianten bleiben deshalb bei Seed 1.
+
+## Regeltabelle
+
+Die fünf Varianten auf `loudnorm`-Audio (`loud+batched+…`) gegen die [Go-Regel](#go-regel). Quellen: [Auslassungen](#auslassungen), [Nach Klassen](#nach-klassen), [WER](#wer), [Längste Folge](#längste-folge-ausgelassener-wörter), [Einfügungen und Wiederholung](#einfügungen-und-wiederholung).
+
+| Punkt | Maßstab | `+clips` | `+clips+join` | `+clips+join+pad` | `+clips+join+pad+min` | `+clips+pack` |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 Auslassungen, Summe ohne I | unter 584,3 (`norm`) und unter 628 (`loud+batched`) | 716: nein | 722: nein | 693: nein | 711: nein | 607: nein (unter `loud+batched`, über `norm`) |
+| 2 Rate bei 1–3 Wörtern | unter 34,3 % | 34,9 %: nein | 37,7 %: nein | 36,0 %: nein | 46,9 %: nein | 41,7 %: nein |
+| 3 WER über dem schlechtesten Lauf von `norm` | an keiner Referenz | an 9 (A bis I): nein | an 9 (A bis I): nein | an 9 (A bis I): nein | an 8 (A bis F, H, I): nein | an 3 (C, G, H): nein |
+| 3 längste Folge ausgelassener Wörter | unter 30 | 33 (H): nein | 33 (H): nein | 21: ja | 29: ja | 77 (H): nein |
+| 4 Einfügungen, Summe ohne I | höchstens 173,0 | 402: nein | 371: nein | 353: nein | 177: nein | 214: nein |
+| 4 Wiederholungsanteil, Pilotsitzung / zweite Sitzung | höchstens 0,6 % / 0,4 % | 2,5 % / 3,3 %: nein | 2,2 % / 3,4 %: nein | 1,7 % / 3,4 %: nein | 1,2 % / 2,0 %: nein | 1,5 % / 2,9 %: nein |
+| Ergebnis nach der Regel | alle vier Punkte | No-Go | No-Go | No-Go | No-Go | No-Go |
+
+Gegenprobe auf Rohaudio (`base+batched+…`), ohne eigenes Go:
+
+| | `base` | `base+batched` | `+clips` | `+clips+join` | `+clips+join+pad` | `+clips+join+pad+min` | `+clips+pack` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| WER, Mittel A bis K | 37,8 % | 31,6 % | 40,2 % | 39,6 % | 39,1 % | 32,9 % | 30,4 % |
+| Auslassungen, Summe ohne I | 871,0 | 705 | 729 | 743 | 731 | 714 | 697 |
+| Rate bei 1–3 Wörtern | 40,6 % | 45,7 % | 37,7 % | 38,9 % | 36,6 % | 44,0 % | 42,3 % |
+| Einfügungen, Summe ohne I | 261,7 | 187 | 342 | 313 | 335 | 170 | 151 |
+| längste Folge ausgelassener Wörter | 66 (J) | 94 (H) | 34 (C) | 34 (C) | 34 (C) | 20 | 77 (H) |
+
+Das Bild ist auf beiden Audios dasselbe. Gegen `base+batched` gewinnt ein Stück je Turn bei den Einwürfen (36,6 bis 38,9 % gegen 45,7 %) und beim größten Blockverlust, verliert aber bei WER und Einfügungen. Die Auslassungen insgesamt bleiben auf dem Stand von `base+batched`.
+
+## Was der Weg nicht erreicht
+
+- **Wörter ohne Turn der Diarisierung.** Über A bis H, J und K (5135 Referenzwörter) verortet `norm` 286 Wörter (5,6 %) an Stellen, an denen kein Turn läuft; 79,7 davon fehlen, das sind 13,6 % seiner Auslassungen. Abschnitte aus der Diarisierung können diese Wörter nur über Polster oder Packen erreichen:
+  - Ohne Polster liegen 125 bis 131 Referenzwörter außerhalb aller Abschnitte, 102 bis 111 davon fehlen (14,2 bis 15,4 % der Auslassungen der Variante).
+  - Mit Polster oder gepackt verorten die Läufe 289 bis 292 Wörter ohne Turn, 94 bis 117 davon fehlen (15,5 bis 16,5 % der Auslassungen). Die Rate liegt mit 32,2 bis 40,2 % über der von `norm` (27,9 %).
+- **Überlappung.** Die Rate bleibt bei 27,5 bis 32,5 % gegen 28,0 % bei `norm`. Exklusive Turns enthalten in der Überlappung nur eine Stimme als Abschnitt, das Audio darin bleibt gemischt.
+- **Einwürfe laut Handreferenz.** Der Gewinn in Beiträgen unter 2 s laut Diarisierung kommt bei den Beiträgen mit 1–3 Wörtern der Handreferenz auf `loudnorm`-Audio nicht an (34,9 bis 46,9 % gegen 34,3 %). Die Klasse ist klein: 175 Wörter, davon 43 an H und 38 an D.
+- **Blockverlust.** Gepackt fehlen an H 77 Wörter am Stück; nur 20 Referenzwörter liegen dort außerhalb der Abschnitte. Der Block geht also beim Dekodieren verloren, nicht durch fehlende Abdeckung. Die offene Frage aus TOOL-104, ob eine großzügigere VAD der Batched-Pipeline hilft, ist damit beantwortet: `+clips+pack` dekodiert 18 bis 21 min mehr als die VAD der Pipeline und verliert trotzdem Blöcke.
+- **Halluzination an kurzen Stücken.** Ein Stück je Turn schreibt 1000 bis 1300 Wörter mehr als `norm` über das Segment und verdoppelt die Einfügungen an den Referenzen. Erst die Mindestlänge von 2 s bringt sie auf den Stand von `norm` (177 gegen 173,0), kostet aber den Gewinn bei kurzen Beiträgen.
+
+## Als Zusatzlauf zum Hauptlauf
+
+Nachfrage der Projektverantwortlichen vom 2026-11-27: Lässt sich der Lauf je Redebeitrag nur dort einsetzen, wo er Vorteile hat? Gemessen ist die Obergrenze mit `seeds.py --variant norm --with loud+batched+clips+join` aus den vorhandenen Läufen, wie das Orakel in [TOOL-104](TOOL-104-recherche-auslassungen.md). Hauptlauf ist `norm` (Mittel der drei Seeds), zweiter Lauf `loud+batched+clips+join`.
+
+| Referenz | Auslassungen von `norm` | der zweite Lauf hat das Wort richtig | davon in Folgen ab 5 Wörtern | nur als Ersetzung | fehlt auch dort | Gewinn des Orakels (Punkte WER) | Gewinn der naiven Vereinigung (Punkte WER) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| A | 29,0 | 4,0 | 0,0 | 5,0 | 20,0 | 0,8 | 0,2 |
+| B | 42,0 | 0,0 | 0,0 | 14,0 | 28,0 | 0,0 | −3,9 |
+| C | 89,3 | 14,7 | 3,0 | 27,7 | 47,0 | 1,6 | −4,9 |
+| D | 62,3 | 11,3 | 2,0 | 9,0 | 42,0 | 2,5 | −0,1 |
+| E | 30,0 | 4,0 | 0,0 | 8,0 | 18,0 | 1,1 | −7,0 |
+| F | 78,7 | 18,7 | 6,7 | 11,0 | 49,0 | 3,2 | −6,0 |
+| G | 85,0 | 24,3 | 17,0 | 16,0 | 44,7 | 4,4 | −9,9 |
+| H | 67,0 | 8,0 | 3,0 | 17,0 | 42,0 | 1,7 | −10,2 |
+| I | 60,0 | 10,0 | 2,0 | 4,0 | 46,0 | 1,7 | −3,9 |
+| J | 63,0 | 19,7 | 13,0 | 14,3 | 29,0 | 5,0 | −1,2 |
+| K | 38,0 | 7,3 | 4,3 | 12,0 | 18,7 | 1,7 | −3,7 |
+| Summe ohne I | 584,3 | 112,0 | 49,0 | 134,0 | 338,3 | | |
+
+- **Obergrenze:** Ein Lauf je Redebeitrag hat 112 der 584,3 Auslassungen von `norm` richtig (19 %). 49 davon liegen in Folgen ab 5 Wörtern, also in Blöcken, die `norm` in einem Seed verliert (G, J); 63 sind verstreute Wörter. 338,3 Auslassungen (58 %) fehlen in beiden Läufen.
+- **Ohne Auswahlregel schadet es:** Nimmt man alles dazu, was der zweite Lauf mehr hat, wird die WER an zehn von elf Referenzen schlechter, um bis zu 10,2 Punkte.
+- **Was fehlt:** eine Regel ohne Handreferenz, die an einer Lücke die richtigen von den erfundenen Wörtern des zweiten Laufs trennt. Das ist die Frage von TOOL-114 (Blöcke aus einem zweiten Lauf), nur für einzelne Wörter statt für Blöcke; dort hielt sie schon bei Blöcken ab 10 Wörtern nicht mehr ([TOOL-108](TOOL-108-blockverlust.md)).
+- **Gepackt als zweiter Lauf** (`loud+batched+clips+pack`, nur gegen Seed 1 von `norm`): 139 von 600 Auslassungen richtig, 69 davon in Folgen ab 5 Wörtern, fast alle an J und F.
+
+## Entscheidung
+
+**No-Go, entschieden von der Projektverantwortlichen am 2026-11-27.** Sie folgt der Empfehlung aus der [Regeltabelle](#regeltabelle).
+
+- **Hauptlauf:** bleibt `norm` wie seit TOOL-109, also das pegelausgeglichene Audio am Stück mit dem nicht gebündelten Decoder. Die Pipeline ändert sich nicht.
+- **Kein Umsetzungsticket:** Die Dekodierung je Redebeitrag wird nicht eingebaut, auch nicht als Zusatzlauf für kurze Beiträge.
+- **Werkzeug:** `clips.py`, die `+clips`-Varianten in `asr.py` und die Erweiterung von `omissions.py` bleiben als Messwerkzeug unter `scripts/spike/`.
+- **Übergaben:**
+  - TOOL-113 und TOOL-114 rechnen mit `norm` als Hauptlauf; die Blockverluste an G und J bleiben ihr Thema.
+  - TOOL-114 bekommt die Obergrenze aus [Als Zusatzlauf zum Hauptlauf](#als-zusatzlauf-zum-hauptlauf).
+  - TOOL-100 bekommt das Ergebnis.
+- **Erledigt aus TOOL-104:** die Frage nach einer großzügigeren VAD für die Batched-Pipeline ([Was der Weg nicht erreicht](#was-der-weg-nicht-erreicht)).
+
+## Hinweise für eine Umsetzung
+
+Für den Fall, dass der Weg später aufgegriffen wird, etwa mit einem anderen Modell.
+
+- **Reihenfolge:** Die Pipeline erkennt heute zuerst und diarisiert danach. Abschnitte aus der Diarisierung verlangen die umgekehrte Reihenfolge; `--no-diarize` gäbe es für diesen Weg nicht mehr, und eine neue Diarisierung macht das Transkript veraltet.
+- **Abschnitte:** Gemessen ist die Diarisierung auf dem Roh-WAV. Die Regeln (Verbinden, Polster, Mindestlänge, Packen, Teilen über 30 s) stehen in `scripts/spike/clips.py` und müssten mit Tests in das Paket umziehen. Parameter und Hash der Abschnitte gehören in `asr.settings`; ob der Contract (IOA-1214) sie trägt, ist offen.
+- **Passagen und Bewertung:** Die Batched-Pipeline liefert ein Segment je Abschnitt, ohne Fallback und ohne Dekodierfenster. Mit einem Stück je Turn entstehen rund 7000 Passagen je Segment statt rund 2000, davon rund 2700 bis 3100 `uncertain`; die Schwellen aus `review.uncertainty` sind dafür nicht kalibriert (TOOL-35).
+- **Laufzeit und Speicher:** 8 bis 11 min und bis zu 16,3 GiB Arbeitsspeicher je Segment bei einem Stück je Turn, 2,3 bis 2,4 min und 4,9 GiB gepackt.
+- **Blockverlust:** Jede gepackte Variante braucht eine Antwort auf Verluste wie an H, also TOOL-113 oder TOOL-114.
