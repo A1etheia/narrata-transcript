@@ -385,3 +385,31 @@ Alle setzen `+batched` voraus; `+join`, `+pad`, `+min` und `+pack` gelten nur zu
 - **`run`** übergibt die Abschnitte als `clip_timestamps`; die VAD entfällt. Parameter (`clips`) und Hash (`clips_sha`) stehen in `asr.settings`. Schreibt `prepare` andere Abschnitte, passt der Hash nicht mehr und die Wurzel gilt als veraltet.
 - **Laufzeit:** Jeder Abschnitt kostet einen Encoder-Durchgang. Mit rund 5000 Abschnitten braucht ein Segment von 5 Stunden gut 10 Minuten, `base+batched` unter 2.
 - **`omissions.py --variant <…+clips…>`** liest statt einer VAD die Abschnitte der Wurzel von Seed 1. „Von der VAD entfernt“ zählt dort die Wörter außerhalb aller Abschnitte. „Fallback-Fenster“ und „dünnes Fenster“ heißen wie bei `+batched` „entfällt“.
+
+# Stellen-Spike (TOOL-113)
+
+Misst, wie viel zu holen wäre, wenn nur die auffälligen Stellen eines Laufs neu dekodiert würden statt der ganzen Aufnahme. `spots.py` liest die Läufe von `asr.py`, die Diarisierung der Sitzung und die Handreferenzen; es dekodiert nichts. Plan: [`TOOL-113`](../../docs/plans/TOOL-113-redecode-spots.md), Bericht: `docs/spikes/TOOL-113-stellen.md`.
+
+## Datenschutz
+
+Das Skript schreibt nichts. Die Konsole bekommt Zähler, Anteile, Fehlerraten und Zeiten, nie Text, Tokens, Namen oder Sprecher-Labels.
+
+## Ablauf
+
+```bash
+.venv/bin/python scripts/spike/spots.py $S [--variant norm] [--seeds 3] [--with VARIANTE]… [--clip NAME=DATEI@H:MM:SS-H:MM:SS]… [--config PATH]
+```
+
+- **Voraussetzung:** Die Wurzeln der Variante und jeder Variante aus `--with` sind transkribiert, Segment 1 der Sitzung ist diarisiert. Ohne Modell und ohne GPU, wenige Sekunden.
+- **Hauptlauf:** Jeder Lauf von `--variant` ist einmal Hauptlauf. Die Stellen kommen aus ihm selbst und brauchen keine Handreferenz.
+- **Stellen**, mit den Schwellen, die bei der Messung in TOOL-108 galten:
+  - *S1:* Die Diarisierung hört mindestens 2 s Sprache, und der Hauptlauf hat dort kein Wort (wie in `omissions.py`).
+  - *S2:* S1, dazu jede Passage des Hauptlaufs mit `compression_ratio` ab 2,4 oder `avg_logprob` bis −1.
+- **Stück:** die Stelle mit 2 s Polster je Seite, an den Rändern des Segments gekappt. Stücke, die sich berühren, sind eins. Das ist das Audio, das ein zweiter Dekodiergang bekäme.
+- **Über das Segment:** je Hauptlauf Zahl und Zeit der Stellen, Zahl, Median, längstes und Summe der Stücke.
+- **Je Referenz und Hauptlauf:**
+  - *harte Obergrenze:* die Auslassungen mit Wortzeit in einem Stück, als Punkte WER. Mehr kann das Neu-Dekodieren dieser Stücke nicht bringen: Jedes dieser Wörter käme richtig zurück und kein falsches dazu.
+  - *Orakel:* wie viele dieser Auslassungen ein anderer vorhandener Lauf richtig hat. Das sind die anderen Seeds der Variante und die Läufe aus `--with`; eine Batched-Variante zählt nur mit Seed 1.
+  - *längste Folge ausgelassener Wörter* und wie viele davon in einem Stück liegen.
+- **Wortzeit:** eine Zeit je Referenzwort wie in `omissions.py`, hier als Median über alle geladenen Läufe, die das Wort erkannt haben.
+- **Zuletzt** je Stellenart und Referenz das Mittel der Hauptläufe für beide Obergrenzen.
