@@ -25,6 +25,7 @@ from transcript.transcription import LEVEL_SETTING
 ASR_INFO = BackendInfo(backend_id="fake", model="tiny", model_version="abc123")
 DIARIZATION_INFO = BackendInfo(backend_id="pyannote", model="fake-diarization")
 LEVEL_ON = "asr:\n  level_filter: loudnorm\n"
+LEVEL_OFF = "asr:\n  level_filter: none\n"  # the tests run without ffmpeg filtering
 
 
 class FakeDiarizer:
@@ -72,7 +73,7 @@ class PreflightTestCase(unittest.TestCase):
         self.free_bytes = 10**12
         self.player: Path | None = Path("/opt/fake/ffplay")
 
-    def write_config(self, extra: str = "") -> None:
+    def write_config(self, extra: str = LEVEL_OFF) -> None:
         self.config.write_text(
             f"language: de\npaths:\n  root: {self.root}\n{extra}", encoding="utf-8"
         )
@@ -254,6 +255,11 @@ class EnvironmentTest(PreflightTestCase):
 
     def test_no_level_filter_is_not_mentioned(self) -> None:
         self.assertEqual(self.by_check(self.run_preflight(), "level"), [])
+
+    def test_level_filter_is_checked_by_default(self) -> None:
+        self.write_config("")
+
+        self.assertEqual(self.levels(self.run_preflight(), "level"), ["error"])
 
     def test_level_filter_this_ffmpeg_lacks_is_an_error(self) -> None:
         self.write_config(LEVEL_ON)

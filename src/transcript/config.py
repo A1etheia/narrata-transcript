@@ -182,7 +182,7 @@ class Config:
     # False: no keyword biasing at all; True still holds back a short list (TOOL-81)
     asr_hotwords: bool = True
     # one of LEVEL_FILTERS: what the recognition hears, the diarization never
-    asr_level_filter: LevelFilter = "none"
+    asr_level_filter: LevelFilter = "loudnorm"
     # Hugging Face name or local model directory, loaded from the local cache only
     diarization_model: str = "pyannote/speaker-diarization-community-1"
     diarization_device: str = "auto"  # one of _DEVICES; auto prefers cuda

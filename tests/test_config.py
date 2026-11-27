@@ -188,10 +188,10 @@ class LoadConfigTest(unittest.TestCase):
         self.assertTrue(self.load(MINIMAL).asr_hotwords)
         self.assertFalse(self.load(MINIMAL + "asr:\n  hotwords: false\n").asr_hotwords)
 
-    def test_level_filter_defaults_to_none_and_can_be_switched_on(self) -> None:
-        self.assertEqual(self.load(MINIMAL).asr_level_filter, "none")
-        switched = self.load(MINIMAL + "asr:\n  level_filter: loudnorm\n")
-        self.assertEqual(switched.asr_level_filter, "loudnorm")
+    def test_level_filter_defaults_to_loudnorm_and_can_be_switched_off(self) -> None:
+        self.assertEqual(self.load(MINIMAL).asr_level_filter, "loudnorm")
+        switched = self.load(MINIMAL + "asr:\n  level_filter: none\n")
+        self.assertEqual(switched.asr_level_filter, "none")
 
     def test_retries_default_to_two_and_are_read(self) -> None:
         defaults = self.load(MINIMAL)

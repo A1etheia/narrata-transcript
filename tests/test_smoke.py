@@ -881,7 +881,7 @@ class TranscribeCommandTest(unittest.TestCase):
         self.root = Path(directory.name)
         self.config = self.root / "config.yaml"
         self.config.write_text(
-            f"language: de\npaths:\n  root: {self.root}\nasr:\n  device: cpu\n",
+            f"language: de\npaths:\n  root: {self.root}\nasr:\n  device: cpu\n  level_filter: none\n",
             encoding="utf-8",
         )
         self.paths = SessionPaths(KEY, self.root)

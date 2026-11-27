@@ -36,9 +36,11 @@ def peak(path: Path) -> int:
 class SettingsTest(unittest.TestCase):
     def test_the_filter_is_the_one_the_config_can_switch_on(self) -> None:
         self.assertEqual(LEVEL_FILTERS, ("none", level.FILTER))
-        self.assertFalse(Config(language="de", root=Path("/data")).asr_levels)
-        on = Config(language="de", root=Path("/data"), asr_level_filter=level.FILTER)
-        self.assertTrue(on.asr_levels)
+        default = Config(language="de", root=Path("/data"))
+        self.assertEqual(default.asr_level_filter, level.FILTER)
+        self.assertTrue(default.asr_levels)
+        off = Config(language="de", root=Path("/data"), asr_level_filter="none")
+        self.assertFalse(off.asr_levels)
 
     def test_settings_name_chain_and_ffmpeg_version(self) -> None:
         tool = ToolInfo("ffmpeg", Path("ffmpeg"), "6.1.1")

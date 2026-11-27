@@ -426,7 +426,10 @@ def prepare(paths: SessionPaths, name: str, seed: int, config_path: Path) -> Non
     )
     settings = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     settings.setdefault("paths", {})["root"] = str(root)
-    settings.setdefault("asr", {}).update(model=spec.model, **spec.config)
+    # every root names the filter: the default is on, and only `norm` measures it
+    settings.setdefault("asr", {}).update(
+        model=spec.model, **{LEVEL_FILTER: "none", **spec.config}
+    )
     budget = dict.fromkeys(DEFAULT_KEYWORD_BUDGET, 0)  # every type, for pchw
     if spec.pc_only:
         settings.setdefault("knowledge", {})["keyword_budget"] = budget

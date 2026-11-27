@@ -1,10 +1,10 @@
 # TOOL-109 — Pegelausgleich als Hauptlauf: Messung an A bis K
 
-Stand 2026-11-27, Messung abgeschlossen, Entscheidung über den Default offen. Bericht zu [TOOL-109](../plans/TOOL-109-level-filter.md), Werkzeug: [`scripts/spike/asr.py`](../../scripts/spike/asr.py), Variante `norm`. Neu transkribiert wurden sechs Läufe von `norm` (zwei Sitzungen, Seeds 1 bis 3), alles lokal. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel.
+Stand 2026-11-27, Messung abgeschlossen, Entscheidung: `loudnorm` wird Default. Bericht zu [TOOL-109](../plans/TOOL-109-level-filter.md), Werkzeug: [`scripts/spike/asr.py`](../../scripts/spike/asr.py), Variante `norm`. Neu transkribiert wurden sechs Läufe von `norm` (zwei Sitzungen, Seeds 1 bis 3), alles lokal. Der Bericht enthält nur Kennzahlen: keine Transkriptauszüge, keine Namen, keinen Session-Schlüssel.
 
 ## Ergebnis
 
-**Der Filter der Pipeline liefert dasselbe wie der Filter des Spikes, und `norm` hat an A bis K das beste Mittel und den mildesten schlechtesten Fall der vier Kandidaten.** Die Entscheidung über den Default trifft die Projektverantwortliche ([Entscheidungstabelle](#entscheidungstabelle)).
+**Der Filter der Pipeline liefert dasselbe wie der Filter des Spikes, und `norm` hat an A bis K das beste Mittel und den mildesten schlechtesten Fall der vier Kandidaten.** Auf dieser Grundlage ist `loudnorm` Default geworden ([Entscheidungstabelle](#entscheidungstabelle), [Entscheidung](#entscheidung)).
 
 - **Pipeline gegen Spike:** Das gefilterte WAV der Pipeline ist in beiden Sitzungen Byte für Byte das WAV der Spike-Variante `loud`. Die Transkripte von `norm` und `loud` haben an allen elf Referenzen und in allen drei Seeds dieselben Zahlen für Ersetzungen, Auslassungen und Einfügungen ([Pipeline gegen Spike](#pipeline-gegen-spike)).
 - **WER:** `norm` ist an neun Referenzen besser als `base` (0,9 bis 38,8 Punkte) und an zwei schlechter (G 6,3 Punkte, I 3,1 Punkte). Mittel über die elf Referenzen 30,2 % gegen 37,8 % ([WER](#wer)).
@@ -181,4 +181,8 @@ Die Bewertung der Batched-Läufe ist nicht vergleichbar: Sie liefen ohne Diarisi
 
 ## Entscheidung
 
-Offen.
+**2026-11-27, Projektverantwortliche: `loudnorm` wird Default.** `asr.level_filter` steht ohne Angabe auf `loudnorm`; `none` bleibt als Option.
+
+- **Begründung:** bestes Mittel der vier Kandidaten (30,2 % gegen 37,8 % bei `base`), mildester schlechtester Fall (42,3 % gegen 74,8 %), an neun von elf Referenzen besser, Sprecherfehler mit Diarisierung auf dem Roh-WAV auf dem Stand von `base`.
+- **In Kauf genommen:** G und I werden um 6,3 und 3,1 Punkte schlechter; der erste Lauf je Roh-WAV braucht 5 bis 6 Minuten länger und das Audio den doppelten Platz.
+- **Folgen:** Gespeicherte Transkripte gelten als veraltet, `process` verlangt einmal `--redo transcribe`. Die Bewertung wird auf gefiltertem Audio nachgemessen ([Kalibrierung](TOOL-35-kalibrierung.md)). TOOL-114 bewertet Regel A mit dem neuen Hauptlauf neu.
