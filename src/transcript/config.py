@@ -110,12 +110,12 @@ class SimilarThresholds:
 class UncertaintyThresholds:
     """The rules that rate a passage (TOOL-35); start values until calibrated."""
 
-    word_low: float = 0.5  # a word below counts as low confidence
+    word_low: float = 0.8  # a word below counts as low confidence
     word_very_low: float = 0.2  # one word below makes the passage needs_review
     low_share_review: float = 0.2  # share of low words for needs_review
     low_share_uncertain: float = 0.5  # share of low words for uncertain
     no_speech_prob: float = 0.6  # at or above: likely not speech
-    avg_logprob: float = -1.0  # at or below: the decoder was unsure
+    avg_logprob: float = -0.5  # at or below: the decoder was unsure
     compression_ratio: float = 2.4  # at or above: repetitive output
     gap_ms: int = 2500  # longest silence between two words of a passage
     min_words_per_second: float = 1.0  # sparser speech may hide omitted words

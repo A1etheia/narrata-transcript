@@ -10,7 +10,7 @@ Stand 2026-11-27, Messung abgeschlossen, Entscheidung: `loudnorm` wird Default. 
 - **WER:** `norm` ist an neun Referenzen besser als `base` (0,9 bis 38,8 Punkte) und an zwei schlechter (G 6,3 Punkte, I 3,1 Punkte). Mittel über die elf Referenzen 30,2 % gegen 37,8 % ([WER](#wer)).
 - **Streuung:** Der schlechteste einzelne Lauf von `norm` liegt bei 45,0 % (G), der von `base` bei 88,8 % (J).
 - **Sprecherfehler:** Mit Diarisierung auf dem Roh-WAV liegt `norm` an fünf Referenzen über `base` (höchstens 1,6 Punkte), an fünf darunter, an einer gleich. Der Nachteil aus dem Spike an E (8,7 % gegen 5,3 %) schrumpft auf 6,0 % ([Sprecherfehler](#sprecherfehler)).
-- **Übersehene Fehler in `confident`-Passagen:** in Summe 325 gegen 385 bei `base`, aber an A, D, H und K mehr als `base`. Das Kriterium des Tickets hält damit nicht an jeder Referenz; bei Default `loudnorm` ist Chunk 5 nötig ([Bewertung](#bewertung)).
+- **Übersehene Fehler in `confident`-Passagen:** in Summe 325 gegen 385 bei `base`, aber an A, D, H und K mehr als `base`. Das Kriterium des Tickets hielt damit nicht an jeder Referenz. Mit den neuen Schwellen (`word_low` 0,8, `avg_logprob` −0,5) hält es überall, bei rund 9 bis 10 Punkten mehr markierter Zeit ([Bewertung](#bewertung), [Neumessung](TOOL-35-kalibrierung.md#neumessung-auf-gefiltertem-audio-tool-109)).
 - **Kosten:** rund 5 bis 6 Minuten Filterzeit je Segment von knapp 5 Stunden, einmalig je Roh-WAV, und der doppelte Platz für das Audio ([Filter](#filter)).
 
 ## Material und Methode
@@ -104,7 +104,7 @@ Seed 1. `norm` diarisiert auf dem Roh-WAV; die Sprecherwechsel stimmen deshalb z
 
 ## Bewertung
 
-Seed 1, heutige Schwellen. Die Seeds 2 und 3 laufen ohne Diarisierung und markieren in jeder Variante 95 bis 97 % der Zeit; sie sind für diese Tabelle nicht vergleichbar. Die Ursache ist hier nicht untersucht.
+Seed 1, Schwellen vor der Neumessung (`word_low` 0,5, `avg_logprob` −1,0). Die Seeds 2 und 3 laufen ohne Diarisierung und markieren in jeder Variante 95 bis 97 % der Zeit; sie sind für diese Tabelle nicht vergleichbar. Die Ursache ist hier nicht untersucht.
 
 | | `base` | `norm` | `loud` |
 | --- | --- | --- | --- |
@@ -130,7 +130,7 @@ Seed 1, heutige Schwellen. Die Seeds 2 und 3 laufen ohne Diarisierung und markie
 | K | 26 | 60 | 60 |
 | Summe | 385 | 325 | 307 |
 
-`norm` übersieht in Summe weniger als `base`, an A, D, H und K aber mehr (zusammen 155 gegen 56). Der Maßstab des Tickets („nicht über dem heutigen Stand von `base`“) ist in Summe erfüllt, je Referenz nicht. Wird `loudnorm` Default, misst Chunk 5 mit der Methode aus TOOL-35 nach.
+`norm` übersieht in Summe weniger als `base`, an A, D, H und K aber mehr (zusammen 155 gegen 56). Der Maßstab des Tickets („nicht über dem heutigen Stand von `base`“) ist in Summe erfüllt, je Referenz nicht. Die [Neumessung](TOOL-35-kalibrierung.md#neumessung-auf-gefiltertem-audio-tool-109) hat deshalb `word_low` auf 0,8 und `avg_logprob` auf −0,5 gesetzt: 130 übersehene Fehler, an keiner Referenz mehr als `base` zuvor, markierte Zeit 87,7 % und 90,3 %.
 
 ## Filter
 
@@ -185,4 +185,4 @@ Die Bewertung der Batched-Läufe ist nicht vergleichbar: Sie liefen ohne Diarisi
 
 - **Begründung:** bestes Mittel der vier Kandidaten (30,2 % gegen 37,8 % bei `base`), mildester schlechtester Fall (42,3 % gegen 74,8 %), an neun von elf Referenzen besser, Sprecherfehler mit Diarisierung auf dem Roh-WAV auf dem Stand von `base`.
 - **In Kauf genommen:** G und I werden um 6,3 und 3,1 Punkte schlechter; der erste Lauf je Roh-WAV braucht 5 bis 6 Minuten länger und das Audio den doppelten Platz.
-- **Folgen:** Gespeicherte Transkripte gelten als veraltet, `process` verlangt einmal `--redo transcribe`. Die Bewertung wird auf gefiltertem Audio nachgemessen ([Kalibrierung](TOOL-35-kalibrierung.md)). TOOL-114 bewertet Regel A mit dem neuen Hauptlauf neu.
+- **Folgen:** Gespeicherte Transkripte gelten als veraltet, `process` verlangt einmal `--redo transcribe`. Die Bewertung ist auf gefiltertem Audio nachgemessen, mit neuen Schwellen ([Kalibrierung](TOOL-35-kalibrierung.md#neumessung-auf-gefiltertem-audio-tool-109)). TOOL-114 bewertet Regel A mit dem neuen Hauptlauf neu.

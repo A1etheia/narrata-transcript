@@ -206,9 +206,9 @@ class ConfidenceTest(unittest.TestCase):
     def test_thresholds_come_from_the_configuration(self) -> None:
         reference = transcript(passage(words(0.6, 0.9, 0.9, 0.9)))
 
-        self.assertEqual(rate(reference).level, "confident")
-        strict = UncertaintyThresholds(word_low=0.7, low_share_review=0.25)
-        self.assertEqual(rate(reference, limits=strict).level, "needs_review")
+        self.assertEqual(rate(reference).level, "needs_review")
+        lenient = UncertaintyThresholds(word_low=0.5)
+        self.assertEqual(rate(reference, limits=lenient).level, "confident")
 
     def test_without_confidence_the_rule_does_not_fire(self) -> None:
         rating = rate(transcript(passage(words(None, None))))

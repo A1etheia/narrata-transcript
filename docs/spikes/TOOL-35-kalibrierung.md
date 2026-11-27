@@ -142,6 +142,59 @@ Nach Score-Band ist die Schreibung zu 67 % (< 0,9; 2 von 3), 71 % (0,9–0,95; 5
 
 Ein Nebenbefund betrifft Narrata: Das `recent`-Fenster folgt dem Ordinal, nicht dem Sitzungsdatum. Eine nachträglich erfasste, früher datierte Sitzung käme damit an der falschen Stelle ins Fenster. Das behebt [IOA-1284](https://alethe1a.atlassian.net/browse/IOA-1284), für diese Messung spielt es keine Rolle.
 
+## Neumessung auf gefiltertem Audio (TOOL-109)
+
+Stand 2026-11-27. Seit [TOOL-109](TOOL-109-hauptlauf.md) hört die Erkennung per Default pegelnormalisiertes Audio (`asr.level_filter: loudnorm`). Gemessen wurde an den elf Handreferenzen A bis K aus zwei Sitzungen, je Sitzung am Lauf mit Seed 1 und Diarisierung auf dem Roh-WAV, mit den Hinweisen des Laufs. Neu transkribiert wurde dafür nichts; die Bewertung wurde mit geänderten Schwellen neu gerechnet. Der Agent kennt nur Zählwerte.
+
+**Maßstab** aus dem Ticket: An keiner Referenz mehr Fehler in `confident`-Passagen als der Lauf ohne Filter mit den bisherigen Schwellen.
+
+**Ergebnis: `word_low` steigt von 0,5 auf 0,8, `avg_logprob` von −1,0 auf −0,5.** Das ist der Satz mit der kleinsten markierten Zeit, der den Maßstab an allen elf Referenzen hält. Die markierte Zeit steigt damit um rund 9 bis 10 Punkte.
+
+| | ohne Filter, bisherige Schwellen | mit Filter, bisherige Schwellen | mit Filter, neue Schwellen |
+| --- | --- | --- | --- |
+| Übersehene Fehler A | 5 | 11 | 2 |
+| B | 11 | 4 | 4 |
+| C | 77 | 67 | 41 |
+| D | 8 | 37 | 6 |
+| E | 35 | 15 | 3 |
+| F | 37 | 19 | 4 |
+| G | 45 | 17 | 15 |
+| H | 17 | 47 | 17 |
+| I | 52 | 24 | 6 |
+| J | 72 | 24 | 7 |
+| K | 26 | 60 | 25 |
+| Summe | 385 | 325 | 130 |
+| Referenzen über dem Maßstab | – | 4 (A, D, H, K) | 0 |
+| Markierte Zeit, Pilotsitzung | 79,2 % | 78,5 % | 87,7 % |
+| Markierte Zeit, zweite Sitzung | 80,9 % | 80,4 % | 90,3 % |
+| Markierte Zeit an den Referenzen | 76,9 % | 75,6 % | 86,0 % |
+
+**Weg dorthin.** Zuerst jede Schwelle einzeln, Lauf mit Filter:
+
+| Änderung | Summe | über dem Maßstab | markierte Zeit (Pilot / zweite) |
+| --- | --- | --- | --- |
+| keine | 325 | A, D, H, K | 78,5 % / 80,4 % |
+| `word_low` 0,6 / 0,7 / 0,8 | 242 / 202 / 147 | D, H, K / D, H, K / D | 80,6 / 83,2 / 87,6 % und 82,9 / 85,9 / 90,2 % |
+| `word_very_low` 0,3 / 0,4 / 0,5 | 202 / 164 / 115 | D, H, K / D, H, K / D, H | 83,2 / 87,2 / 90,1 % und 84,6 / 89,0 / 91,4 % |
+| `low_share_review` 0,15 / 0,1 / 0,05 | 287 / 238 / 156 | A, D, H, K / A, D, H, K / D, H, K | 79,5 / 82,6 / 87,4 % und 82,0 / 85,0 / 89,1 % |
+| `avg_logprob` −0,8 / −0,6 / −0,5 / −0,4 | 325 / 312 / 298 / 291 | A, D, H, K | 78,6 bis 79,6 % und 80,4 bis 81,2 % |
+| `compression_ratio` 2,2 / 2,0 / 1,8 | 319 / 319 / 281 | A, D, H, K | 78,6 bis 79,3 % und 80,4 bis 80,8 % |
+| `no_speech_prob` 0,4 / 0,2 | 325 / 325 | A, D, H, K | unverändert |
+| `gap_ms` 2000 / 1500 / 1000 | 315 / 294 / 258 | A, D, H, K | 81,0 / 82,9 / 84,6 % und 81,6 / 85,2 / 86,4 % |
+| `min_words_per_second` 1,5 / 2,0 / 2,5 | 316 / 287 / 230 | A, D, H, K / D, H, K / D, H, K | 80,8 / 85,6 / 91,9 % und 82,7 / 86,8 / 92,2 % |
+| `crosstalk_ms` 500 | 227 | D, H, K | 80,0 % / 82,0 % |
+
+- **Keine einzelne Schwelle reicht.** `word_low` 0,8 hält den Maßstab überall außer an D. An D sitzen die Fehler in Passagen mit hoher Wort-Confidence und schwachem `avg_logprob`: −0,5 senkt sie dort von 37 auf 17, zusammen mit `word_low` 0,8 auf 6, bei 0,1 Punkten mehr markierter Zeit. −0,55 wirkt gleich, −0,6 nicht mehr (17 an D).
+- **Kombinationen** aus `word_low` (0,5 / 0,7 / 0,8), `word_very_low` (0,2 / 0,4 / 0,5), `crosstalk_ms` (1000 / 500) und `avg_logprob` (−1,0 / −0,5): Sechs Sätze halten den Maßstab, alle mit `word_low` 0,8 und `avg_logprob` −0,5. Der gewählte hat die kleinste markierte Zeit; der nächste (`crosstalk_ms` 500 dazu) übersieht 97 statt 130 Fehler bei 88,3 % und 91,3 %.
+- **Knapp:** `word_low` 0,75 und 0,78 halten ihn an K nicht (29 und 28 gegen 26). An H (17 gegen 17) und K (25 gegen 26) liegt der gewählte Satz an der Grenze.
+- **Lauf ohne Filter mit den neuen Schwellen:** 128 übersehene Fehler, 89,3 % und 90,0 % markierte Zeit. Die neuen Schwellen sind also keine Eigenheit des gefilterten Audios; sie markieren in beiden Läufen etwa gleich viel.
+
+**Was das kostet.** Rund 88 bis 90 % der Zeit sind jetzt markiert. Die Bewertung grenzt die Review an diesen Sitzungen kaum noch ein; sie sagt eher, welches Zehntel man überspringen kann. Mit den bisherigen Schwellen wäre der Maßstab in Summe erfüllt gewesen (325 gegen 385), an A, D, H und K aber nicht. Wer die Review-Last niedriger halten will, setzt `review.uncertainty.word_low: 0.5` und `avg_logprob: -1.0` in der Konfiguration.
+
+**Folge für gespeicherte Bewertungen:** Sie gelten mit den neuen Schwellen als veraltet (`rating outdated`) und entstehen mit `transcript assess` neu, ohne neue Erkennung.
+
+**Vorbehalt:** elf Fenster aus zwei Sitzungen, fast alle dort gewählt, wo Läufe stark voneinander abweichen. Die markierte Zeit über das ganze Segment ist deshalb belastbarer als die Zahlen je Referenz.
+
 ## Parakeet als Zweitlauf
 
 Verglichen wurden Whisper und Parakeet TDT 0.6B v3 (Läufe aus TOOL-62). Wo Whisper Parakeet widerspricht, gilt die Whisper-Passage als markiert. Lässt Whisper ein Wort aus, wird das Nachbarwort markiert.
