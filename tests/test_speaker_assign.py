@@ -7,6 +7,7 @@ from pathlib import Path
 from test_candidates import _SessionCase
 from test_speakers import FIRST, NAME, PARTICIPANTS, SECOND, entry, participant
 
+from transcript.narrata import Character
 from transcript.speaker_assign import Console, queue, run
 from transcript.speaker_player import Played
 from transcript.speaker_samples import LabelSamples, Sample, ordered
@@ -276,6 +277,20 @@ class DialogueTest(_SessionCase):
         self.assertTrue(
             any(f"[3] {NAME} 11 (player, absent)" in p for p in script.said)
         )
+
+    def test_the_prompt_names_role_and_character_of_the_session(self) -> None:
+        gm = dataclasses.replace(PARTICIPANTS[0], session_role="gm")
+        plays = dataclasses.replace(
+            PARTICIPANTS[1], session_character=Character(21, "Brakk", ())
+        )
+        script = Script("s", "s", "s", "")
+
+        self.run_dialogue(script, participants=(gm, plays, PARTICIPANTS[2]))
+
+        prompt = next(line for line in script.said if "[1] " in line)
+        self.assertIn(f"[1] {NAME} 11 (gm tonight)", prompt)
+        self.assertIn(f"[2] {NAME} 12 (player, plays Brakk)", prompt)
+        self.assertIn(f"[3] {NAME} 13 (former)", prompt)
 
     def test_a_second_label_of_one_person_needs_a_yes(self) -> None:
         script = Script("1", "1", "n", "1", "y", "s", "")

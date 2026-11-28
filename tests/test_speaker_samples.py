@@ -5,15 +5,19 @@ from test_reference import minimal
 from test_session_time import MANIFEST
 from test_speakers import NAME, PARTICIPANTS, entry, segment
 
+from transcript.narrata import Character
 from transcript.reference import Diarization, Passage, SegmentRef, Word
 from transcript.speaker_samples import (
     MERGE_SHARE,
     SAMPLES_PER_LABEL,
     label_samples,
+    person_note,
     render,
     speech_ms,
 )
 from transcript.speakers import SpeakerAssignment, check
+
+TONIGHT = Character(21, "Brakk der Beispielhafte", ())  # made up
 
 # Every word below is made up.
 A, B = "SPEAKER_00", "SPEAKER_01"
@@ -150,6 +154,73 @@ class RenderTest(unittest.TestCase):
 
         self.assertIn(f"| 11 | {NAME} 11 | player | active, absent |", sheet)
         self.assertLess(sheet.index(f"{NAME} 13"), sheet.index(f"{NAME} 11"))
+
+    def test_role_and_character_of_the_session_get_their_columns(self) -> None:
+        gm = dataclasses.replace(PARTICIPANTS[0], session_role="gm")
+        plays = dataclasses.replace(PARTICIPANTS[1], session_character=TONIGHT)
+        participants = (gm, plays, PARTICIPANTS[2])
+
+        sheet = render(
+            minimal().key,
+            (),
+            participants,
+            check(SpeakerAssignment(), (), participants),
+        )
+
+        self.assertIn(
+            "| user_id | name | role | membership | role tonight | plays tonight |",
+            sheet,
+        )
+        self.assertIn(f"| 11 | {NAME} 11 | player | active | gm |  |", sheet)
+        self.assertIn(
+            f"| 12 | {NAME} 12 | player | active |  | {TONIGHT.name} |", sheet
+        )
+        self.assertIn(f"| 13 | {NAME} 13 | player | former |  |  |", sheet)
+
+    def test_without_a_session_note_the_sheet_has_no_new_columns(self) -> None:
+        sheet = render(
+            minimal().key,
+            (),
+            PARTICIPANTS,
+            check(SpeakerAssignment(), (), PARTICIPANTS),
+        )
+
+        self.assertIn("| user_id | name | role | membership |\n", sheet)
+        self.assertNotIn("tonight", sheet)
+
+
+class PersonNoteTest(unittest.TestCase):
+    def test_note_without_a_session_reads_as_before(self) -> None:
+        [active, _, former] = PARTICIPANTS
+        absent_gm = dataclasses.replace(active, role="gm", present=False)
+
+        self.assertEqual(
+            [person_note(p) for p in (active, former, absent_gm)],
+            ["player", "former", "gm, absent"],
+        )
+
+    def test_note_names_role_and_character_of_the_session(self) -> None:
+        [active, _, former] = PARTICIPANTS
+
+        self.assertEqual(
+            [
+                person_note(dataclasses.replace(active, session_role="gm")),
+                person_note(
+                    dataclasses.replace(
+                        former,
+                        session_role="player",
+                        session_character=TONIGHT,
+                        present=False,
+                    )
+                ),
+                person_note(dataclasses.replace(active, session_character=TONIGHT)),
+            ],
+            [
+                "gm tonight",
+                f"former, player tonight, plays {TONIGHT.name}, absent",
+                f"player, plays {TONIGHT.name}",
+            ],
+        )
 
 
 if __name__ == "__main__":

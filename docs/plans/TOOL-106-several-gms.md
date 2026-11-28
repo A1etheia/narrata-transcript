@@ -62,7 +62,7 @@ Eine Runde mit zwei Spielleitungen (SL) soll im Export zwei Sprecher-Labels habe
 
 ### Chunk 4 — Rolle und Figur des Abends in der Sprecherführung
 - Dateien: `src/transcript/speaker_assign.py`, `src/transcript/speaker_samples.py`, `src/transcript/__main__.py`, Tests `tests/test_speaker_assign.py`, `tests/test_speaker_samples.py`; README bzw. `docs/ablauf.md`, wo die Kontextfelder oder die `context`-Ausgabe beschrieben sind
-- Änderung: Die Dialogzeile zeigt `role_tonight` und, wenn gesetzt, die Figur des Abends (z. B. `(gm tonight, plays …)`, die genaue Form legt der Test fest). Die `samples.md`-Tabelle bekommt Spalten für Rolle und Figur des Abends. Die Zusammenfassung von `context` zählt SL nach `role_tonight` und nennt, wie viele Einträge eine Sitzungsrolle oder -figur tragen. Die Reihenfolge der Personen bleibt (anwesend zuerst).
+- Änderung: Die Dialogzeile zeigt `role_tonight` und, wenn gesetzt, die Figur des Abends (z. B. `(gm tonight, plays …)`, die genaue Form legt der Test fest). Die `samples.md`-Tabelle bekommt Spalten für Rolle und Figur des Abends, aber nur, wenn jemand eine davon trägt, damit ein älterer Kontext dasselbe Blatt ergibt. Die Zusammenfassung von `context` zählt SL nach `role_tonight` und nennt, wie viele Einträge eine Sitzungsrolle oder -figur tragen. Die Reihenfolge der Personen bleibt (anwesend zuerst).
 - Verify: `scripts/check`; danach manuell im interaktiven Terminal: `context` für 022 holt den 1.5-Kontext und zeigt die neuen Zähler, `speakers --assign --all` zeigt die Rolle des Abends
 - AC: Wer an dem Abend SL war und welche Figur jemand führte, sieht man beim Zuordnen. Fehlt das Feld, bleibt die Ausgabe wie bisher.
 
