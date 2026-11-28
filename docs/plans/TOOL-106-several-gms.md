@@ -67,7 +67,8 @@ Eine Runde mit zwei Spielleitungen (SL) soll im Export zwei Sprecher-Labels habe
 - AC: Wer an dem Abend SL war und welche Figur jemand führte, sieht man beim Zuordnen. Fehlt das Feld, bleibt die Ausgabe wie bisher.
 
 ## Folge-Tickets
-- Verwechslung SL↔SL durch die Diarisierung, falls Chunk 2 sie über dem Schwellwert misst: Key oder `[kein Ticket: …]` wird in Chunk 2 nach der Messung eingetragen.
+- Verwechslung SL↔SL durch die Diarisierung `[kein Ticket: Chunk 2 misst 0,8 % bzw. 5,6 %, unter dem Sprecherfehler aus TOOL-96; siehe docs/spikes/TOOL-106-spielleitungen.md]`.
+- Wörter von SL 1 unter Labels der Mitspielenden (24 %) `[kein Ticket: allgemeiner Sprecherfehler, kein Problem zweier SL; TOOL-105 misst ihn neu]`.
 - `session_character` im ASR-Prompt bzw. in den Hotwords `[kein Ticket: nicht verlangt; erst sinnvoll, wenn eine Sitzung eine Figur führt, die nicht in characters steht, und das würde das Erkennungsergebnis bestehender Läufe verschieben]`.
 - Rückwirkende Trennung bereits importierter Sitzungen `[kein Ticket: laut Ticket Abgrenzung; 022 ist schon getrennt, Re-Export und Re-Import genügen]`.
 - Roadmap: den Aufwand von TOOL-106 von 0,5 auf 1 Tag anheben `[kein Ticket: erledigt /close-ticket in transcript-roadmap.py]`.

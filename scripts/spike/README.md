@@ -440,3 +440,22 @@ Die Konsole bekommt Zähler, Anteile und Zeiten, nie Text, Tokens, Namen oder Sp
 - **Zuletzt** je Einstellung die Summe über die Referenzen des Aufrufs, je Referenz das Mittel der Läufe. Die Go-Regel zählt über beide Sitzungen; die Summen der beiden Aufrufe werden addiert.
 - **`--sample N`** zieht mit festem Zufallswert N Stellen (2 s, 1 s Brücke) aus Seed 1, die kein Fenster aus `--clip` berühren, und schreibt je Stelle ein Zeitfenster mit 3 s Rand.
 - **`--sampled`** zählt aus, was getippt wurde: „Sprache fehlt“, wenn gegen die Wörter des Laufs im Fenster mindestens 2 getippte Wörter ausgelassen sind; „keine Sprache“, wenn das so vermerkt ist; sonst „Sprache vom Lauf erkannt“.
+
+# Spielleitungs-Messung (TOOL-106)
+
+Misst, ob die Passagen zweier Spielleitungen nach Label trennbar sind. `gms.py` nimmt die Zuordnung wie der Export (`speakers.check`) und nutzt Clips und `best_mapping` aus `denoise.py`. Plan: [`TOOL-106`](../../docs/plans/TOOL-106-several-gms.md), Bericht: [`docs/spikes/TOOL-106-spielleitungen.md`](../../docs/spikes/TOOL-106-spielleitungen.md).
+
+## Datenschutz
+
+Das Skript schreibt nichts. Es liest Transkripte, Zuordnung und Snapshot unter `work/<gruppe>/<ordinal>/` sowie die Handreferenzen aus `review/calibration/`. Die Konsole bekommt nur Zähler und Anteile. Die SL heißen `GM 1` und `GM 2`, nach Passagenzeit geordnet. Namen, IDs, Labels, Text und die Zeitfenster der Clips gibt es nicht aus.
+
+## Ablauf
+
+```bash
+.venv/bin/python scripts/spike/gms.py $S [--clip NAME=DATEI@H:MM:SS-H:MM:SS]… [--config PATH]
+```
+
+- **Voraussetzung:** Alle Segmente sind transkribiert und diarisiert, die Zuordnung liegt vor, der Snapshot nennt mindestens zwei SL (`role`). Ohne Modell, wenige Sekunden.
+- **Ausgabe:** zwei Markdown-Tabellen.
+  - *Sitzung:* Labels, Passagen, Anteil und Passagenzeit je SL, Mitspielende und ohne Person, wie der Export sie zeigt. Dazu die Zahl der Zuordnungseinträge, die nicht angewendet werden.
+  - *Handreferenzen:* Je Clip und SL werden die exakt erkannten Wörter gezählt (Hand-Sprecher 1:1 auf Personen, die meisten Wörter stimmen) und danach aufgeteilt, unter wem sie stehen: gleiche SL, andere SL, Mitspielende, ohne Person. Zuletzt die Summe über alle Clips.
