@@ -532,6 +532,30 @@ class ContextCommandTest(unittest.TestCase):
         self.assertNotIn(NAME, stdout + stderr)
         self.assertNotIn(CHARACTER, stdout + stderr)
 
+    def test_gms_of_the_session_are_counted_without_names(self) -> None:
+        tonight = {"person_id": 21, "name": CHARACTER, "aliases": []}
+        self.narrata.body = encoded(
+            context(
+                participants=[
+                    participant(user_id=7, role="gm", session_role="player"),
+                    participant(user_id=8, session_role="gm"),
+                    participant(
+                        user_id=9, session_role="gm", session_character=tonight
+                    ),
+                ]
+            )
+        )
+
+        code, stdout, stderr = self.context()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "3 participant(s) (2 gm, 0 former, 0 present, 0 absent), 0 character(s), "
+            "3 session role(s), 1 session character(s)",
+            stdout,
+        )
+        self.assertNotIn(CHARACTER, stdout + stderr)
+
     def test_invalid_participants_keep_the_stored_file(self) -> None:
         code, _, stderr = self.context()
         self.assertEqual(code, 0, stderr)

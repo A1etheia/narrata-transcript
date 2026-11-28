@@ -23,8 +23,8 @@ from transcript.session import SessionPaths
 from transcript.speaker_player import Played, sample_ms
 from transcript.speaker_samples import (
     LabelSamples,
-    absent_note,
     ordered,
+    person_note,
     sample_line,
 )
 from transcript.speakers import AssignmentEntry, SpeakerAssignment, SpeakerMap, UserId
@@ -101,9 +101,7 @@ class _Dialogue:
         # shown at every prompt, so no one scrolls back for the numbers
         self.help_assign = _HELP_ASSIGN.format(
             people=" · ".join(
-                f"[{number}] {person.display_name} "
-                f"({'former' if person.is_former else person.role}"
-                f"{absent_note(person)})"
+                f"[{number}] {person.display_name} ({person_note(person)})"
                 for number, person in enumerate(self.people, start=1)
             )
         )

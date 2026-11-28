@@ -143,6 +143,20 @@ class CheckTest(unittest.TestCase):
         # the same person in another segment is normal and no warning
         self.assertEqual([(s.segment, s.labels) for s in found.splits], [(1, 2)])
 
+    def test_two_gms_stay_two_people_in_one_segment(self) -> None:
+        # TOOL-106: one label each, never merged by their shared role
+        gms = tuple(dataclasses.replace(p, role="gm") for p in PARTICIPANTS[:2])
+        assignment = SpeakerAssignment(
+            (entry(FIRST, "SPEAKER_00", 11), entry(FIRST, "SPEAKER_01", 12))
+        )
+
+        found = check(assignment, [FIRST], gms)
+
+        self.assertEqual(
+            found.persons(), {11: ((1, "SPEAKER_00"),), 12: ((1, "SPEAKER_01"),)}
+        )
+        self.assertEqual(found.splits, ())
+
     def test_a_former_participant_can_be_chosen(self) -> None:
         found = check(
             SpeakerAssignment((entry(SECOND, "SPEAKER_00", 13),)),

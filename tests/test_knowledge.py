@@ -29,6 +29,7 @@ from transcript.knowledge import (
 )
 from transcript.narrata import (
     SESSION_TERM,
+    Character,
     GlossaryEntry,
     Relevance,
     SessionTerm,
@@ -424,6 +425,40 @@ class SnapshotTest(unittest.TestCase):
             [p.get("present", "left out") for p in stored["participants"]],
             ["left out", "left out", False],
         )
+
+    def test_role_and_character_of_the_session_survive_the_snapshot(self) -> None:
+        tonight = {"person_id": 21, "name": CHARACTER, "aliases": ["Brakk"]}
+        self.store(
+            participants=[
+                participant_json(user_id=1, session_role="gm"),
+                participant_json(user_id=2, session_character=tonight),
+            ]
+        )
+        self.build()
+
+        [gm, player] = load_snapshot(self.paths).participants
+
+        self.assertEqual((gm.role_tonight, gm.session_character), ("gm", None))
+        self.assertEqual(player.session_role, None)
+        self.assertEqual(player.session_character, Character(21, CHARACTER, ("Brakk",)))
+
+    def test_unset_session_fields_are_left_out_of_the_file(self) -> None:
+        # a context before 1.5 stores what it stored before TOOL-106, so it
+        # keeps its snapshot_id; both fields null store the same
+        self.store(participants=[participant_json(user_id=1)])
+        self.build()
+        before_1_5 = self.stored_snapshot()["participants"]
+
+        self.store(
+            participants=[
+                participant_json(user_id=1, session_role=None, session_character=None)
+            ]
+        )
+        self.build()
+
+        self.assertEqual(self.stored_snapshot()["participants"], before_1_5)
+        self.assertNotIn("session_role", before_1_5[0])
+        self.assertNotIn("session_character", before_1_5[0])
 
     def test_resigned_snapshot_with_invalid_content_names_the_field(self) -> None:
         self.store(glossary=[glossary_entry(id=5, name=MARKER)], asr_ambiguities=[])

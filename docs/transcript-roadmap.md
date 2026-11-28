@@ -7,7 +7,7 @@ Stand 2026-11-28, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 - **Eine Person, ein Zeitbudget.** TOOL- und IOA-Tickets konkurrieren um dieselben Tage; der Plan ist deshalb eine *lineare* Folge. Echte Parallelität gibt es nur dort, wo ASR-Läufe oder Modell-Downloads im Hintergrund laufen — dann wird am Narrata-Ticket derselben Phase gearbeitet.
 - **Kapazität: 3 Entwicklungstage pro Woche**, Start 23.11.2026, Pause 21.12.2026–03.01.2027. Das ist der Umrechnungsfaktor für die Kalenderspalte, nicht Teil des Plans — ändert sich die Kapazität, verschieben sich nur die Daten, nicht die Reihenfolge.
 - **Aufwände sind Entwicklungstage in 0,5er-Schritten**, grob geschätzt aus den Ticket-Beschreibungen. Sie dienen der Reihenfolge und den Meilenstein-Abständen; keine Zusage.
-- **Offener Umfang: 2 Entwicklungstage** ≈ 1 Wochen → letzter Meilenstein 24.11.2026; erledigt 83.5 Tage.
+- **Offener Umfang: 1.5 Entwicklungstage** ≈ 1 Wochen → letzter Meilenstein 24.11.2026; erledigt 84.5 Tage.
 - **Neu terminiert am 17.11.2026, Qualität zuerst, fortgeschrieben am 21.11.2026:** Erledigte Tickets belegen keine Tage mehr und tragen kein Datum; die offenen Tickets beginnen am ersten Arbeitstag ab heute, angeführt von der Erkennungsqualität (TOOL-93, TOOL-96) vor dem Pilot-Review (TOOL-60). Nach dem Backlog-Review vom 21.11.2026 folgt die Pipeline-Nacharbeit aus TOOL-60 (TOOL-81, 99, 90, 84, 79) vor den Reflexionspunkten TOOL-85 und TOOL-87. Die Narrata-Nacharbeit aus Epic IOA-1297 (Korrektur, IT/OT, Lesefassung) steht nicht in dieser Folge und konkurriert um dieselben Tage. Am 22.11.2026 kam Phase 9 dazu (Epic TOOL-100): Die ausgelassenen Wörter sind das größte Qualitätsproblem, die Spikes TOOL-101 bis TOOL-105 folgen auf TOOL-87.
 - Nicht eingeplant: die Epics selbst, zurückgestellte Tickets (TOOL-82 bis IOA-1326, TOOL-110 Fine-Tuning-Spike erst nach IOA-1302 und geprüften Referenzfenstern, TOOL-111 Modellbeobachtung ohne festen Termin, alle drei bis sechs Monate oder zusammen mit TOOL-82, Label `transcript-v0.2`), verworfene Tickets (TOOL-114 nach TOOL-113, Regel A mit `norm` als Hauptlauf unter der Go-Regel; TOOL-14 nach TOOL-60;TOOL-88 nach dem Backlog-Review, Review wandert nach Narrata;TOOL-21–32, 34; TOOL-3, 7; TOOL-11, 33 nach TOOL-62; TOOL-78 nach TOOL-59; Epic TOOL-65 mit TOOL-70–75, IT/OT nach Narrata verlegt in Epic IOA-1297), in andere aufgenommene Tickets (TOOL-77 in TOOL-57).
 
@@ -33,7 +33,7 @@ Stand 2026-11-28, generiert von `transcript-roadmap.py` (Reihenfolge und Aufwän
 | M6 | Erste Welt-Archiv-Einträge mit Transkript-Provenienz; IT/OT-Statistik und Abendvergleich sichtbar | Phase 6 | erledigt | 5 |
 | M7 | Entscheidung, ob und wie andere Narrata-Nutzer ihre Aufnahmen transkribieren können | Phase 7 | erledigt | 0.5 |
 | M8 | Konzept für Stimmprofile mit Einwilligung pro Spielrunde, Go/No-Go | Phase 8 | erledigt | 1 |
-| M9 | Auslassungen verortet und die offenen Hebel gemessen (Epic TOOL-100) | Phase 9 | 23.11.2026 – 24.11.2026 | 11 |
+| M9 | Auslassungen verortet und die offenen Hebel gemessen (Epic TOOL-100) | Phase 9 | 23.11.2026 – 24.11.2026 | 11.5 |
 
 ## Reflexionspunkte
 
@@ -206,7 +206,7 @@ Start/Ende der offenen Tickets sind in Jira als Start date / Due date gespiegelt
 | TOOL-113 | Spike: auffälliges Stück mit Fallback neu dekodieren statt zweitem vollen Lauf | 1 | — | — | erledigt: `docs/spikes/TOOL-113-stellen.md`; Ergebnis No-Go nach Stufe 1, Neu-Dekodieren (Stufe 2) entfiel, keine Umsetzungstickets; harte Obergrenze erreicht nur an J 3 Punkte; Regel A mit `norm` als Hauptlauf bringt nur an J 2,5 Punkte, TOOL-114 verworfen |
 | TOOL-107 | Spike: Hinweis „Sprache ohne Wörter“ gegen `gap` und `sparse` messen | 1 | — | — | erledigt: `docs/spikes/TOOL-107-sprache-ohne-woerter.md`; Ergebnis Go mit bewusster Abweichung von der Go-Regel (Zusatznutzen 40,8 % statt 50 %, Treffsicherheit 19 von 20, Kosten 0,3 und 0,4 Punkte), Umsetzung in TOOL-116 |
 | TOOL-116 | Bewertung: Hinweis „Sprache ohne Wörter“ als eigener Grund | 1 | 23.11.2026 | 23.11.2026 | aus TOOL-107; aus TOOL-107: Stellen zwischen zwei Passagen, `missing` ohne Diarisierung, Sprachbereiche im Referenzformat, Contract-Marker, gekappte Wortlänge mit eigener Stichprobe |
-| TOOL-106 | Mehrere Spielleitungen im Export als getrennte Sprecher führen | 0.5 | 24.11.2026 | 24.11.2026 | Epic TOOL-45; Export-Korrektheit, beide SL erscheinen in Narrata nur als „SL“; unabhängig, bei Bedarf vorziehen |
+| TOOL-106 | Mehrere Spielleitungen im Export als getrennte Sprecher führen | 1 | — | — | erledigt: `docs/spikes/TOOL-106-spielleitungen.md`; zwei SL sind zwei Sprecher mit eigener Person, Rolle und Figur des Abends stehen im Dialog |
 | TOOL-105 | Messung: Sitzung mit geänderter Aufnahme am Tisch gegen eine Handreferenz | 0.5 | 24.11.2026 | 24.11.2026 | braucht die Gruppe, Hardware und einen Spielabend, das Datum ist deshalb nur ein Platzhalter; wenn möglich mit dem bisherigen Mikrofon parallel aufnehmen; Handreferenz von der Projektverantwortlichen (20–30 min); aus TOOL-60 und TOOL-93: Mikrofon-Empfehlung bisher nur dokumentiert; aus TOOL-101: Reihenfolge und Begründung im Kommentar an TOOL-100 |
 
 ## Pflege

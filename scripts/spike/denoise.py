@@ -438,6 +438,18 @@ def _wder(
     `label_of` picks the label each word is scored with: by default its own
     diarization label, TOOL-96 also scores the label of its passage.
     """
+    pairs = clip_pairs(reference, hand, clip, label_of)
+    share = _mapped_share(pairs)
+    return (None, 0) if share is None else (1 - share, sum(pairs.values()))
+
+
+def clip_pairs(
+    reference: ReferenceTranscript,
+    hand: calibration.HandReference,
+    clip: HandClip,
+    label_of: Callable[[Word, Passage], str | None],
+) -> Counter[tuple[str, str]]:
+    """(hand speaker, label) per word in `clip` recognised exactly; None is left out."""
     texts: list[str] = []
     labels: list[str | None] = []
     for passage in reference.passages:
@@ -457,8 +469,7 @@ def _wder(
             label = labels[block.b + n]
             if label is not None:
                 pairs[(hand.speakers[block.a + n], label)] += 1
-    share = _mapped_share(pairs)
-    return (None, 0) if share is None else (1 - share, sum(pairs.values()))
+    return pairs
 
 
 def best_mapping(

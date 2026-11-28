@@ -36,6 +36,7 @@ from transcript.jsonfile import (
 from transcript.narrata import (
     RELEVANCE_TIERS,
     SESSION_TERM,
+    Character,
     GlossaryEntry,
     NarrataContextError,
     NarrataGlossary,
@@ -298,22 +299,35 @@ def _sha256(data: bytes) -> str:
 
 
 def _participant_json(participant: Participant) -> dict[str, Any]:
-    """Unknown attendance is left out, so a context before 1.3 keeps its snapshot_id."""
-    attendance = {} if participant.present is None else {"present": participant.present}
+    """Unset fields of later contracts are left out.
+
+    So a context before 1.3 (`present`) or 1.5 (`session_role`,
+    `session_character`) keeps its snapshot_id.
+    """
+    session: dict[str, Any] = {}
+    if participant.present is not None:
+        session["present"] = participant.present
+    if participant.session_role is not None:
+        session["session_role"] = participant.session_role
+    if participant.session_character is not None:
+        session["session_character"] = _character_json(participant.session_character)
     return {
         "user_id": participant.user_id,
         "display_name": participant.display_name,
         "role": participant.role,
         "is_former": participant.is_former,
-        **attendance,
+        **session,
         "characters": [
-            {
-                "person_id": character.person_id,
-                "name": character.name,
-                "aliases": list(character.aliases),
-            }
-            for character in participant.characters
+            _character_json(character) for character in participant.characters
         ],
+    }
+
+
+def _character_json(character: Character) -> dict[str, Any]:
+    return {
+        "person_id": character.person_id,
+        "name": character.name,
+        "aliases": list(character.aliases),
     }
 
 

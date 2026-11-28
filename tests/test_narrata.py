@@ -233,6 +233,37 @@ class ParticipantsTest(unittest.TestCase):
 
         self.assertEqual([p.present for p in loaded], [True, False, None, True])
 
+    def test_role_and_character_of_the_session_override_the_group(self) -> None:
+        tonight = {"person_id": 21, "name": CHARACTER, "aliases": ["Brakk"]}
+        loaded = self.load(
+            [
+                participant(user_id=1, role="player", session_role="gm"),
+                participant(
+                    user_id=2,
+                    characters=[{"person_id": 19, "name": "Ilse Erdacht"}],
+                    session_character=tonight,
+                ),
+                participant(user_id=3, session_role=None, session_character=None),
+                participant(user_id=4, role="gm"),  # before contract 1.5
+            ]
+        )
+
+        self.assertEqual(
+            [(p.role, p.session_role, p.role_tonight) for p in loaded],
+            [
+                ("player", "gm", "gm"),
+                ("player", None, "player"),
+                ("player", None, "player"),
+                ("gm", None, "gm"),
+            ],
+        )
+        self.assertEqual(
+            [p.session_character for p in loaded],
+            [None, Character(21, CHARACTER, ("Brakk",)), None, None],
+        )
+        # the character of the session may be one the group link no longer lists
+        self.assertEqual([c.person_id for c in loaded[1].characters], [19])
+
     def test_origin_is_kept(self) -> None:
         store_context(self.paths, encoded(context()))
 
@@ -280,6 +311,16 @@ class ParticipantsTest(unittest.TestCase):
             ([participant(is_former=None)], "participants[0].is_former"),
             ([participant(present=NAME)], "participants[0].present"),
             ([participant(present=1)], "participants[0].present"),
+            ([participant(session_role=NAME)], "participants[0].session_role"),
+            ([participant(session_role=True)], "participants[0].session_role"),
+            (
+                [participant(session_character=CHARACTER)],
+                "participants[0].session_character is not an object",
+            ),
+            (
+                [participant(session_character={**character, "name": ""})],
+                "participants[0].session_character.name",
+            ),
             ([participant(characters={})], "participants[0].characters"),
             ([participant(characters=[CHARACTER])], "characters[0] is not an object"),
             (

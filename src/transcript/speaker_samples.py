@@ -130,7 +130,18 @@ def render(
     participants: Sequence[Participant],
     assignment: SpeakerMap,
 ) -> str:
-    """The sheet as Markdown."""
+    """The sheet as Markdown.
+
+    The columns of this session (context 1.5) appear only when the GM noted a
+    role or character for someone, so an older context gives the same sheet.
+    """
+    tonight = any(
+        p.session_role is not None or p.session_character is not None
+        for p in participants
+    )
+    columns = ["user_id", "name", "role", "membership"]
+    if tonight:
+        columns += ["role tonight", "plays tonight"]
     lines = [
         f"# Speakers of {key}",
         "",
@@ -138,15 +149,22 @@ def render(
         "",
         "## Participants",
         "",
-        "| user_id | name | role | membership |",
-        "| --- | --- | --- | --- |",
+        "| " + " | ".join(columns) + " |",
+        "|" + " --- |" * len(columns),
     ]
     for participant in ordered(participants):
         membership = "former" if participant.is_former else "active"
-        lines.append(
+        row = (
             f"| {participant.user_id} | {_cell(participant.display_name)} "
             f"| {participant.role} | {membership}{absent_note(participant)} |"
         )
+        if tonight:
+            character = participant.session_character
+            row += (
+                f" {participant.session_role or ''} "
+                f"| {'' if character is None else _cell(character.name)} |"
+            )
+        lines.append(row)
     segment = None
     for found in labels:
         if found.segment != segment:
@@ -187,6 +205,22 @@ def ordered(participants: Iterable[Participant]) -> tuple[Participant, ...]:
 def absent_note(participant: Participant) -> str:
     """`, absent` for someone Narrata marks absent; otherwise nothing."""
     return ", absent" if participant.is_absent else ""
+
+
+def person_note(participant: Participant) -> str:
+    """Role, what the GM noted for this session, and absence, e.g. `gm tonight`.
+
+    Without a role or character of the session it reads as before context 1.5:
+    `player`, `former`, `gm, absent`.
+    """
+    notes = ["former"] if participant.is_former else []
+    if participant.session_role is not None:
+        notes.append(f"{participant.session_role} tonight")
+    elif not participant.is_former:
+        notes.append(participant.role)
+    if participant.session_character is not None:
+        notes.append(f"plays {participant.session_character.name}")
+    return ", ".join(notes) + absent_note(participant)
 
 
 def _summary(found: LabelSamples, assignment: SpeakerMap) -> str:

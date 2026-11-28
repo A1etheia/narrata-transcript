@@ -536,11 +536,12 @@ def _context(raw_key: str, config_path: Path, from_file: Path | None) -> int:
     )
     print(
         f"  {len(participants)} participant(s) "
-        f"({sum(p.role == 'gm' for p in participants)} gm, "
+        f"({sum(p.role_tonight == 'gm' for p in participants)} gm, "
         f"{sum(p.is_former for p in participants)} former, "
         f"{sum(p.is_present for p in participants)} present, "
         f"{sum(p.is_absent for p in participants)} absent), "
         f"{sum(len(p.characters) for p in participants)} character(s)"
+        f"{_tonight_summary(participants)}"
     )
     print(
         f"  {_tier_summary(glossary)}, "
@@ -564,6 +565,15 @@ def _warn_if_snapshot_differs(paths: SessionPaths, config: Config) -> None:
         return
     if changed.context_changed:
         print(_SNAPSHOT_BEHIND, file=sys.stderr)
+
+
+def _tonight_summary(participants: Sequence[narrata.Participant]) -> str:
+    """What the GM noted for this session (context 1.5); nothing if nothing."""
+    roles = sum(p.session_role is not None for p in participants)
+    characters = sum(p.session_character is not None for p in participants)
+    if not roles and not characters:
+        return ""
+    return f", {roles} session role(s), {characters} session character(s)"
 
 
 def _beside_glossary(glossary: narrata.NarrataGlossary) -> str:
