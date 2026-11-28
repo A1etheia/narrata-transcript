@@ -15,7 +15,7 @@ Eine Runde mit zwei Spielleitungen (SL) soll im Export zwei Sprecher-Labels habe
 
 ## Entscheidungen
 - **Keine Änderung an Export, Zuordnung oder Diarisierung.** Sie trennen schon richtig. Ein Regressionstest hält fest, dass zwei SL zwei Labels mit je eigener `participant_id` bleiben.
-- **Umfang inklusive Kontext 1.5** (so mit der Projektverantwortlichen entschieden). `Participant` bekommt `session_role: Role | None` und `session_character: Character | None` sowie die Properties `role_tonight` (`session_role` oder `role`) und `character_tonight`. Gruppenweite `role` und `characters` bleiben unverändert.
+- **Umfang inklusive Kontext 1.5** (so mit der Projektverantwortlichen entschieden). `Participant` bekommt `session_role: Role | None` und `session_character: Character | None` sowie die Property `role_tonight` (`session_role` oder `role`). Für die Figur gibt es keinen Rückfall auf eine einzelne Figur, weil `characters` eine Liste ist; deshalb wird `session_character` direkt gelesen. Gruppenweite `role` und `characters` bleiben unverändert.
 - **Verwendung nur in der Sprecherführung:** Dialog, `samples.md`, Zusammenfassung von `context`. Das ASR-Prompt und die Hotwords ändern sich nicht. Sonst würde sich das Erkennungsergebnis bestehender Läufe verschieben, und das hat der Übergabe-Kommentar nicht verlangt.
 - **Messung mit Kennzahlen.** Für jede Handreferenz-Fenster mit beiden SL wird gezählt, wie viele exakt erkannte Wörter jeder SL unter einem Label der jeweils anderen SL stehen (Verwechslung SL↔SL) bzw. unter einem Label von Mitspielenden. Hand-Sprecher werden Personen über `best_mapping` zugeordnet, nicht über Namen. Die Rolle kommt aus dem Snapshot. Die beiden SL heißen im Bericht „SL 1“ und „SL 2“, sortiert nach Sprechanteil.
 
@@ -56,7 +56,7 @@ Eine Runde mit zwei Spielleitungen (SL) soll im Export zwei Sprecher-Labels habe
 
 ### Chunk 3 — Kontext 1.5 lesen und im Snapshot halten
 - Dateien: `src/transcript/narrata.py`, `src/transcript/knowledge.py`, `tests/test_narrata.py`, `tests/test_knowledge.py`
-- Änderung: `Participant.session_role` und `.session_character` (Default `None`) sowie die Properties `role_tonight` und `character_tonight`. `_participant` validiert beide Felder (`session_role` in `_ROLES` oder `null`, `session_character` über `_character` oder `null`). Den Docstring auf 1.5 nachziehen. `_participant_json` schreibt beide nur, wenn sie gesetzt sind. Tests: 1.5 mit gesetzten Feldern, mit `null`, ohne Felder (1.4), falscher Typ wird abgelehnt, der Snapshot hält die Werte über einen Round-Trip, und ohne Felder bleibt die `snapshot_id` gleich.
+- Änderung: `Participant.session_role` und `.session_character` (Default `None`) sowie die Property `role_tonight`. `_participant` validiert beide Felder (`session_role` in `_ROLES` oder `null`, `session_character` über `_character` oder `null`). Den Docstring auf 1.5 nachziehen. `_participant_json` schreibt beide nur, wenn sie gesetzt sind. Tests: 1.5 mit gesetzten Feldern, mit `null`, ohne Felder (1.4), falscher Typ wird abgelehnt, der Snapshot hält die Werte über einen Round-Trip, und ohne Felder bleibt die `snapshot_id` gleich.
 - Verify: `scripts/check`
 - AC: Ein 1.5-Kontext wird gelesen, ein 1.4-Kontext ergibt denselben Snapshot wie bisher.
 

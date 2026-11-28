@@ -3,8 +3,9 @@
 The raw endpoint response lies at `SessionPaths.narrata_context`. `store_context`
 is its only writer, whether the bytes come from the endpoint or from a local file.
 This module reads the `session`, `participants` and `glossary` blocks, the last
-together with `session_terms` (contract 1.4). Participants, glossary and session
-terms carry real names, so no message names a field's value.
+together with `session_terms` (contract 1.4); participants carry the role and
+character of this session since 1.5. Participants, glossary and session terms
+carry real names, so no message names a field's value.
 
 `parse_participants` and `parse_glossary` check one block of an already parsed
 object and name the given file in messages; the knowledge snapshot (TOOL-41) stores
@@ -67,6 +68,11 @@ class Participant:
     `present` is the attendance the GM entered for the session (context 1.3,
     IOA-1271); None means unknown, never absent, and is all a context before
     1.3 gives.
+
+    `session_role` and `session_character` are what the GM noted for this
+    session alone (context 1.5, IOA-1342); None means nothing was noted, and
+    the group-wide `role` and `characters` apply. `session_character` may name
+    a character that `characters` no longer lists.
     """
 
     user_id: int | str
@@ -75,6 +81,13 @@ class Participant:
     is_former: bool
     characters: tuple[Character, ...]
     present: bool | None = None
+    session_role: Role | None = None
+    session_character: Character | None = None
+
+    @property
+    def role_tonight(self) -> Role:
+        """The role in this session: `session_role`, else the group-wide `role`."""
+        return self.role if self.session_role is None else self.session_role
 
     @property
     def is_present(self) -> bool:
@@ -311,6 +324,10 @@ def _participant(entry: Any, where: str, path: Path) -> Participant:
     present = entry.get("present")  # absent before contract 1.3
     if present is not None and not isinstance(present, bool):
         raise _invalid(path, f"{where}.present")
+    session_role = entry.get("session_role")  # absent before contract 1.5
+    if session_role is not None and session_role not in _ROLES:
+        raise _invalid(path, f"{where}.session_role")
+    session_character = entry.get("session_character")  # absent before 1.5
     characters = _optional_list(entry, "characters", f"{where}.characters", path)
     return Participant(
         user_id=user_id,
@@ -322,6 +339,12 @@ def _participant(entry: Any, where: str, path: Path) -> Participant:
             for index, character in enumerate(characters)
         ),
         present=present,
+        session_role=session_role,
+        session_character=(
+            None
+            if session_character is None
+            else _character(session_character, f"{where}.session_character", path)
+        ),
     )
 
 
