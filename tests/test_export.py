@@ -345,6 +345,29 @@ class SpeakerTest(_ExportCase):
         )
         self.assertEqual(validate(document), ())
 
+    def test_two_gms_are_two_speakers_with_their_own_person(self) -> None:
+        # TOOL-106: Narrata can only tell them apart by label and participant_id
+        gms = tuple(dataclasses.replace(p, role="gm") for p in PARTICIPANTS[:2])
+        assignment = SpeakerAssignment(
+            (
+                entry(self.reference, "SPEAKER_00", 11),
+                entry(self.reference, "SPEAKER_01", 12),
+            )
+        )
+        stored, report = self.reported(assignment=assignment)
+
+        document = build(stored, ONLY_FIRST, report, gms, GROUP_ID)
+
+        self.assertEqual(
+            document["speakers"],
+            {
+                "s01-SPEAKER_00": {"participant_id": 11, "display_name": f"{NAME} 11"},
+                "s01-SPEAKER_01": {"participant_id": 12, "display_name": f"{NAME} 12"},
+            },
+        )
+        self.assertEqual(self.passages(document, "participant_id"), [11, 12, 11])
+        self.assertEqual(validate(document), ())
+
     def test_an_open_label_stays_a_label(self) -> None:
         document = self.exported()
 
