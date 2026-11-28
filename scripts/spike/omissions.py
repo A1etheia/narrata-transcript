@@ -363,17 +363,28 @@ class ClipResult:
     silent_share: float  # of the clip's time
 
 
-def silence(reference: ReferenceTranscript, speech: Ranges) -> Ranges:
-    """Where the diarization hears speech and the run has no word."""
+def silence(
+    reference: ReferenceTranscript,
+    speech: Ranges,
+    bridge_ms: int = BRIDGE_WORDS_MS,
+    cap_ms: float = math.inf,
+    least_ms: int | None = None,
+) -> Ranges:
+    """Where the diarization hears speech and the run has no word.
+
+    A stretch counts from `least_ms` on, by default the bridge. With `cap_ms` a
+    word counts as at most that long: Whisper stretches the word before skipped
+    speech over the gap, which hides the spot (TOOL-107).
+    """
     words = Ranges.union(
         (
-            (word.start_ms, word.end_ms)
+            (word.start_ms, min(word.end_ms, word.start_ms + cap_ms))
             for word in reference.words
             if word.start_ms is not None and word.end_ms is not None
         ),
-        bridge_ms=BRIDGE_WORDS_MS,
+        bridge_ms=bridge_ms,
     )
-    return speech.minus(words).longer(BRIDGE_WORDS_MS)
+    return speech.minus(words).longer(bridge_ms if least_ms is None else least_ms)
 
 
 def clip_turns(clip: HandClip, context: Context, audio: Audio) -> ClipTurns:

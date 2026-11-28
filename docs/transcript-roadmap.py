@@ -20,7 +20,7 @@ START = dt.date(2026, 11, 23)  # a Monday: the week the open work is planned fro
 FROM = dt.date(2026, 11, 23)  # first day counted; working days before it are skipped
 WORKDAYS = [0, 1, 3]  # Mon, Tue, Thu -> 3 dev-days per week
 PAUSES = [(dt.date(2026, 12, 21), dt.date(2027, 1, 3))]  # inclusive ranges, no work
-GENERATED = "2026-11-27"
+GENERATED = "2026-11-28"
 
 # (phase title, milestone sentence, [(key, title, dev-days, note)])
 P = [
@@ -134,7 +134,8 @@ P = [
         ("TOOL-109", "Pegelausgleich mit zweistufigem `loudnorm` vor der Erkennung", 1.0, "erledigt: PR #83; Umsetzung aus TOOL-103 (größter gemessener Effekt, WER an D 61,2 % auf 36,7 %); danach TOOL-108 und TOOL-114 neu messen, falls `loud` Hauptlauf wird"),
         ("TOOL-112", "Spike: Dekodierung je Redebeitrag über `clip_timestamps` messen", 1.0, "erledigt: `docs/spikes/TOOL-112-redebeitrag.md`; Ergebnis No-Go, `norm` bleibt Hauptlauf, keine Umsetzungstickets; Obergrenze eines Zusatzlaufs je Redebeitrag 19 % der Auslassungen, keine Auswahlregel, TOOL-114 verworfen"),
         ("TOOL-113", "Spike: auffälliges Stück mit Fallback neu dekodieren statt zweitem vollen Lauf", 1.0, "erledigt: `docs/spikes/TOOL-113-stellen.md`; Ergebnis No-Go nach Stufe 1, Neu-Dekodieren (Stufe 2) entfiel, keine Umsetzungstickets; harte Obergrenze erreicht nur an J 3 Punkte; Regel A mit `norm` als Hauptlauf bringt nur an J 2,5 Punkte, TOOL-114 verworfen"),
-        ("TOOL-107", "Spike: Hinweis „Sprache ohne Wörter“ gegen `gap` und `sparse` messen", 1.0, "aus TOOL-101; unabhängiges Signal für dieselben verlorenen Blöcke"),
+        ("TOOL-107", "Spike: Hinweis „Sprache ohne Wörter“ gegen `gap` und `sparse` messen", 1.0, "erledigt: `docs/spikes/TOOL-107-sprache-ohne-woerter.md`; Ergebnis Go mit bewusster Abweichung von der Go-Regel (Zusatznutzen 40,8 % statt 50 %, Treffsicherheit 19 von 20, Kosten 0,3 und 0,4 Punkte), Umsetzung in TOOL-116"),
+        ("TOOL-116", "Bewertung: Hinweis „Sprache ohne Wörter“ als eigener Grund", 1.0, "aus TOOL-107; aus TOOL-107: Stellen zwischen zwei Passagen, `missing` ohne Diarisierung, Sprachbereiche im Referenzformat, Contract-Marker, gekappte Wortlänge mit eigener Stichprobe"),
         ("TOOL-106", "Mehrere Spielleitungen im Export als getrennte Sprecher führen", 0.5, "Epic TOOL-45; Export-Korrektheit, beide SL erscheinen in Narrata nur als „SL“; unabhängig, bei Bedarf vorziehen"),
         ("TOOL-105", "Messung: Sitzung mit geänderter Aufnahme am Tisch gegen eine Handreferenz", 0.5, "braucht die Gruppe, Hardware und einen Spielabend, das Datum ist deshalb nur ein Platzhalter; wenn möglich mit dem bisherigen Mikrofon parallel aufnehmen; Handreferenz von der Projektverantwortlichen (20–30 min); aus TOOL-60 und TOOL-93: Mikrofon-Empfehlung bisher nur dokumentiert; aus TOOL-101: Reihenfolge und Begründung im Kommentar an TOOL-100"),
     ]),
